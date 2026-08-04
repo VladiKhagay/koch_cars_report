@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+*.log
+
+# Environment files with real secrets — never commit these.
+.env
+.env.local
+.env.*.local
+
+# Backup artifacts if generated locally
+backup.sql.gz

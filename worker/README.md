@@ -1,0 +1,51 @@
+# car-prep-tracker-worker
+
+Cloudflare Worker: the only custom backend in the system. It does two things
+that the browser can't do safely on its own:
+
+1. **`/ocr`** — proxies photo OCR to Gemini Flash, keeping the API key off the client.
+2. **`/upload`** and **`/photo/:jobId/:kind`** — read/write photos in a private R2
+   bucket, authorized by forwarding the caller's own Supabase JWT to Supabase's
+   REST API and checking whether the same Row Level Security policies that
+   gate the frontend would let them see that job. No service-role key is
+   ever used here.
+
+All actual application data (jobs, users, services) lives in Supabase and is
+written directly from the frontend — this Worker never touches Postgres.
+
+## One-time setup
+
+```bash
+npm install
+npx wrangler login
+npx wrangler r2 bucket create car-prep-photos
+npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-days 90 --prefix ""
+
+# Separate bucket for nightly DB backups (see ../.github/workflows/backup.yml) —
+# kept separate so the 90-day photo lifecycle rule never touches backups.
+npx wrangler r2 bucket create car-prep-backups
+npx wrangler r2 bucket lifecycle add car-prep-backups --id expire-180d --expire-days 180 --prefix ""
+
+npx wrangler secret put SUPABASE_JWT_SECRET   # Supabase: Project Settings -> API -> JWT Secret
+npx wrangler secret put SUPABASE_URL          # https://<project-ref>.supabase.co
+npx wrangler secret put SUPABASE_ANON_KEY     # Supabase: Project Settings -> API -> anon/public key
+npx wrangler secret put GEMINI_API_KEY        # https://aistudio.google.com/apikey
+```
+
+Then set `ALLOWED_ORIGINS` in `wrangler.toml` to your Cloudflare Pages URL(s)
+before going live (comma-separated if you have a preview + production URL).
+
+## Local dev
+
+```bash
+npm run dev
+```
+
+## Deploy
+
+Handled by `.github/workflows/deploy-worker.yml` on push to `main`. To deploy
+manually:
+
+```bash
+npm run deploy
+```

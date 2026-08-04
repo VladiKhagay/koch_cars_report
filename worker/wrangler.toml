@@ -1,0 +1,29 @@
+name = "car-prep-tracker-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# R2 bucket used for job photos. Create with:
+#   wrangler r2 bucket create car-prep-photos
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "car-prep-photos"
+
+# ALLOWED_ORIGINS: comma-separated list of origins allowed to call this Worker
+# (e.g. your Cloudflare Pages URL). Falls back to "*" if unset — tighten this
+# before going live.
+[vars]
+ALLOWED_ORIGINS = ""
+
+# Secrets (set with `wrangler secret put <NAME>`, never committed):
+#   SUPABASE_JWT_SECRET   — Supabase project settings -> API -> JWT Secret
+#   SUPABASE_URL          — https://<project-ref>.supabase.co
+#   SUPABASE_ANON_KEY     — Supabase project settings -> API -> anon/public key
+#   GEMINI_API_KEY        — Google AI Studio key (free tier)
+#
+# The Worker never uses a service-role key: photo uploads are authorized by
+# forwarding the caller's own JWT to Supabase's REST API and relying on the
+# same RLS policies that gate the frontend (see worker/src/upload.ts).
+#
+# R2 lifecycle rule (90-day photo expiry) is configured separately via:
+#   wrangler r2 bucket lifecycle add car-prep-photos \
+#     --id expire-90d --expire-days 90 --prefix ""

@@ -1,0 +1,99 @@
+{
+  "app": { "name": "Vehicle Prep Tracker" },
+  "auth": {
+    "signIn": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "signingIn": "Signing in…",
+    "error": "Couldn't sign in — check your email and password.",
+    "signOut": "Sign out"
+  },
+  "nav": {
+    "newJob": "New Job",
+    "myJobs": "My Jobs",
+    "dashboard": "Dashboard",
+    "export": "Export",
+    "admin": "Admin"
+  },
+  "newJob": {
+    "title": "New Job",
+    "platePhoto": "License plate photo",
+    "vinPhoto": "VIN photo",
+    "retake": "Retake",
+    "takePhoto": "Take photo",
+    "reading": "Reading photo…",
+    "plate": "Plate number",
+    "vin": "VIN",
+    "brand": "Brand",
+    "services": "Work performed",
+    "note": "Note (optional)",
+    "submit": "Submit",
+    "submitting": "Submitting…",
+    "submitted": "Job submitted",
+    "editWindow": "You can edit this for 15 minutes",
+    "edit": "Edit",
+    "plateInvalid": "Doesn't look like a valid plate — check and edit if needed",
+    "vinInvalid": "VIN must be 17 characters (no I, O, or Q)",
+    "vinChecksumWarning": "VIN checksum doesn't match — common for imported vehicles, double check the photo",
+    "duplicateWarning": "This VIN was already logged in the last 7 days",
+    "photosRequired": "Both photos are required",
+    "serviceRequired": "Pick at least one service",
+    "queuedOffline": "No connection — saved and will submit automatically once you're back online",
+    "queuedCount": "{{count}} job waiting to sync",
+    "queuedCount_other": "{{count}} jobs waiting to sync"
+  },
+  "myJobs": {
+    "title": "My Jobs",
+    "empty": "No jobs submitted yet today",
+    "locked": "Locked"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "today": "Today",
+    "flags": "Flags",
+    "duplicates": "{{count}} possible duplicate",
+    "duplicates_other": "{{count}} possible duplicates",
+    "missingBilling": "{{count}} missing billing code",
+    "missingBilling_other": "{{count}} missing billing codes",
+    "search": "Search plate, VIN, or worker…",
+    "noResults": "No jobs match your search"
+  },
+  "jobDetail": {
+    "title": "Job",
+    "billingCode": "Billing code",
+    "managerNote": "Manager note",
+    "workerNote": "Worker note",
+    "worker": "Worker",
+    "services": "Services",
+    "date": "Date",
+    "save": "Save",
+    "saved": "Saved",
+    "duplicateOf": "Possible duplicate of an earlier job for this VIN",
+    "restore": "Restore",
+    "delete": "Delete",
+    "deleted": "Deleted"
+  },
+  "export": {
+    "title": "Export",
+    "from": "From",
+    "to": "To",
+    "download": "Download XLSX",
+    "empty": "No jobs in that date range"
+  },
+  "admin": {
+    "users": "Users",
+    "services": "Services",
+    "sites": "Sites",
+    "name": "Name",
+    "role": "Role",
+    "site": "Site",
+    "active": "Active",
+    "add": "Add",
+    "save": "Save"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "error": "Something went wrong"
+  }
+}
