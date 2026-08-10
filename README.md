@@ -4,7 +4,9 @@ Replaces a WhatsApp-photo + manual-Excel workflow for a 3-site car
 detailing/prep business. A worker photographs a vehicle's plate and VIN, OCR
 autofills both fields, they tap the services performed, and submit — no more
 double data entry. Managers get a per-site dashboard, billing-code entry,
-photo access, and one-click Excel export.
+photo access, and one-click Excel export. Each worker can see their own job
+counts by month, and admins get a site-and-month analytics view (jobs by
+month/worker/service) plus a unique catalog number per service.
 
 Full requirements and architecture rationale: see the design doc this repo
 was built from (business analysis, technology trade-offs, data model,
@@ -46,14 +48,26 @@ sequenceDiagram
 Authorization lives almost entirely in Postgres RLS — both the frontend and
 the Worker are thin, and neither reimplements "who can see this job."
 
+Analytics (My Stats, Admin Analytics) are read from `job_monthly_stats` and
+`job_service_stats` — plain Postgres views with `security_invoker = true`, so
+they inherit the exact same RLS as the `jobs` table rather than needing a
+separate authorization story. Aggregation happens in Postgres, not by
+shipping raw job rows to the browser and summing in JS.
+
+The UI is mobile-first for workers and managers (bottom tab bar, narrow
+single-column screens) but switches to a persistent sidebar and wider
+containers on `md:`+ screens, since admins mainly use this on desktop — see
+`web/src/components/Layout.tsx`.
+
 ## First-time setup
 
-1. **Supabase**: create a project, run `supabase/migrations/0001_init.sql`
-   (SQL Editor or `supabase db push`), then in Studio: create your sites and
-   the first admin user (Authentication -> invite by email, then Table
-   Editor -> `users` -> insert a row with `role = 'admin'` and that
-   account's `auth_id`). After that, use the in-app Admin screens for
-   everyone else.
+1. **Supabase**: create a project, run every file in `supabase/migrations/`
+   **in order** (SQL Editor, one at a time, or `supabase db push`), then in
+   Studio: create your sites and the first admin user (Authentication ->
+   invite by email, then Table Editor -> `users` -> insert a row with
+   `role = 'admin'` and that account's `auth_id`). After that, use the
+   in-app Admin screens for everyone else, including assigning each
+   service's catalog number.
 2. **Cloudflare Worker**: see [`worker/README.md`](worker/README.md).
 3. **Web app**:
    ```bash

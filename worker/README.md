@@ -20,6 +20,32 @@ JWT Signing Keys system (Project Settings -> JWT Keys in the dashboard): if
 that page shows an asymmetric "Current Key" (ECC/RSA), this Worker verifies
 against it automatically, including after a key rotation, with no redeploy.
 
+### OCR (`src/ocr.ts`)
+
+Gemini is forced into a fixed JSON shape (`responseSchema`) rather than free
+text: `{ readable, text, reason }`, where `reason` is a small enum (`blurry`,
+`glare`, `dark`, `angle`, `obstructed`, `not_in_frame`) the frontend
+translates, instead of showing raw English model output to Russian-speaking
+workers. When a photo can't be read, the field now shows why instead of
+silently staying blank.
+
+Two gotchas already hit in production, worth knowing before touching this file:
+
+- **The model id (`GEMINI_MODEL` in `wrangler.toml`) will get deprecated.**
+  Google has no auto-updating "latest" alias — when OCR starts 404ing with
+  "model ... no longer available", check
+  [ai.google.dev/gemini-api/docs/latest-model](https://ai.google.dev/gemini-api/docs/latest-model)
+  for the current id and update the var (not a secret, no redeploy of code
+  needed, just `wrangler deploy` after editing `wrangler.toml`).
+- **`thinkingConfig`'s field name depends on the model generation.**
+  2.5-series models use `thinkingBudget` (a token count; `0` disables
+  thinking). 3.x models use `thinkingLevel` (`"low"` etc.) instead and
+  **cannot fully disable thinking** — sending the wrong field for the
+  generation you're on gets a 400 "invalid argument". If you bump
+  `GEMINI_MODEL` to a new major version, check whether this needs to change
+  too, and keep `maxOutputTokens` generous since thinking tokens (even at the
+  lowest level) count against that same budget.
+
 ## One-time setup
 
 ```bash
