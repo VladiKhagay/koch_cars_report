@@ -64,7 +64,7 @@ export default function Dashboard() {
   }, [jobs, search]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4">
+    <div className="mx-auto max-w-2xl space-y-4 p-4 lg:max-w-5xl">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-900">{t('dashboard.title')}</h1>
         {appUser?.role === 'admin' && sites.length > 0 && (

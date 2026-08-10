@@ -9,6 +9,7 @@ export interface Service {
   id: string;
   name_en: string;
   name_ru: string | null;
+  catalog_number: string;
   active: boolean;
   sort_order: number;
 }
@@ -53,4 +54,18 @@ export interface Photo {
   r2_key: string;
   created_at: string;
   expires_at: string;
+}
+
+export interface JobMonthlyStat {
+  site_id: string;
+  worker_id: string;
+  month: string; // date, first of month
+  job_count: number;
+}
+
+export interface JobServiceStat {
+  site_id: string;
+  service_id: string;
+  month: string; // date, first of month
+  job_count: number;
 }

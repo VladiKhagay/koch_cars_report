@@ -66,15 +66,18 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
         ],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 256,
+          // Generous headroom: Gemini 3 Flash can't fully disable thinking
+          // (thinkingLevel "low" still reasons a little), and those tokens
+          // count against this same budget — too small a cap is exactly
+          // what caused OCR to return nothing despite a 200 OK earlier.
+          maxOutputTokens: 512,
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
-          // This is a plain extraction task, not something that benefits
-          // from reasoning — and on "thinking" model generations, leaving
-          // this unset let internal reasoning tokens silently consume the
-          // whole output budget before any answer was produced, which is
-          // exactly what caused OCR to return nothing despite a 200 OK.
-          thinkingConfig: { thinkingBudget: 0 },
+          // thinkingBudget (the 2.5-series field) doesn't exist on 3.x
+          // models and made the request 400 — thinkingLevel is the 3.x
+          // equivalent. This is a plain extraction task, so the lowest
+          // level is enough; "off" isn't offered on Flash.
+          thinkingConfig: { thinkingLevel: 'low' },
         },
       }),
     },

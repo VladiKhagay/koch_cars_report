@@ -11,7 +11,9 @@
   "nav": {
     "newJob": "New Job",
     "myJobs": "My Jobs",
+    "myStats": "My Stats",
     "dashboard": "Dashboard",
+    "analytics": "Analytics",
     "export": "Export",
     "admin": "Admin"
   },
@@ -104,5 +106,20 @@
     "cancel": "Cancel",
     "loading": "Loading…",
     "error": "Something went wrong"
+  },
+  "stats": {
+    "myStatsTitle": "My Stats",
+    "analyticsTitle": "Analytics",
+    "jobsByMonth": "Jobs by month",
+    "jobsByWorker": "Jobs by worker",
+    "jobsByService": "Jobs by service",
+    "totalJobs": "Total jobs",
+    "jobsThisMonth": "This month",
+    "jobsToday": "Today",
+    "avgPerMonth": "Avg / month",
+    "jobs": "Jobs",
+    "showTable": "Show table",
+    "showChart": "Show chart",
+    "noData": "Not enough data yet"
   }
 }

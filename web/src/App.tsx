@@ -5,7 +5,9 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import NewJob from './pages/NewJob';
 import MyJobs from './pages/MyJobs';
+import MyStats from './pages/MyStats';
 import Dashboard from './pages/Dashboard';
+import Analytics from './pages/Analytics';
 import JobDetail from './pages/JobDetail';
 import Export from './pages/Export';
 import AdminUsers from './pages/admin/Users';
@@ -36,9 +38,11 @@ export default function App() {
             <Route path="/" element={<RoleHome />} />
             <Route path="/new" element={<ProtectedRoute roles={['worker']}><NewJob /></ProtectedRoute>} />
             <Route path="/mine" element={<ProtectedRoute roles={['worker']}><MyJobs /></ProtectedRoute>} />
+            <Route path="/stats" element={<ProtectedRoute roles={['worker']}><MyStats /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute roles={['manager', 'admin']}><Dashboard /></ProtectedRoute>} />
             <Route path="/jobs/:id" element={<ProtectedRoute roles={['manager', 'admin']}><JobDetail /></ProtectedRoute>} />
             <Route path="/export" element={<ProtectedRoute roles={['manager', 'admin']}><Export /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute roles={['admin']}><Analytics /></ProtectedRoute>} />
             <Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><AdminUsers /></ProtectedRoute>} />
             <Route path="/admin/services" element={<ProtectedRoute roles={['admin']}><AdminServices /></ProtectedRoute>} />
             <Route path="/admin/sites" element={<ProtectedRoute roles={['admin']}><AdminSites /></ProtectedRoute>} />

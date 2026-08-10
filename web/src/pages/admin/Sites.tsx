@@ -26,7 +26,7 @@ export default function AdminSites() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-4 p-4">
+    <div className="mx-auto max-w-md space-y-4 p-4 lg:max-w-2xl">
       <AdminTabs active="sites" />
 
       <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-3">

@@ -55,7 +55,7 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-4 p-4">
+    <div className="mx-auto max-w-md space-y-4 p-4 lg:max-w-2xl">
       <AdminTabs active="users" />
 
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">

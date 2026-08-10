@@ -87,7 +87,7 @@ export default function Export() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-4 p-4">
+    <div className="mx-auto max-w-md space-y-4 p-4 lg:max-w-xl">
       <h1 className="text-lg font-semibold text-slate-900">{t('export.title')}</h1>
 
       {appUser?.role === 'admin' && sites.length > 0 && (

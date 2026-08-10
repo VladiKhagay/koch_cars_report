@@ -11,7 +11,9 @@
   "nav": {
     "newJob": "Новая работа",
     "myJobs": "Мои работы",
+    "myStats": "Моя статистика",
     "dashboard": "Панель",
+    "analytics": "Аналитика",
     "export": "Экспорт",
     "admin": "Админ"
   },
@@ -104,5 +106,20 @@
     "cancel": "Отмена",
     "loading": "Загрузка…",
     "error": "Что-то пошло не так"
+  },
+  "stats": {
+    "myStatsTitle": "Моя статистика",
+    "analyticsTitle": "Аналитика",
+    "jobsByMonth": "Работы по месяцам",
+    "jobsByWorker": "Работы по сотрудникам",
+    "jobsByService": "Работы по услугам",
+    "totalJobs": "Всего работ",
+    "jobsThisMonth": "В этом месяце",
+    "jobsToday": "Сегодня",
+    "avgPerMonth": "В среднем / месяц",
+    "jobs": "Работы",
+    "showTable": "Показать таблицу",
+    "showChart": "Показать график",
+    "noData": "Пока недостаточно данных"
   }
 }
