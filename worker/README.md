@@ -13,6 +13,13 @@ that the browser can't do safely on its own:
 All actual application data (jobs, users, services) lives in Supabase and is
 written directly from the frontend — this Worker never touches Postgres.
 
+Every route is authenticated by verifying the caller's Supabase-issued JWT
+against Supabase's public JWKS (`SUPABASE_URL` + `/auth/v1/.well-known/jwks.json`),
+not a shared secret — see `src/index.ts`. This matches Supabase's current
+JWT Signing Keys system (Project Settings -> JWT Keys in the dashboard): if
+that page shows an asymmetric "Current Key" (ECC/RSA), this Worker verifies
+against it automatically, including after a key rotation, with no redeploy.
+
 ## One-time setup
 
 ```bash
@@ -26,7 +33,6 @@ npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-da
 npx wrangler r2 bucket create car-prep-backups
 npx wrangler r2 bucket lifecycle add car-prep-backups --id expire-180d --expire-days 180 --prefix ""
 
-npx wrangler secret put SUPABASE_JWT_SECRET   # Supabase: Project Settings -> API -> JWT Secret
 npx wrangler secret put SUPABASE_URL          # https://<project-ref>.supabase.co
 npx wrangler secret put SUPABASE_ANON_KEY     # Supabase: Project Settings -> API -> anon/public key
 npx wrangler secret put GEMINI_API_KEY        # https://aistudio.google.com/apikey

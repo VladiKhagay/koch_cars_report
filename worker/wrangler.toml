@@ -15,14 +15,21 @@ bucket_name = "car-prep-photos"
 ALLOWED_ORIGINS = ""
 
 # Secrets (set with `wrangler secret put <NAME>`, never committed):
-#   SUPABASE_JWT_SECRET   — Supabase project settings -> API -> JWT Secret
 #   SUPABASE_URL          — https://<project-ref>.supabase.co
 #   SUPABASE_ANON_KEY     — Supabase project settings -> API -> anon/public key
 #   GEMINI_API_KEY        — Google AI Studio key (free tier)
 #
-# The Worker never uses a service-role key: photo uploads are authorized by
-# forwarding the caller's own JWT to Supabase's REST API and relying on the
-# same RLS policies that gate the frontend (see worker/src/upload.ts).
+# No JWT secret is stored here: incoming JWTs are verified against Supabase's
+# public JWKS (SUPABASE_URL + /auth/v1/.well-known/jwks.json), which is how
+# Supabase's current asymmetric JWT Signing Keys are meant to be verified —
+# see worker/src/index.ts. If your project still shows a project settings ->
+# JWT Keys page with only a "Legacy JWT Secret" (HS256) and no signing key,
+# this Worker's auth won't validate — visit that page once in the dashboard
+# to have Supabase provision a signing key, no code change needed here.
+#
+# The Worker also never uses a service-role key: photo uploads are authorized
+# by forwarding the caller's own JWT to Supabase's REST API and relying on
+# the same RLS policies that gate the frontend (see worker/src/upload.ts).
 #
 # R2 lifecycle rule (90-day photo expiry) is configured separately via:
 #   wrangler r2 bucket lifecycle add car-prep-photos \

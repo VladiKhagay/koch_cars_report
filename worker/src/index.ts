@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { jwt } from 'hono/jwt';
+import { jwk } from 'hono/jwk';
 import type { JwtVariables } from 'hono/jwt';
 import { handleOcr } from './ocr';
 import { handleUpload } from './upload';
@@ -8,7 +8,6 @@ import { handleGetPhoto } from './photo';
 
 export interface Env {
   PHOTOS: R2Bucket;
-  SUPABASE_JWT_SECRET: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   GEMINI_API_KEY: string;
@@ -32,11 +31,18 @@ app.use('*', async (c, next) => {
 app.get('/health', (c) => c.json({ ok: true }));
 
 // Every route below requires a valid Supabase-issued JWT. Supabase signs
-// access tokens with HS256 using the project's JWT secret, so a plain
-// hono/jwt check is enough — no network round-trip to Supabase needed.
-app.use('/ocr', async (c, next) => jwt({ secret: c.env.SUPABASE_JWT_SECRET, alg: 'HS256' })(c, next));
-app.use('/upload', async (c, next) => jwt({ secret: c.env.SUPABASE_JWT_SECRET, alg: 'HS256' })(c, next));
-app.use('/photo/*', async (c, next) => jwt({ secret: c.env.SUPABASE_JWT_SECRET, alg: 'HS256' })(c, next));
+// access tokens with its project JWT Signing Key (ES256, asymmetric) rather
+// than a static shared secret these days, so we verify against Supabase's
+// published JWKS instead of holding a secret ourselves. This also means key
+// rotation on the Supabase side (Settings -> JWT Keys -> Create Standby Key)
+// never requires touching this Worker.
+const requireAuth = jwk({
+  jwks_uri: (c) => `${c.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
+  alg: ['ES256'],
+});
+app.use('/ocr', requireAuth);
+app.use('/upload', requireAuth);
+app.use('/photo/*', requireAuth);
 
 app.post('/ocr', handleOcr);
 app.post('/upload', handleUpload);
