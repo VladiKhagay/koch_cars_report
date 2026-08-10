@@ -12,7 +12,7 @@ bucket_name = "car-prep-photos"
 # (e.g. your Cloudflare Pages URL). Falls back to "*" if unset — tighten this
 # before going live.
 [vars]
-ALLOWED_ORIGINS = ""
+ALLOWED_ORIGINS = "https://koch-cars-report.vladik14.workers.dev"
 
 # Secrets (set with `wrangler secret put <NAME>`, never committed):
 #   SUPABASE_URL          — https://<project-ref>.supabase.co
