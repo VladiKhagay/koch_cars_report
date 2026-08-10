@@ -13,6 +13,8 @@ export interface Env {
   GEMINI_API_KEY: string;
   // Comma-separated list of allowed origins, e.g. the Cloudflare Pages URL(s).
   ALLOWED_ORIGINS?: string;
+  // Gemini model id for OCR, e.g. "gemini-3.6-flash". Defaults in ocr.ts if unset.
+  GEMINI_MODEL?: string;
 }
 
 type Variables = JwtVariables;
