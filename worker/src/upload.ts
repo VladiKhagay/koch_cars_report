@@ -38,8 +38,13 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   if (bytes.byteLength === 0) {
     return c.json({ error: 'Empty body' }, 400);
   }
-  if (bytes.byteLength > 5 * 1024 * 1024) {
-    return c.json({ error: 'Photo too large (max 5MB — downscale before upload)' }, 413);
+  // Normal path uploads a downscaled ~1280px JPEG (a few hundred KB). This
+  // cap is a safety net for the rare fallback where client-side downscaling
+  // failed and the original camera photo went up instead (modern phones can
+  // shoot 10-15MB JPEGs) — generous enough to not reject those, not so high
+  // that a stuck retry loop could ever pile up meaningfully in R2.
+  if (bytes.byteLength > 20 * 1024 * 1024) {
+    return c.json({ error: 'Photo too large (max 20MB)' }, 413);
   }
 
   const key = `${jobId}/${kind}.jpg`;

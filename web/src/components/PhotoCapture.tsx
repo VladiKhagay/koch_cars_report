@@ -28,8 +28,17 @@ export default function PhotoCapture({ label, photo, busy, onCapture }: Props) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const downscaled = await downscaleImage(file);
-    onCapture(downscaled);
+    try {
+      const downscaled = await downscaleImage(file);
+      onCapture(downscaled);
+    } catch (err) {
+      // createImageBitmap/canvas encoding has known WebKit quirks on some
+      // camera-captured photos. Rather than silently drop the capture (the
+      // button would look like it did nothing), fall back to the
+      // un-downscaled original so the flow keeps working.
+      console.error('Photo downscale failed, using original', err);
+      onCapture(file);
+    }
   }
 
   return (
