@@ -10,12 +10,22 @@ async function authHeader(): Promise<string> {
   return `Bearer ${token}`;
 }
 
+export type OcrReason = 'blurry' | 'glare' | 'dark' | 'angle' | 'obstructed' | 'not_in_frame';
+
+export interface OcrOutcome {
+  text: string | null;
+  /** Fixed reason code (translatable), set only when text is null. */
+  reason: OcrReason | null;
+}
+
 /**
- * OCR is an accelerator, never a dependency: any failure (network, quota,
- * unreadable image) resolves to `null` so the caller falls back to manual
- * entry instead of blocking the worker's submission.
+ * OCR is an accelerator, never a dependency: any failure (network, quota)
+ * resolves to a null result so the caller falls back to manual entry
+ * instead of blocking the worker's submission. When Gemini itself could
+ * read the photo but the text wasn't legible, `reason` carries why, so the
+ * UI can say something more useful than silently leaving the field blank.
  */
-export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<string | null> {
+export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
   try {
     const base64 = await blobToBase64(image);
     const res = await fetch(`${BASE_URL}/ocr`, {
@@ -23,11 +33,11 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<stri
       headers: { 'Content-Type': 'application/json', Authorization: await authHeader() },
       body: JSON.stringify({ image: base64, mimeType: 'image/jpeg', kind }),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { text: string | null };
-    return data.text;
+    if (!res.ok) return { text: null, reason: null };
+    const data = (await res.json()) as { text: string | null; reason: OcrReason | null };
+    return { text: data.text, reason: data.reason };
   } catch {
-    return null;
+    return { text: null, reason: null };
   }
 }
 

@@ -22,6 +22,15 @@
     "retake": "Retake",
     "takePhoto": "Take photo",
     "reading": "Reading photo…",
+    "ocrUnreadable": "Couldn't read it ({{reason}}) — enter manually or retake the photo",
+    "ocrReasons": {
+      "blurry": "blurry",
+      "glare": "glare",
+      "dark": "too dark",
+      "angle": "bad angle",
+      "obstructed": "obstructed",
+      "not_in_frame": "not in frame"
+    },
     "plate": "Plate number",
     "vin": "VIN",
     "brand": "Brand",

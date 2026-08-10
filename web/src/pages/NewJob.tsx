@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { Service } from '../lib/types';
 import { isValidPlate, isValidVinFormat, vinChecksumValid, guessBrandFromVin } from '../lib/vin';
-import { ocrPhoto } from '../lib/workerApi';
+import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { submitJob, findRecentDuplicate } from '../lib/jobs';
 import { enqueueForRetry, listQueued, watchConnectivity } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
@@ -26,6 +26,7 @@ export default function NewJob() {
   const [services, setServices] = useState<Service[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [ocrBusy, setOcrBusy] = useState<{ plate: boolean; vin: boolean }>({ plate: false, vin: false });
+  const [ocrIssue, setOcrIssue] = useState<{ plate: OcrReason | null; vin: OcrReason | null }>({ plate: null, vin: null });
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'error'>('idle');
@@ -54,15 +55,21 @@ export default function NewJob() {
   async function handlePlateCapture(blob: Blob) {
     setForm((f) => ({ ...f, platePhoto: blob }));
     setOcrBusy((b) => ({ ...b, plate: true }));
-    const text = await ocrPhoto(blob, 'plate');
+    setOcrIssue((i) => ({ ...i, plate: null }));
+    const { text, reason } = await ocrPhoto(blob, 'plate');
     setOcrBusy((b) => ({ ...b, plate: false }));
-    if (text) setForm((f) => ({ ...f, plate: text }));
+    if (text) {
+      setForm((f) => ({ ...f, plate: text }));
+    } else if (reason) {
+      setOcrIssue((i) => ({ ...i, plate: reason }));
+    }
   }
 
   async function handleVinCapture(blob: Blob) {
     setForm((f) => ({ ...f, vinPhoto: blob }));
     setOcrBusy((b) => ({ ...b, vin: true }));
-    const text = await ocrPhoto(blob, 'vin');
+    setOcrIssue((i) => ({ ...i, vin: null }));
+    const { text, reason } = await ocrPhoto(blob, 'vin');
     setOcrBusy((b) => ({ ...b, vin: false }));
     if (text) {
       const brand = guessBrandFromVin(text);
@@ -71,6 +78,8 @@ export default function NewJob() {
         const dup = await findRecentDuplicate(appUser.site_id, text);
         setDuplicateWarning(Boolean(dup));
       }
+    } else if (reason) {
+      setOcrIssue((i) => ({ ...i, vin: reason }));
     }
   }
 
@@ -150,6 +159,11 @@ export default function NewJob() {
           onChange={(e) => setForm((f) => ({ ...f, plate: e.target.value.toUpperCase() }))}
           className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base uppercase"
         />
+        {ocrIssue.plate && !form.plate && (
+          <p className="mt-1 text-xs text-amber-700">
+            {t('newJob.ocrUnreadable', { reason: t(`newJob.ocrReasons.${ocrIssue.plate}`) })}
+          </p>
+        )}
         {touched && form.plate && !plateValid && <p className="mt-1 text-xs text-amber-700">{t('newJob.plateInvalid')}</p>}
       </div>
 
@@ -161,6 +175,11 @@ export default function NewJob() {
           onChange={(e) => setForm((f) => ({ ...f, vin: e.target.value.toUpperCase() }))}
           className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base uppercase"
         />
+        {ocrIssue.vin && !form.vin && (
+          <p className="mt-1 text-xs text-amber-700">
+            {t('newJob.ocrUnreadable', { reason: t(`newJob.ocrReasons.${ocrIssue.vin}`) })}
+          </p>
+        )}
         {touched && form.vin && !vinFormatValid && <p className="mt-1 text-xs text-red-600">{t('newJob.vinInvalid')}</p>}
         {vinFormatValid && !vinChecksumOk && <p className="mt-1 text-xs text-amber-700">{t('newJob.vinChecksumWarning')}</p>}
         {duplicateWarning && <p className="mt-1 text-xs text-amber-700">{t('newJob.duplicateWarning')}</p>}

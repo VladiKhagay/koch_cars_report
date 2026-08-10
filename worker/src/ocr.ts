@@ -2,20 +2,41 @@ import type { Context } from 'hono';
 import type { Env } from './index';
 
 const PROMPTS: Record<'plate' | 'vin', string> = {
-  plate:
-    'This photo shows a vehicle license plate. Return ONLY the plate number as printed, ' +
-    'with no extra words, no punctuation explanation, uppercase, keeping any hyphens/spaces ' +
-    'exactly as shown. If unreadable, return exactly: UNREADABLE',
+  plate: 'This photo shows a vehicle license plate. Read the plate number exactly as printed, keeping any hyphens/spaces.',
   vin:
     'This photo shows a vehicle VIN (17-character Vehicle Identification Number), typically on a ' +
-    'sticker or stamped plate. Return ONLY the 17-character VIN, uppercase, no spaces, no other text. ' +
-    'The VIN never contains the letters I, O, or Q. If unreadable, return exactly: UNREADABLE',
+    'sticker or stamped plate. The VIN never contains the letters I, O, or Q.',
+};
+
+// Fixed set rather than free text so the frontend can translate the reason
+// instead of showing raw English model output to Russian-speaking workers.
+const OCR_REASONS = ['blurry', 'glare', 'dark', 'angle', 'obstructed', 'not_in_frame', 'none'] as const;
+type OcrReason = (typeof OCR_REASONS)[number];
+
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    readable: { type: 'BOOLEAN', description: 'true only if the requested text is clearly legible in the photo' },
+    text: { type: 'STRING', description: 'the extracted text exactly as printed, uppercase; empty string if not readable' },
+    reason: {
+      type: 'STRING',
+      enum: OCR_REASONS as unknown as string[],
+      description: 'why the text could not be read; use "none" when readable is true',
+    },
+  },
+  required: ['readable', 'text', 'reason'],
 };
 
 interface OcrRequestBody {
   image: string; // base64, no data: prefix
   mimeType?: string; // defaults to image/jpeg
   kind: 'plate' | 'vin';
+}
+
+interface OcrResult {
+  readable?: boolean;
+  text?: string;
+  reason?: OcrReason;
 }
 
 export async function handleOcr(c: Context<{ Bindings: Env }>) {
@@ -43,7 +64,18 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
             parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: body.image } }],
           },
         ],
-        generationConfig: { temperature: 0, maxOutputTokens: 32 },
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 256,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+          // This is a plain extraction task, not something that benefits
+          // from reasoning — and on "thinking" model generations, leaving
+          // this unset let internal reasoning tokens silently consume the
+          // whole output budget before any answer was produced, which is
+          // exactly what caused OCR to return nothing despite a 200 OK.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     },
   );
@@ -59,10 +91,18 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
   };
   const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  const text = raw.trim().toUpperCase();
 
-  if (!text || text === 'UNREADABLE') {
-    return c.json({ text: null });
+  let parsed: OcrResult = {};
+  try {
+    parsed = JSON.parse(raw) as OcrResult;
+  } catch {
+    console.error('Gemini OCR: non-JSON response', raw);
   }
-  return c.json({ text });
+
+  const text = parsed.text?.trim().toUpperCase();
+  if (!parsed.readable || !text) {
+    const reason = parsed.reason && parsed.reason !== 'none' ? parsed.reason : 'not_in_frame';
+    return c.json({ text: null, reason });
+  }
+  return c.json({ text, reason: null });
 }
