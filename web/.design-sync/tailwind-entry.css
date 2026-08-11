@@ -1,0 +1,69 @@
+/* Tailwind entry for /design-sync.
+ *
+ * Compiles the app's own index.css (theme tokens + base rules) while also
+ * scanning the preview .tsx files, so classes used only in preview
+ * compositions are present in the shipped stylesheet.
+ *
+ * The `@source inline(...)` block below is the important part: Tailwind v4
+ * only emits utilities it finds in scanned source, but the Claude Design
+ * agent writes its OWN layout glue against this stylesheet and never gets a
+ * Tailwind build. Without a safelist, any class the app doesn't already use
+ * silently resolves to nothing. This enumerates the palette + layout surface
+ * the agent is told (in conventions.md) that it may use. */
+@import "../src/index.css";
+@source "../src";
+@source "./previews";
+
+/* Palette — the app's five semantic families plus the brand scale. */
+@source inline("{bg,text,border,ring,divide}-{slate,brand,red,amber,emerald,blue}-{50,100,200,300,400,500,600,700,800,900}");
+@source inline("{bg,text,border}-{white,black,transparent,current}");
+@source inline("bg-black/{10,20,30,40,50,60}");
+
+/* Spacing. */
+@source inline("{p,px,py,pt,pb,pl,pr,m,mx,my,mt,mb,ml,mr,gap,gap-x,gap-y}-{0,0.5,1,1.5,2,2.5,3,3.5,4,5,6,8,10,12,16,20,24}");
+@source inline("{space-x,space-y}-{1,2,3,4,6,8}");
+@source inline("mt-auto mb-auto ml-auto mr-auto mx-auto");
+
+/* Sizing. */
+@source inline("{w,h}-{0,1,2,3,4,5,6,7,8,10,11,12,14,16,20,24,32,40,full,auto,screen,fit,px}");
+@source inline("min-h-{0,11,40,full,screen} min-w-0 max-h-full");
+@source inline("max-w-{xs,sm,md,lg,xl,2xl,3xl,4xl,5xl,6xl,7xl,full,none,prose}");
+@source inline("{flex-1,flex-auto,flex-none,shrink-0,grow}");
+
+/* Layout. */
+@source inline("{block,inline-block,inline,flex,inline-flex,grid,inline-grid,hidden,contents}");
+@source inline("flex-{row,col,wrap,nowrap,row-reverse,col-reverse}");
+@source inline("items-{start,center,end,baseline,stretch}");
+@source inline("justify-{start,center,end,between,around,evenly}");
+@source inline("self-{start,center,end,stretch,auto}");
+@source inline("grid-cols-{1,2,3,4,5,6,12} col-span-{1,2,3,4,6,full}");
+@source inline("{relative,absolute,fixed,sticky,static}");
+@source inline("{inset-0,top-0,bottom-0,left-0,right-0,inset-x-0,inset-y-0}");
+@source inline("z-{0,10,20,30,40,50}");
+@source inline("overflow-{hidden,auto,visible,x-auto,y-auto}");
+
+/* Typography. */
+@source inline("text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}");
+@source inline("font-{normal,medium,semibold,bold}");
+@source inline("text-{left,center,right} {truncate,uppercase,capitalize,italic,tabular-nums,whitespace-nowrap,break-words}");
+@source inline("leading-{none,tight,snug,normal,relaxed} tracking-{tight,normal,wide}");
+@source inline("underline underline-offset-2 line-through no-underline");
+
+/* Borders, radius, elevation, motion. */
+@source inline("rounded{,-none,-sm,-md,-lg,-xl,-2xl,-3xl,-full}");
+@source inline("border{,-0,-2,-4} border-{t,b,l,r} border-{dashed,solid,none}");
+@source inline("shadow{,-sm,-md,-lg,-xl,-none}");
+@source inline("opacity-{0,25,50,60,75,100}");
+@source inline("transition{,-colors,-opacity,-transform} duration-{150,200,300} animate-{spin,pulse}");
+@source inline("{cursor-pointer,cursor-not-allowed,select-none,pointer-events-none,object-cover,object-contain,sr-only}");
+
+/* Responsive + state variants for the classes that carry layout on this app
+ * (mobile-first for workers/managers, md: sidebar layout for admins). */
+@source inline("{sm,md,lg}:{block,flex,grid,hidden,flex-row,flex-col}");
+@source inline("{sm,md,lg}:grid-cols-{1,2,3,4,6}");
+@source inline("{sm,md,lg}:{p,px,py,gap}-{2,3,4,6,8}");
+@source inline("{sm,md,lg}:text-{sm,base,lg,xl,2xl}");
+@source inline("{sm,md,lg}:max-w-{sm,md,lg,xl,2xl,4xl}");
+@source inline("{hover,focus,active,disabled}:{bg,text,border}-{slate,brand,red,emerald}-{50,100,200,600,700,800}");
+@source inline("{hover,focus}:{underline,opacity-75} focus:outline-none focus-visible:ring-2");
+@source inline("disabled:{opacity-50,cursor-not-allowed}");

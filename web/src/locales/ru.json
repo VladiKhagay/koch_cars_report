@@ -23,6 +23,11 @@
     "vinPhoto": "Фото VIN",
     "retake": "Переснять",
     "takePhoto": "Сфотографировать",
+    "tapToCapture": "Нажмите, чтобы снять",
+    "captured": "{{label}} — снято",
+    "retakeNeeded": "{{label}} — нужно переснять",
+    "typeItIn": "Ввести вручную",
+    "autoFilled": "заполнено автоматически",
     "reading": "Распознавание фото…",
     "ocrUnreadable": "Не удалось распознать ({{reason}}) — введите вручную или переснимите фото",
     "ocrReasons": {

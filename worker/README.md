@@ -3,7 +3,8 @@
 Cloudflare Worker: the only custom backend in the system. It does two things
 that the browser can't do safely on its own:
 
-1. **`/ocr`** — proxies photo OCR to Gemini Flash, keeping the API key off the client.
+1. **`/ocr`** — runs photo OCR on Cloudflare Workers AI (Moondream), so there is
+   no external OCR vendor, API key, or model-deprecation cycle to manage.
 2. **`/upload`** and **`/photo/:jobId/:kind`** — read/write photos in a private R2
    bucket, authorized by forwarding the caller's own Supabase JWT to Supabase's
    REST API and checking whether the same Row Level Security policies that
@@ -22,29 +23,20 @@ against it automatically, including after a key rotation, with no redeploy.
 
 ### OCR (`src/ocr.ts`)
 
-Gemini is forced into a fixed JSON shape (`responseSchema`) rather than free
-text: `{ readable, text, reason }`, where `reason` is a small enum (`blurry`,
-`glare`, `dark`, `angle`, `obstructed`, `not_in_frame`) the frontend
-translates, instead of showing raw English model output to Russian-speaking
-workers. When a photo can't be read, the field now shows why instead of
-silently staying blank.
+OCR runs on the Workers AI binding (`[ai]` in `wrangler.toml`) using
+Moondream, a vision model built for OCR-style extraction. History note: this
+originally used the Gemini API, which broke twice in one day (a model-name
+deprecation, then a generation-incompatible request field) — Workers AI was
+adopted specifically to remove that external-vendor churn, and it also
+removed the last external API key from the system.
 
-Two gotchas already hit in production, worth knowing before touching this file:
-
-- **The model id (`GEMINI_MODEL` in `wrangler.toml`) will get deprecated.**
-  Google has no auto-updating "latest" alias — when OCR starts 404ing with
-  "model ... no longer available", check
-  [ai.google.dev/gemini-api/docs/latest-model](https://ai.google.dev/gemini-api/docs/latest-model)
-  for the current id and update the var (not a secret, no redeploy of code
-  needed, just `wrangler deploy` after editing `wrangler.toml`).
-- **`thinkingConfig`'s field name depends on the model generation.**
-  2.5-series models use `thinkingBudget` (a token count; `0` disables
-  thinking). 3.x models use `thinkingLevel` (`"low"` etc.) instead and
-  **cannot fully disable thinking** — sending the wrong field for the
-  generation you're on gets a 400 "invalid argument". If you bump
-  `GEMINI_MODEL` to a new major version, check whether this needs to change
-  too, and keep `maxOutputTokens` generous since thinking tokens (even at the
-  lowest level) count against that same budget.
+Moondream returns free text, so the prompt pins a strict answer format
+("the characters, or `UNREADABLE <reason>`") and `parseOcrAnswer()` handles
+the small deviations compact models produce (quotes, preambles). The reason
+is a fixed enum (`blurry`, `glare`, `dark`, `angle`, `obstructed`,
+`not_in_frame`) that the frontend translates, instead of showing raw English
+model output to Russian-speaking workers. The parser is a pure function with
+unit tests in `src/ocr.test.ts` (`npm test`).
 
 ## One-time setup
 
@@ -61,8 +53,10 @@ npx wrangler r2 bucket lifecycle add car-prep-backups --id expire-180d --expire-
 
 npx wrangler secret put SUPABASE_URL          # https://<project-ref>.supabase.co
 npx wrangler secret put SUPABASE_ANON_KEY     # Supabase: Project Settings -> API -> anon/public key
-npx wrangler secret put GEMINI_API_KEY        # https://aistudio.google.com/apikey
 ```
+
+OCR needs no secret — it uses the Workers AI binding declared in
+`wrangler.toml` (`[ai]`), which works automatically once deployed.
 
 Then set `ALLOWED_ORIGINS` in `wrangler.toml` to your Cloudflare Pages URL(s)
 before going live (comma-separated if you have a preview + production URL).

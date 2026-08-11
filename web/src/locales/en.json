@@ -23,6 +23,11 @@
     "vinPhoto": "VIN photo",
     "retake": "Retake",
     "takePhoto": "Take photo",
+    "tapToCapture": "Tap to capture",
+    "captured": "{{label}} captured",
+    "retakeNeeded": "{{label}} — retake needed",
+    "typeItIn": "Type it in",
+    "autoFilled": "auto-filled",
     "reading": "Reading photo…",
     "ocrUnreadable": "Couldn't read it ({{reason}}) — enter manually or retake the photo",
     "ocrReasons": {

@@ -11,3 +11,10 @@ dist/
 
 # Backup artifacts if generated locally
 backup.sql.gz
+
+# /design-sync (claude.ai/design)
+web/.ds-sync/
+web/ds-bundle/
+web/.design-sync/.cache/
+web/.design-sync/learnings/
+web/.design-sync/node_modules

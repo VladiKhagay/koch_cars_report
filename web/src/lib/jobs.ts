@@ -67,17 +67,13 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   return job.id as string;
 }
 
-/** Flags jobs with the same VIN at the same site in the last 7 days. */
+/**
+ * Flags jobs with the same VIN at the same site in the last 7 days.
+ * Goes through a security definer RPC because workers can no longer SELECT
+ * other workers' job rows directly (migration 0003) — the function returns
+ * only a job id, never the row.
+ */
 export async function findRecentDuplicate(siteId: string, vin: string): Promise<string | null> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from('jobs')
-    .select('id')
-    .eq('site_id', siteId)
-    .eq('vin', vin.toUpperCase().trim())
-    .is('deleted_at', null)
-    .gte('created_at', sevenDaysAgo)
-    .order('created_at', { ascending: false })
-    .limit(1);
-  return data && data.length > 0 ? data[0].id : null;
+  const { data } = await supabase.rpc('find_recent_duplicate', { p_site_id: siteId, p_vin: vin });
+  return (data as string | null) ?? null;
 }

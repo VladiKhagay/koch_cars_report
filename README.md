@@ -13,7 +13,7 @@ was built from (business analysis, technology trade-offs, data model,
 security model, cost breakdown).
 
 **Target cost: $0/month**, using free tiers throughout (Supabase, Cloudflare
-Pages/Workers/R2, Gemini Flash, GitHub Actions).
+Pages/Workers/R2/Workers AI, GitHub Actions).
 
 ## Architecture
 
@@ -21,14 +21,14 @@ Pages/Workers/R2, Gemini Flash, GitHub Actions).
 sequenceDiagram
     actor W as Worker (PWA)
     participant CF as Cloudflare Worker
-    participant G as Gemini Flash (OCR)
+    participant AI as Workers AI (Moondream OCR)
     participant R2 as Cloudflare R2
     participant SB as Supabase (Postgres+Auth)
 
     W->>W: snap plate photo, downscale to ~1280px JPEG
     W->>CF: POST /ocr (photo, JWT)
-    CF->>G: extract plate text
-    G-->>CF: "12-345-67"
+    CF->>AI: extract plate text
+    AI-->>CF: "12-345-67"
     CF-->>W: plate (worker confirms/edits)
     W->>SB: INSERT job row
     W->>CF: POST /upload (photo, JWT)
@@ -40,9 +40,10 @@ sequenceDiagram
 - **`web/`** — React + Vite PWA. All UI (worker submission, manager
   dashboard, admin). Talks directly to Supabase for data, and to the Worker
   only for OCR and photos.
-- **`worker/`** — Cloudflare Worker. The only custom backend: OCR proxy
-  (keeps the Gemini key server-side) and photo read/write (keeps the R2
-  bucket private, authorized via the caller's own Supabase JWT).
+- **`worker/`** — Cloudflare Worker. The only custom backend: OCR (runs on
+  Cloudflare's own Workers AI, no external vendor or API key) and photo
+  read/write (keeps the R2 bucket private, authorized via the caller's own
+  Supabase JWT).
 - **`supabase/migrations/`** — schema, Row Level Security policies, seed data.
 
 Authorization lives almost entirely in Postgres RLS — both the frontend and

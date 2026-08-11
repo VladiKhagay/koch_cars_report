@@ -1,0 +1,20 @@
+{
+  "projectId": "6493c9f2-92f4-417d-a7a1-bb9e8334d370",
+  "shape": "package",
+  "pkg": "web",
+  "globalName": "VPT",
+  "buildCmd": "npx @tailwindcss/cli@4 -i .design-sync/tailwind-entry.css -o .design-sync/compiled.css --minify",
+  "cssEntry": ".design-sync/compiled.css",
+  "tsconfig": "tsconfig.app.json",
+  "componentSrcMap": {
+    "StatTile": "src/components/StatTile.tsx",
+    "ServiceChips": "src/components/ServiceChips.tsx",
+    "BarChart": "src/components/BarChart.tsx",
+    "PhotoCapture": "src/components/PhotoCapture.tsx",
+    "AdminTabs": "src/components/AdminTabs.tsx",
+    "StatusBanner": "src/components/StatusBanner.tsx"
+  },
+  "provider": {
+    "component": "DSProvider"
+  }
+}

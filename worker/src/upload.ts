@@ -33,7 +33,6 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  const contentType = c.req.header('Content-Type') ?? 'image/jpeg';
   const bytes = await c.req.arrayBuffer();
   if (bytes.byteLength === 0) {
     return c.json({ error: 'Empty body' }, 400);
@@ -47,8 +46,11 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Photo too large (max 20MB)' }, 413);
   }
 
+  // Content type is pinned rather than echoed from the client: the app only
+  // ever uploads JPEG, and storing an attacker-chosen type (e.g. text/html)
+  // would make GET /photo serve it as a page on this Worker's origin.
   const key = `${jobId}/${kind}.jpg`;
-  await c.env.PHOTOS.put(key, bytes, { httpMetadata: { contentType } });
+  await c.env.PHOTOS.put(key, bytes, { httpMetadata: { contentType: 'image/jpeg' } });
 
   return c.json({ key });
 }

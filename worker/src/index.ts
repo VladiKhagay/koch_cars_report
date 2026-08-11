@@ -8,13 +8,14 @@ import { handleGetPhoto } from './photo';
 
 export interface Env {
   PHOTOS: R2Bucket;
+  // Workers AI binding (OCR). Typed minimally rather than with the versioned
+  // AiModels map so bumping @cloudflare/workers-types is never forced by a
+  // model change.
+  AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  GEMINI_API_KEY: string;
   // Comma-separated list of allowed origins, e.g. the Cloudflare Pages URL(s).
   ALLOWED_ORIGINS?: string;
-  // Gemini model id for OCR, e.g. "gemini-3.6-flash". Defaults in ocr.ts if unset.
-  GEMINI_MODEL?: string;
 }
 
 type Variables = JwtVariables;

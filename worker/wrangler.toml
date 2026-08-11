@@ -8,23 +8,21 @@ compatibility_date = "2024-12-01"
 binding = "PHOTOS"
 bucket_name = "car-prep-photos"
 
+# Workers AI binding — OCR runs on Cloudflare's own models (Moondream),
+# so there is no external OCR vendor, API key, or model-deprecation cycle
+# to babysit. Free tier: 10,000 neurons/day, far above this app's usage.
+[ai]
+binding = "AI"
+
 # ALLOWED_ORIGINS: comma-separated list of origins allowed to call this Worker
 # (e.g. your Cloudflare Pages URL). Falls back to "*" if unset — tighten this
 # before going live.
-#
-# GEMINI_MODEL: Google deprecates pinned Gemini model names on their own
-# schedule with no auto-updating alias (this already broke once — see
-# worker/src/ocr.ts). When OCR starts failing with a 404 "model ... no
-# longer available" error, check https://ai.google.dev/gemini-api/docs/latest-model
-# for the current model id, set it here, and redeploy — no code change needed.
 [vars]
 ALLOWED_ORIGINS = "https://koch-cars-report.vladik14.workers.dev"
-GEMINI_MODEL = "gemini-3.6-flash"
 
 # Secrets (set with `wrangler secret put <NAME>`, never committed):
 #   SUPABASE_URL          — https://<project-ref>.supabase.co
 #   SUPABASE_ANON_KEY     — Supabase project settings -> API -> anon/public key
-#   GEMINI_API_KEY        — Google AI Studio key (free tier)
 #
 # No JWT secret is stored here: incoming JWTs are verified against Supabase's
 # public JWKS (SUPABASE_URL + /auth/v1/.well-known/jwks.json), which is how

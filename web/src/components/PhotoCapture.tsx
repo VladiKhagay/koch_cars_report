@@ -2,17 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { downscaleImage } from '../lib/image';
 
+/**
+ * Photo capture tile with four explicit states, per the "Vehicle Prep
+ * Tracker UI" design system (components/PhotoTile):
+ *  - empty:      dashed border, camera icon, "Tap to capture"
+ *  - processing: blue border, spinner, "Reading photo…"
+ *  - error:      red, OCR failure reason, Retake / "Type it in" actions
+ *  - success:    green, photo thumbnail (real photo, not the design's
+ *                placeholder swatch), Retake link
+ */
 interface Props {
   label: string;
   photo: Blob | null;
   busy?: boolean;
+  /** Translated OCR failure reason; puts the tile in the error state. */
+  error?: string | null;
   onCapture: (blob: Blob) => void;
+  /** "Type it in" pressed — parent should focus the manual input. */
+  onTypeItIn?: () => void;
 }
 
-export default function PhotoCapture({ label, photo, busy, onCapture }: Props) {
+export default function PhotoCapture({ label, photo, busy, error, onCapture, onTypeItIn }: Props) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   useEffect(() => {
     if (!photo) {
@@ -24,6 +38,10 @@ export default function PhotoCapture({ label, photo, busy, onCapture }: Props) {
     return () => URL.revokeObjectURL(url);
   }, [photo]);
 
+  useEffect(() => {
+    setErrorDismissed(false);
+  }, [error]);
+
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -33,17 +51,25 @@ export default function PhotoCapture({ label, photo, busy, onCapture }: Props) {
       onCapture(downscaled);
     } catch (err) {
       // createImageBitmap/canvas encoding has known WebKit quirks on some
-      // camera-captured photos. Rather than silently drop the capture (the
-      // button would look like it did nothing), fall back to the
-      // un-downscaled original so the flow keeps working.
+      // camera-captured photos. Rather than silently drop the capture,
+      // fall back to the un-downscaled original so the flow keeps working.
       console.error('Photo downscale failed, using original', err);
       onCapture(file);
     }
   }
 
+  const openCamera = () => inputRef.current?.click();
+
+  const state: 'empty' | 'processing' | 'error' | 'success' = !photo
+    ? 'empty'
+    : busy
+      ? 'processing'
+      : error && !errorDismissed
+        ? 'error'
+        : 'success';
+
   return (
     <div>
-      <p className="mb-1 text-sm font-medium text-slate-700">{label}</p>
       <input
         ref={inputRef}
         type="file"
@@ -52,30 +78,68 @@ export default function PhotoCapture({ label, photo, busy, onCapture }: Props) {
         className="hidden"
         onChange={(e) => void handleChange(e)}
       />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        className="relative flex h-40 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-slate-300 bg-white"
-      >
-        {previewUrl ? (
-          <img src={previewUrl} alt={label} className="h-full w-full object-cover" />
-        ) : (
-          <span className="flex flex-col items-center gap-1 text-slate-400">
-            <CameraIcon />
-            <span className="text-sm">{t('newJob.takePhoto')}</span>
-          </span>
-        )}
-        {busy && (
-          <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm text-white">
-            {t('newJob.reading')}
-          </span>
-        )}
-        {previewUrl && !busy && (
-          <span className="absolute bottom-1 right-1 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
+
+      {state === 'empty' && (
+        <button
+          type="button"
+          onClick={openCamera}
+          className="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-4 text-slate-500"
+        >
+          <CameraIcon />
+          <span className="text-sm font-semibold">{label}</span>
+          <span className="text-xs text-slate-400">{t('newJob.tapToCapture')}</span>
+        </button>
+      )}
+
+      {state === 'processing' && (
+        <div className="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-brand-600 bg-white p-4 text-brand-700">
+          <span className="h-6 w-6 animate-spin rounded-full border-[3px] border-brand-100 border-t-brand-600" />
+          <span className="text-sm font-semibold">{label}</span>
+          <span className="text-xs">{t('newJob.reading')}</span>
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="flex min-h-40 w-full flex-col gap-2 rounded-2xl border-2 border-red-600 bg-red-50 p-4 text-red-800">
+          <span className="text-sm font-bold">{t('newJob.retakeNeeded', { label })}</span>
+          <span className="text-xs">{error}</span>
+          <div className="mt-auto flex gap-2">
+            <button
+              type="button"
+              onClick={openCamera}
+              className="min-h-11 flex-1 rounded-lg bg-red-600 text-sm font-bold text-white"
+            >
+              {t('newJob.retake')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setErrorDismissed(true);
+                onTypeItIn?.();
+              }}
+              className="min-h-11 flex-1 rounded-lg border border-red-700 text-sm font-bold text-red-800"
+            >
+              {t('newJob.typeItIn')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {state === 'success' && (
+        <div className="flex min-h-40 w-full flex-col gap-2 rounded-2xl border-2 border-emerald-600 bg-emerald-50 p-3 text-emerald-800">
+          <span className="text-sm font-bold">{t('newJob.captured', { label })}</span>
+          {previewUrl && (
+            <img src={previewUrl} alt={label} className="min-h-0 w-full flex-1 rounded-lg object-cover" />
+          )}
+          <button
+            type="button"
+            onClick={openCamera}
+            className="min-h-11 self-start text-sm font-bold underline underline-offset-2"
+          >
             {t('newJob.retake')}
-          </span>
-        )}
-      </button>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
