@@ -1,0 +1,12 @@
+# Frontend deploy config — the app is a Workers static-assets project.
+# Deploy with:  npm run build && npx wrangler deploy
+# (Name must match the existing "koch-cars-report" project so this updates
+# the live site rather than creating a new one.)
+name = "koch-cars-report"
+compatibility_date = "2024-12-01"
+
+[assets]
+directory = "dist"
+# SPA routing: serve index.html for any path that isn't a real file,
+# so deep links like /welcome and /dashboard work on direct load.
+not_found_handling = "single-page-application"

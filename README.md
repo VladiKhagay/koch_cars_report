@@ -77,15 +77,22 @@ containers on `md:`+ screens, since admins mainly use this on desktop — see
    npm install
    npm run dev
    ```
-4. **Cloudflare Pages**: connect this repo, set the build command to
-   `npm run build` and output directory to `dist` with root directory `web`,
-   and add the same env vars from `.env.local` as Pages environment
-   variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-   `VITE_WORKER_URL`, optionally `VITE_PLATE_REGEX`).
+4. **Frontend deploy**: the app deploys as a Workers static-assets project
+   (`koch-cars-report`) via `web/wrangler.toml` — pushes to `main` deploy it
+   through `.github/workflows/deploy-web.yml`, or deploy manually:
+   ```bash
+   cd web && npm run build && npx wrangler deploy
+   ```
 5. **GitHub Actions secrets** (repo Settings -> Secrets and variables ->
    Actions): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-   `SUPABASE_DB_URL` (for nightly backups — Supabase Project Settings ->
-   Database -> Connection string, "session" mode).
+   `SUPABASE_DB_URL` (nightly backups — Supabase Project Settings ->
+   Database -> Connection string, "session" mode), plus the frontend
+   build vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+   `VITE_WORKER_URL` (same values as `web/.env.local`).
+6. **Supabase Auth settings** (both required for invite-only registration):
+   turn OFF "Allow new users to sign up" (Authentication -> Sign In / Up),
+   and add `<your app URL>/welcome` to Authentication -> URL Configuration
+   -> Redirect URLs.
 
 ## Monitoring
 
