@@ -5,6 +5,7 @@
   "globalName": "VPT",
   "buildCmd": "npx @tailwindcss/cli@4 -i .design-sync/tailwind-entry.css -o .design-sync/compiled.css --minify",
   "cssEntry": ".design-sync/compiled.css",
+  "readmeHeader": ".design-sync/conventions.md",
   "tsconfig": "tsconfig.app.json",
   "componentSrcMap": {
     "StatTile": "src/components/StatTile.tsx",

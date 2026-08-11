@@ -55,6 +55,27 @@ export async function fetchPhotoUrl(jobId: string, kind: 'plate' | 'vin'): Promi
   }
 }
 
+/** Admin-only: send an email invitation and pre-create the user's profile. */
+export async function inviteUser(input: {
+  email: string;
+  name: string;
+  role: 'worker' | 'manager' | 'admin';
+  siteId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: await authHeader() },
+      body: JSON.stringify(input),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) return { ok: false, error: data.error ?? `invite failed (${res.status})` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'network error' };
+  }
+}
+
 export async function uploadPhoto(jobId: string, kind: 'plate' | 'vin', image: Blob): Promise<string> {
   const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
     method: 'POST',

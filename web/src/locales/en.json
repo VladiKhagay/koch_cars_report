@@ -14,8 +14,38 @@
     "myStats": "My Stats",
     "dashboard": "Dashboard",
     "analytics": "Analytics",
+    "team": "Team",
+    "services": "Services",
     "export": "Export",
-    "admin": "Admin"
+    "admin": "Admin",
+    "profile": "Profile"
+  },
+  "welcome": {
+    "title": "Welcome",
+    "subtitle": "Choose a password to finish setting up your account.",
+    "password": "Password",
+    "confirm": "Confirm password",
+    "finish": "Set password and sign in",
+    "tooShort": "Password must be at least 8 characters",
+    "mismatch": "Passwords don't match",
+    "invalidLink": "This invitation link is invalid or has expired. Ask your admin to send a new one."
+  },
+  "profile": {
+    "title": "Profile",
+    "name": "Name",
+    "saveName": "Save name",
+    "newPassword": "New password",
+    "savePassword": "Change password",
+    "saved": "Saved"
+  },
+  "team": {
+    "title": "Team"
+  },
+  "services": {
+    "missingFields": "Catalog number and name are required.",
+    "duplicateCatalog": "That catalog number is already in use.",
+    "catalogPlaceholder": "Catalog number (e.g. SVC-006)",
+    "deleteConfirm": "Remove this service? Past jobs keep it."
   },
   "newJob": {
     "title": "New Job",
@@ -104,8 +134,13 @@
     "role": "Role",
     "site": "Site",
     "active": "Active",
+    "inactive": "Inactive",
     "add": "Add",
-    "save": "Save"
+    "save": "Save",
+    "inviteTitle": "Invite a new user",
+    "sendInvite": "Send invitation",
+    "inviteSent": "Invitation sent — they'll set a password from the email link.",
+    "inviteMissingFields": "Email, name, and site are required."
   },
   "common": {
     "cancel": "Cancel",
@@ -121,8 +156,14 @@
     "totalJobs": "Total jobs",
     "jobsThisMonth": "This month",
     "jobsToday": "Today",
+    "jobsInRange": "Jobs in range",
+    "activeWorkers": "Workers",
     "avgPerMonth": "Avg / month",
     "jobs": "Jobs",
+    "allWorkers": "All workers",
+    "allServices": "All services",
+    "exportSite": "Export stats (XLSX)",
+    "exportAllSites": "Export all sites",
     "showTable": "Show table",
     "showChart": "Show chart",
     "noData": "Not enough data yet"

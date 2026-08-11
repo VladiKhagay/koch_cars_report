@@ -12,6 +12,7 @@ export interface Service {
   catalog_number: string;
   active: boolean;
   sort_order: number;
+  deleted_at: string | null;
 }
 
 export interface AppUser {
@@ -67,5 +68,13 @@ export interface JobServiceStat {
   site_id: string;
   service_id: string;
   month: string; // date, first of month
+  job_count: number;
+}
+
+export interface JobDailyStat {
+  site_id: string;
+  worker_id: string;
+  service_id: string;
+  day: string; // date
   job_count: number;
 }

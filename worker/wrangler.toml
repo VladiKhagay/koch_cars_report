@@ -19,10 +19,17 @@ binding = "AI"
 # before going live.
 [vars]
 ALLOWED_ORIGINS = "https://koch-cars-report.vladik14.workers.dev"
+# Invite emails link to APP_URL/welcome (must be allowlisted in Supabase
+# Auth -> URL Configuration -> Redirect URLs).
+APP_URL = "https://koch-cars-report.vladik14.workers.dev"
 
 # Secrets (set with `wrangler secret put <NAME>`, never committed):
-#   SUPABASE_URL          — https://<project-ref>.supabase.co
-#   SUPABASE_ANON_KEY     — Supabase project settings -> API -> anon/public key
+#   SUPABASE_URL               — https://<project-ref>.supabase.co
+#   SUPABASE_ANON_KEY          — Supabase project settings -> API -> anon/public key
+#   SUPABASE_SERVICE_ROLE_KEY  — Supabase project settings -> API -> service_role.
+#                                Used ONLY by /invite (admin-gated) to send auth
+#                                invitations and pre-create the profile row —
+#                                see src/invite.ts. Never exposed to the client.
 #
 # No JWT secret is stored here: incoming JWTs are verified against Supabase's
 # public JWKS (SUPABASE_URL + /auth/v1/.well-known/jwks.json), which is how

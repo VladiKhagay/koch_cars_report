@@ -5,6 +5,7 @@ import type { JwtVariables } from 'hono/jwt';
 import { handleOcr } from './ocr';
 import { handleUpload } from './upload';
 import { handleGetPhoto } from './photo';
+import { handleInvite } from './invite';
 
 export interface Env {
   PHOTOS: R2Bucket;
@@ -14,6 +15,10 @@ export interface Env {
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
+  // Service role key — used ONLY by /invite (see invite.ts for why).
+  SUPABASE_SERVICE_ROLE_KEY: string;
+  // Public URL of the deployed frontend; invite emails redirect to APP_URL/welcome.
+  APP_URL?: string;
   // Comma-separated list of allowed origins, e.g. the Cloudflare Pages URL(s).
   ALLOWED_ORIGINS?: string;
 }
@@ -46,10 +51,12 @@ const requireAuth = jwk({
 app.use('/ocr', requireAuth);
 app.use('/upload', requireAuth);
 app.use('/photo/*', requireAuth);
+app.use('/invite', requireAuth);
 
 app.post('/ocr', handleOcr);
 app.post('/upload', handleUpload);
 app.get('/photo/:jobId/:kind', handleGetPhoto);
+app.post('/invite', handleInvite);
 
 app.onError((err, c) => {
   console.error(err);

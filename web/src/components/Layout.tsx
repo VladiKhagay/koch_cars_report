@@ -20,6 +20,9 @@ function navItemsFor(role: UserRole | undefined, t: (key: string) => string): Na
   if (role === 'manager') {
     return [
       { to: '/dashboard', label: t('nav.dashboard') },
+      { to: '/analytics', label: t('nav.analytics') },
+      { to: '/team', label: t('nav.team') },
+      { to: '/services', label: t('nav.services') },
       { to: '/export', label: t('nav.export') },
     ];
   }
@@ -35,7 +38,7 @@ function navItemsFor(role: UserRole | undefined, t: (key: string) => string): Na
 }
 
 const mobileTabClass = ({ isActive }: { isActive: boolean }) =>
-  `flex-1 flex flex-col items-center justify-center py-2 text-xs font-medium ${
+  `min-w-0 flex-1 flex flex-col items-center justify-center px-0.5 py-2.5 text-[11px] font-medium truncate ${
     isActive ? 'text-brand-700' : 'text-slate-500'
   }`;
 
@@ -64,6 +67,9 @@ export default function Layout() {
           ))}
         </nav>
         <div className="flex items-center gap-3 border-t border-slate-100 pt-3">
+          <NavLink to="/profile" className="text-xs font-medium text-slate-500 underline underline-offset-2">
+            {t('nav.profile')}
+          </NavLink>
           <button
             className="text-xs font-medium text-slate-500 underline underline-offset-2"
             onClick={() => setLanguage(i18n.language === 'en' ? 'ru' : 'en')}
@@ -80,6 +86,9 @@ export default function Layout() {
         <header className="safe-top flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
           <span className="text-lg font-semibold text-slate-900">{t('app.name')}</span>
           <div className="flex items-center gap-3">
+            <NavLink to="/profile" className="text-xs font-medium text-slate-500 underline underline-offset-2">
+              {t('nav.profile')}
+            </NavLink>
             <button
               className="text-xs font-medium text-slate-500 underline underline-offset-2"
               onClick={() => setLanguage(i18n.language === 'en' ? 'ru' : 'en')}

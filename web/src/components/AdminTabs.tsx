@@ -5,7 +5,7 @@ export default function AdminTabs({ active }: { active: 'users' | 'services' | '
   const { t } = useTranslation();
   const tabs = [
     { key: 'users', to: '/admin/users', label: t('admin.users') },
-    { key: 'services', to: '/admin/services', label: t('admin.services') },
+    { key: 'services', to: '/services', label: t('admin.services') },
     { key: 'sites', to: '/admin/sites', label: t('admin.sites') },
   ] as const;
 
