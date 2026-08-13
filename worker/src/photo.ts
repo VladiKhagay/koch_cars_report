@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { Env } from './index';
+import { isPhotoKind } from './upload';
 
 /**
  * Streams a private R2 photo back to the caller. Same RLS-delegated
@@ -11,7 +12,9 @@ export async function handleGetPhoto(c: Context<{ Bindings: Env }>) {
   const kind = c.req.param('kind');
   const authHeader = c.req.header('Authorization');
 
-  if (!jobId || (kind !== 'plate' && kind !== 'vin') || !authHeader) {
+  // Same allowlist as the write side — a kind that cannot be uploaded must not
+  // be a path that can be probed either.
+  if (!jobId || !isPhotoKind(kind) || !authHeader) {
     return c.json({ error: 'Not found' }, 404);
   }
 

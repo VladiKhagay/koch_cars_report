@@ -2,6 +2,22 @@ import type { Context } from 'hono';
 import type { Env } from './index';
 
 /**
+ * The photo slots a job can have. Mirrors the `photos_kind_check` constraint
+ * added in migration 0005.
+ *
+ * This is an allowlist, not a format check, and it must stay one: `kind` is
+ * interpolated into the R2 object key below. A pattern like /^[a-z_0-9]+$/
+ * would accept `extra_9` and quietly create slots the database would then
+ * reject, and any loosening beyond that reaches for the key path itself.
+ */
+export const PHOTO_KINDS = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3'] as const;
+export type PhotoKind = (typeof PHOTO_KINDS)[number];
+
+export function isPhotoKind(value: unknown): value is PhotoKind {
+  return typeof value === 'string' && (PHOTO_KINDS as readonly string[]).includes(value);
+}
+
+/**
  * Accepts a photo for a job and writes it to R2.
  *
  * Authorization is delegated to Postgres RLS rather than reimplemented here:
@@ -15,8 +31,8 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const kind = c.req.query('kind');
   const authHeader = c.req.header('Authorization');
 
-  if (!jobId || (kind !== 'plate' && kind !== 'vin') || !authHeader) {
-    return c.json({ error: 'Expected ?jobId=&kind=plate|vin with a photo body' }, 400);
+  if (!jobId || !isPhotoKind(kind) || !authHeader) {
+    return c.json({ error: `Expected ?jobId=&kind=${PHOTO_KINDS.join('|')} with a photo body` }, 400);
   }
 
   const checkRes = await fetch(

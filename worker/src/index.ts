@@ -19,6 +19,10 @@ export interface Env {
   SUPABASE_SERVICE_ROLE_KEY: string;
   // Public URL of the deployed frontend; invite emails redirect to APP_URL/welcome.
   APP_URL?: string;
+  // Optional override for the OCR *read* model, so alternatives can be trialled
+  // on real photos without a deploy. Detection stays on Moondream (only model
+  // in the catalogue with a `detect` task).
+  OCR_MODEL?: string;
   // Comma-separated list of allowed origins, e.g. the Cloudflare Pages URL(s).
   ALLOWED_ORIGINS?: string;
 }
