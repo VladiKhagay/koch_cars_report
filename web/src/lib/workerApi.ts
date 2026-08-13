@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { blobToBase64 } from './image';
+import { blobToBase64, cropToBox, type DetectBox } from './image';
+import type { PhotoKind } from './types';
 
 const BASE_URL = import.meta.env.VITE_WORKER_URL;
 
@@ -25,16 +26,34 @@ export interface OcrOutcome {
  * read the photo but the text wasn't legible, `reason` carries why, so the
  * UI can say something more useful than silently leaving the field blank.
  */
+async function postOcr(image: Blob, kind: 'plate' | 'vin', task: 'query' | 'detect'): Promise<unknown> {
+  const base64 = await blobToBase64(image);
+  const res = await fetch(`${BASE_URL}/ocr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: await authHeader() },
+    body: JSON.stringify({ image: base64, mimeType: 'image/jpeg', kind, task }),
+  });
+  if (!res.ok) throw new Error(`ocr ${task} failed: ${res.status}`);
+  return res.json();
+}
+
 export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
   try {
-    const base64 = await blobToBase64(image);
-    const res = await fetch(`${BASE_URL}/ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: await authHeader() },
-      body: JSON.stringify({ image: base64, mimeType: 'image/jpeg', kind }),
-    });
-    if (!res.ok) return { text: null, reason: null };
-    const data = (await res.json()) as { text: string | null; reason: OcrReason | null };
+    // Workers photograph the whole car, so the plate is a small patch of the
+    // frame. Locate it first and read a tight crop; if detection fails we just
+    // read the full frame as before.
+    let target = image;
+    try {
+      const { box } = (await postOcr(image, kind, 'detect')) as { box: DetectBox | null };
+      if (box) target = await cropToBox(image, box);
+    } catch {
+      /* detection is best-effort */
+    }
+
+    const data = (await postOcr(target, kind, 'query')) as {
+      text: string | null;
+      reason: OcrReason | null;
+    };
     return { text: data.text, reason: data.reason };
   } catch {
     return { text: null, reason: null };
@@ -42,7 +61,7 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
 }
 
 /** Fetches a private R2 photo through the Worker and returns a local object URL. */
-export async function fetchPhotoUrl(jobId: string, kind: 'plate' | 'vin'): Promise<string | null> {
+export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<string | null> {
   try {
     const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, {
       headers: { Authorization: await authHeader() },
@@ -76,7 +95,7 @@ export async function inviteUser(input: {
   }
 }
 
-export async function uploadPhoto(jobId: string, kind: 'plate' | 'vin', image: Blob): Promise<string> {
+export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob): Promise<string> {
   const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'image/jpeg', Authorization: await authHeader() },

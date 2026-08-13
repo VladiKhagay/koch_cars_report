@@ -1,17 +1,56 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { inviteUser } from '../../lib/workerApi';
 import type { AppUser, Site, UserRole } from '../../lib/types';
 import AdminTabs from '../../components/AdminTabs';
 import StatusBanner from '../../components/StatusBanner';
+import {
+  CellMuted,
+  CellTitle,
+  Table,
+  TableCard,
+  TBody,
+  Td,
+  TdActions,
+  Th,
+  THead,
+  Tr,
+  TrExpanded,
+} from '../../components/DataTable';
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmPanel,
+  EmptyState,
+  Field,
+  IconButton,
+  LoadingRegion,
+  Page,
+  PageHeading,
+  SearchField,
+  SectionHeading,
+  Select,
+  fieldClass,
+} from '../../components/ui';
+
+const ROLES: UserRole[] = ['worker', 'manager', 'admin'];
+
+/** Name, role, site, status, actions. */
+const COLUMNS = 5;
+
+type Expanded = { id: string; mode: 'edit' | 'toggle' } | null;
 
 export default function AdminUsers() {
   const { t } = useTranslation();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   // Invite form
+  const [inviting, setInviting] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('worker');
@@ -21,7 +60,7 @@ export default function AdminUsers() {
   const [saving, setSaving] = useState(false);
 
   // Inline edit
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Expanded>(null);
   const [editDraft, setEditDraft] = useState<{ name: string; role: UserRole; site_id: string }>({
     name: '',
     role: 'worker',
@@ -34,8 +73,10 @@ export default function AdminUsers() {
   }, []);
 
   async function load() {
+    setLoading(true);
     const { data } = await supabase.from('users').select('*').order('name');
     setUsers(data ?? []);
+    setLoading(false);
   }
 
   async function handleInvite() {
@@ -59,7 +100,7 @@ export default function AdminUsers() {
   }
 
   function startEdit(user: AppUser) {
-    setEditingId(user.id);
+    setExpanded({ id: user.id, mode: 'edit' });
     setEditDraft({ name: user.name, role: user.role, site_id: user.site_id ?? '' });
   }
 
@@ -70,115 +111,255 @@ export default function AdminUsers() {
       .update({ name: editDraft.name.trim(), role: editDraft.role, site_id: editDraft.site_id || null })
       .eq('id', userId);
     setSaving(false);
-    setEditingId(null);
+    setExpanded(null);
     void load();
   }
 
   async function toggleActive(user: AppUser) {
     await supabase.rpc('set_user_active', { p_user_id: user.id, p_active: !user.active });
+    setExpanded(null);
     void load();
   }
 
-  const inputClass = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm';
+  const siteName = (id: string | null) => sites.find((s) => s.id === id)?.name ?? t('profile.noSite');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    const nameOf = (id: string | null) => sites.find((s) => s.id === id)?.name ?? '';
+    return users.filter(
+      (u) => u.name.toLowerCase().includes(q) || nameOf(u.site_id).toLowerCase().includes(q),
+    );
+  }, [users, search, sites]);
 
   return (
-    <div className="mx-auto max-w-md space-y-4 p-4 lg:max-w-2xl">
+    <Page width="wide" className="space-y-5">
       <AdminTabs active="users" />
 
-      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t('admin.inviteTitle')}</p>
-        <input placeholder={t('auth.email') ?? ''} value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
-        <input placeholder={t('admin.name') ?? ''} value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
-        <div className="flex gap-2">
-          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm">
-            <option value="worker">worker</option>
-            <option value="manager">manager</option>
-            <option value="admin">admin</option>
-          </select>
-          <select value={siteId} onChange={(e) => setSiteId(e.target.value)} className="flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm">
-            <option value="">{t('admin.site')}</option>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {inviteError && <StatusBanner tone="error">{inviteError}</StatusBanner>}
-        {inviteSent && <StatusBanner tone="success">{t('admin.inviteSent')}</StatusBanner>}
-        <button onClick={() => void handleInvite()} disabled={saving} className="w-full rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white disabled:opacity-60">
-          {t('admin.sendInvite')}
-        </button>
-      </div>
+      <PageHeading
+        action={
+          <Button
+            icon={inviting ? 'x' : 'plus'}
+            variant={inviting ? 'secondary' : 'primary'}
+            onClick={() => setInviting((v) => !v)}
+          >
+            {inviting ? t('common.cancel') : t('admin.inviteTitle')}
+          </Button>
+        }
+      >
+        {t('admin.users')}
+      </PageHeading>
 
-      <div className="space-y-2">
-        {users.map((u) => (
-          <div key={u.id} className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-slate-900">{u.name}</p>
-                <p className="text-xs text-slate-500">
-                  {u.role} · {sites.find((s) => s.id === u.site_id)?.name ?? '—'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {editingId !== u.id && (
-                  <button className="text-sm font-medium text-brand-700" onClick={() => startEdit(u)}>
-                    {t('newJob.edit')}
-                  </button>
-                )}
-                <button
-                  onClick={() => void toggleActive(u)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${u.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}
-                >
-                  {u.active ? t('admin.active') : t('admin.inactive')}
-                </button>
-              </div>
+      {inviting && (
+        <Card className="p-5">
+          <SectionHeading icon="plus">{t('admin.inviteTitle')}</SectionHeading>
+
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field htmlFor="invite-email" label={t('auth.email')}>
+                <input
+                  id="invite-email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setInviteSent(false);
+                  }}
+                  className={fieldClass}
+                />
+              </Field>
+
+              <Field htmlFor="invite-name" label={t('admin.name')}>
+                <input
+                  id="invite-name"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setInviteSent(false);
+                  }}
+                  className={fieldClass}
+                />
+              </Field>
+
+              <Field htmlFor="invite-role" label={t('admin.role')}>
+                <Select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {t(`roles.${r}`)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field htmlFor="invite-site" label={t('admin.site')}>
+                <Select id="invite-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+                  <option value="">{t('admin.site')}</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
 
-            {editingId === u.id && (
-              <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-                <input value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} className={inputClass} />
-                <div className="flex gap-2">
-                  <select
-                    value={editDraft.role}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, role: e.target.value as UserRole }))}
-                    className="flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                  >
-                    <option value="worker">worker</option>
-                    <option value="manager">manager</option>
-                    <option value="admin">admin</option>
-                  </select>
-                  <select
-                    value={editDraft.site_id}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, site_id: e.target.value }))}
-                    className="flex-1 rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                  >
-                    <option value="">{t('admin.site')}</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => void saveEdit(u.id)}
-                    disabled={saving}
-                    className="flex-1 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white disabled:opacity-60"
-                  >
-                    {t('admin.save')}
-                  </button>
-                  <button onClick={() => setEditingId(null)} className="flex-1 rounded-lg border border-slate-300 py-2 text-sm">
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              </div>
+            {inviteError && (
+              <StatusBanner tone="error" live>
+                {inviteError}
+              </StatusBanner>
             )}
+            {inviteSent && (
+              <StatusBanner tone="success" live>
+                {t('admin.inviteSent')}
+              </StatusBanner>
+            )}
+
+            <Button icon="plus" busy={saving} onClick={() => void handleInvite()}>
+              {t('admin.sendInvite')}
+            </Button>
           </div>
-        ))}
-      </div>
-    </div>
+        </Card>
+      )}
+
+      {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
+
+      {!loading && users.length === 0 && (
+        <EmptyState icon="users" title={t('admin.usersEmptyTitle')} body={t('admin.usersEmptyBody')} />
+      )}
+
+      {!loading && users.length > 0 && (
+        <TableCard toolbar={<SearchField value={search} onChange={setSearch} label={t('admin.searchUsers')} />}>
+          <Table minWidth={48}>
+            <THead>
+              <tr>
+                <Th>{t('admin.name')}</Th>
+                <Th hideBelow="sm">{t('admin.role')}</Th>
+                <Th hideBelow="md">{t('admin.site')}</Th>
+                <Th hideBelow="sm">{t('admin.status')}</Th>
+                <Th />
+              </tr>
+            </THead>
+            <TBody>
+              {filtered.map((u) => {
+                const open = expanded?.id === u.id ? expanded : null;
+                /* A row and its expanded panel are two <tr>s that belong
+                   together — a Fragment keys them as one unit without wrapping
+                   them in an element <tbody> would reject. */
+                return (
+                  <Fragment key={u.id}>
+                  <Tr active={Boolean(open)}>
+                    <Td>
+                      <CellTitle>{u.name}</CellTitle>
+                      {/* The two columns that vanish on a phone reappear here,
+                          so a narrow screen loses layout, not information. */}
+                      <p className="text-xs text-ink-600 sm:hidden">
+                        {t(`roles.${u.role}`)} · {siteName(u.site_id)}
+                      </p>
+                    </Td>
+                    <Td hideBelow="sm">
+                      <CellMuted>{t(`roles.${u.role}`)}</CellMuted>
+                    </Td>
+                    <Td hideBelow="md">
+                      <CellMuted>{siteName(u.site_id)}</CellMuted>
+                    </Td>
+                    <Td hideBelow="sm">
+                      {/* State is reported, never actioned, by this element. */}
+                      <Badge tone={u.active ? 'ok' : 'neutral'} icon={u.active ? 'checkCircle' : 'lock'}>
+                        {u.active ? t('admin.active') : t('admin.inactive')}
+                      </Badge>
+                    </Td>
+                    <TdActions>
+                      <IconButton
+                        icon={u.active ? 'lock' : 'check'}
+                        label={u.active ? t('team.deactivate') : t('team.activate')}
+                        onClick={() => setExpanded({ id: u.id, mode: 'toggle' })}
+                      />
+                      <IconButton icon="pencil" label={t('newJob.edit')} onClick={() => startEdit(u)} />
+                    </TdActions>
+                  </Tr>
+
+                  {open?.mode === 'toggle' && (
+                    <TrExpanded colSpan={COLUMNS}>
+                      <ConfirmPanel
+                        variant={u.active ? 'danger' : 'secondary'}
+                        icon={u.active ? 'lock' : 'check'}
+                        question={t(u.active ? 'team.deactivateConfirm' : 'team.activateConfirm', { name: u.name })}
+                        confirmLabel={u.active ? t('team.deactivate') : t('team.activate')}
+                        onConfirm={() => void toggleActive(u)}
+                        onCancel={() => setExpanded(null)}
+                      />
+                    </TrExpanded>
+                  )}
+
+                  {open?.mode === 'edit' && (
+                    <TrExpanded colSpan={COLUMNS}>
+                      <div className="space-y-4">
+                        <div className="grid gap-4 sm:grid-cols-3">
+                          <Field htmlFor={`edit-name-${u.id}`} label={t('admin.name')}>
+                            <input
+                              id={`edit-name-${u.id}`}
+                              value={editDraft.name}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                              className={fieldClass}
+                            />
+                          </Field>
+
+                          <Field htmlFor={`edit-role-${u.id}`} label={t('admin.role')}>
+                            <Select
+                              id={`edit-role-${u.id}`}
+                              value={editDraft.role}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, role: e.target.value as UserRole }))}
+                            >
+                              {ROLES.map((r) => (
+                                <option key={r} value={r}>
+                                  {t(`roles.${r}`)}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+
+                          <Field htmlFor={`edit-site-${u.id}`} label={t('admin.site')}>
+                            <Select
+                              id={`edit-site-${u.id}`}
+                              value={editDraft.site_id}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, site_id: e.target.value }))}
+                            >
+                              <option value="">{t('admin.site')}</option>
+                              {sites.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button icon="check" busy={saving} onClick={() => void saveEdit(u.id)}>
+                            {t('admin.save')}
+                          </Button>
+                          <Button variant="secondary" onClick={() => setExpanded(null)}>
+                            {t('common.cancel')}
+                          </Button>
+                        </div>
+                      </div>
+                    </TrExpanded>
+                  )}
+                  </Fragment>
+                );
+              })}
+            </TBody>
+          </Table>
+        </TableCard>
+      )}
+
+      {!loading && users.length > 0 && filtered.length === 0 && (
+        <EmptyState icon="search" title={t('admin.noMatches')} />
+      )}
+    </Page>
   );
 }

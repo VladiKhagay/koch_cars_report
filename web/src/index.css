@@ -1,35 +1,209 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   BRAND TOKEN SOURCE — Koch-Chemie
+   ----------------------------------------------------------------------------
+   This @theme block is the ONLY place a brand-carrying value is written down.
+   Everything downstream resolves from it:
+     - components/pages use the utilities generated here (no hex, no slate-*)
+     - BarChart paints with Tailwind fill- / stroke- utilities, so charts swap
+       with the palette instead of staying on a stale hardcoded colour
+     - vite.config.ts parses --color-surface and --color-ink-900 out of THIS
+       FILE at build time for the PWA manifest theme_color/background_color and
+       the <meta name="theme-color"> tag, so the install splash can never drift
+       away from the app.
+   Swapping the ramp below re-skins the entire product, charts and splash
+   included, with no component edits.
+
+   Light mode only, deliberately (client decision). The structure is
+   dark-mode-ready: every surface/line/text value is a semantic alias over the
+   ink ramp, so a future dark theme redefines the aliases, not the components.
+   ============================================================================ */
+
 @theme {
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-900: #1e3a8a;
+  /* --- Neutral ramp -------------------------------------------------------
+     The brand supplies three values (#1E1E1E, #919396, #FFFFFF); those are
+     brand moments — the wordmark, body text, the primary action — NOT the
+     whole interface. Building every surface out of them produced a flat,
+     dated grey. So the UI ramp carries a slight cool cast: the steps stay
+     visually neutral beside the brand near-black, but read crisp rather
+     than photocopier-grey. ink-900 remains the exact brand value.
+     Measured contrast against #FFFFFF noted where it constrains use. */
+  --color-ink-50: #f7f8fa;
+  --color-ink-100: #f1f3f6;
+  --color-ink-200: #e7eaef; /* hairline borders — deliberately light; depth
+                               comes from elevation, not heavy rules */
+  --color-ink-300: #d3d8e0;
+  --color-ink-400: #9aa1ae; /* muted icons, disabled — 2.9:1, never text */
+  --color-ink-500: #67707e; /* 5.01:1 — lightest text that passes AA */
+  --color-ink-600: #525a67; /* 6.96:1 — secondary text */
+  --color-ink-700: #3b424d;
+  --color-ink-800: #282d35;
+  --color-ink-900: #1e1e1e; /* BRAND near-black — body text, dark surfaces, primary action */
+  --color-ink-950: #141414;
+
+  /* Brand grey, kept addressable for brand moments (wordmark lockups).
+     Deliberately NOT the UI border colour — at 3.08:1 it is too heavy for
+     hairlines and unusable for body copy. */
+  --color-brand-grey: #919396;
+
+  /* --- Semantic surfaces / lines / text ---------------------------------- */
+  --color-surface: #ffffff; /* BRAND paper */
+  --color-sunken: var(--color-ink-50);
+  --color-line: var(--color-ink-200);
+  --color-line-strong: var(--color-ink-300);
+
+  /* --- Status ------------------------------------------------------------
+     The brand is monochrome; the interface is not. Earlier these were muddied
+     down until they read as sepia — the main reason the product looked dated.
+     They are now clean, modern hues held at a restrained saturation: enough
+     chroma to register instantly on a sunlit phone, not enough to compete
+     with the brand. Every one is paired with an icon and a text label in the
+     UI — colour never carries meaning on its own. */
+  --color-ok-50: #ecfdf5;
+  --color-ok-200: #a7e3c6;
+  --color-ok-600: #047857; /* white on it: 5.5:1 */
+  --color-ok-700: #036b4e; /* 6.5:1 on white */
+
+  --color-warn-50: #fffbeb;
+  --color-warn-200: #f5dfa6;
+  --color-warn-700: #8a5a0b; /* 5.9:1 on white */
+
+  --color-danger-50: #fef2f2;
+  --color-danger-200: #f4c4bd;
+  --color-danger-600: #c0271d; /* white on it: 5.9:1 */
+  --color-danger-700: #a52219; /* 7.4:1 on white */
+
+  /* --- Type --------------------------------------------------------------
+     One family, system stack. Operate mode: the tool disappears into the task,
+     and a system stack is the only way to get full Cyrillic coverage without
+     shipping a font file over mobile data.
+     Fixed rem scale at a ~1.2 ratio — no fluid clamps in product UI.
+     --text-xs is deliberately raised from Tailwind's 12px to 13px so that any
+     stray `text-xs` in a low-traffic screen still lands above the legibility
+     floor for a phone screen in sunlight. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+
+  /* --- Touch targets ------------------------------------------------------
+     Named so the floor is legible in the markup: min-h-tap, h-control, … */
+  --spacing-tap: 2.75rem; /* 44px — absolute floor for anything tapped */
+  --spacing-control: 3rem; /* 48px — default control height */
+  --spacing-control-lg: 3.5rem; /* 56px — primary actions, tab bar */
+
+  /* --- Radius / elevation -------------------------------------------------
+     Opened up from the previous 10/12/16px. Softer corners and layered,
+     low-opacity shadows are what let a light border recede — the modern
+     pattern is elevation carrying depth, with the hairline only defining
+     the edge. Shadows are tinted cool (16 24 40) rather than neutral black,
+     which keeps them from looking like grey smudges. */
+  --radius-lg: 0.75rem; /* 12px — inputs, buttons, chips */
+  --radius-xl: 1rem; /* 16px — cards, photo tiles */
+  --radius-2xl: 1.25rem; /* 20px — sheets, large panels */
+
+  --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
+  --shadow-raised: 0 4px 8px -2px rgb(16 24 40 / 0.06), 0 12px 24px -6px rgb(16 24 40 / 0.1);
+  --shadow-bar: 0 -1px 2px 0 rgb(16 24 40 / 0.04), 0 -8px 24px -8px rgb(16 24 40 / 0.1);
+
+  /* --- Tracking ------------------------------------------------------------
+     Headings set slightly tight. At display sizes the default system-stack
+     tracking reads loose and web-1.0; pulling it in is a large part of what
+     makes type feel contemporary. Body text keeps normal tracking. */
+  --tracking-tight: -0.014em;
+  --tracking-tighter: -0.022em;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-sunken);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  /* One focus treatment everywhere. Offset puts the ring outside the control,
+     so it stays visible on the near-black primary buttons too. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink-900);
+    outline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-500); /* 4.55:1 — placeholders are text */
+    opacity: 1;
+  }
+
+  button,
+  a[role="button"] {
+    touch-action: manipulation;
+  }
+
+  /* Native controls inherit the type stack rather than the platform default. */
+  input,
+  textarea,
+  select,
+  button {
+    font-family: inherit;
+  }
+
+  /* Plates, VINs, catalog numbers and stat values are Latin-script identifiers,
+     and in this app `font-mono` marks exactly those. Inside a Hebrew (RTL)
+     paragraph the bidi algorithm treats their letters, digits and separators as
+     one mixed run and can reorder it — a VIN is not a sentence and must never be
+     re-sequenced by the text around it. Pinning them LTR and isolating them from
+     the surrounding flow also gives the right caret direction when a worker
+     types a VIN into a mono field. */
+  .font-mono {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
 }
 
-body {
-  margin: 0;
-  -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
+@layer utilities {
+  /* Respect the notch / home-indicator on iPhone when installed as a PWA. */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
-/* Respect the notch / home-indicator on iPhone when installed as a PWA. */
-.safe-top {
-  padding-top: env(safe-area-inset-top);
-}
-.safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-button,
-a[role='button'] {
-  touch-action: manipulation;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

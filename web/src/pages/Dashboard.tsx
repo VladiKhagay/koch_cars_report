@@ -1,51 +1,62 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { Job, Site } from '../lib/types';
+import { useSiteScope } from '../lib/useSiteScope';
+import type { Job } from '../lib/types';
+import Icon from '../components/Icon';
+import {
+  Badge,
+  EmptyState,
+  IconButton,
+  LoadingRegion,
+  Page,
+  PageHeading,
+  SearchField,
+  Select,
+} from '../components/ui';
 
 interface JobRow extends Job {
   worker_name?: string;
 }
 
+function todayIso() {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0); // midday anchor keeps ±1 day arithmetic DST-safe
+  return d.toISOString().slice(0, 10);
+}
+
+function shiftDay(iso: string, days: number) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function Dashboard() {
-  const { t } = useTranslation();
-  const { appUser } = useAuth();
-  const [sites, setSites] = useState<Site[]>([]);
-  const [siteId, setSiteId] = useState<string | null>(null);
+  const { t, i18n } = useTranslation();
+  const { sites, siteId, setSiteId, canSwitch } = useSiteScope();
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!appUser) return;
-    if (appUser.role === 'admin') {
-      supabase.from('sites').select('*').order('name').then(({ data }) => {
-        setSites(data ?? []);
-        setSiteId((data ?? [])[0]?.id ?? null);
-      });
-    } else {
-      setSiteId(appUser.site_id);
-    }
-  }, [appUser]);
+  /** The day being viewed. Managers fill in billing codes that arrive a day or
+   *  two late, so "today only" made yesterday's unfinished work unreachable. */
+  const [day, setDay] = useState(todayIso());
+  const isToday = day === todayIso();
 
   useEffect(() => {
     if (!siteId) return;
-    void load(siteId);
-  }, [siteId]);
+    void load(siteId, day);
+  }, [siteId, day]);
 
-  async function load(site: string) {
+  async function load(site: string, isoDay: string) {
     setLoading(true);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
     const { data } = await supabase
       .from('jobs')
       .select('*, worker:users!jobs_worker_id_fkey(name)')
       .eq('site_id', site)
       .is('deleted_at', null)
-      .gte('created_at', startOfDay.toISOString())
+      .gte('created_at', `${isoDay}T00:00:00`)
+      .lte('created_at', `${isoDay}T23:59:59.999`)
       .order('created_at', { ascending: false });
 
     setJobs((data ?? []).map((j: any) => ({ ...j, worker_name: j.worker?.name })));
@@ -64,72 +75,139 @@ export default function Dashboard() {
   }, [jobs, search]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4 lg:max-w-5xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-900">{t('dashboard.title')}</h1>
-        {appUser?.role === 'admin' && sites.length > 0 && (
-          <select
-            value={siteId ?? ''}
-            onChange={(e) => setSiteId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
+    <Page width="list" className="space-y-5">
+      <PageHeading
+        action={
+          canSwitch && sites.length > 0 ? (
+            <Select
+              aria-label={t('dashboard.site')}
+              value={siteId ?? ''}
+              onChange={(e) => setSiteId(e.target.value)}
+              className="w-auto text-sm"
+            >
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          ) : undefined
+        }
+      >
+        {t('dashboard.title')}
+      </PageHeading>
+
+      {/* Day stepper. "Next" is disabled on today rather than hidden, so the
+          control never changes shape as you move through the week. */}
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface p-2 shadow-card">
+        <IconButton icon="chevronLeft" label={t('dashboard.prevDay')} onClick={() => setDay(shiftDay(day, -1))} />
+        <div className="min-w-0 text-center">
+          <p className="truncate text-sm font-semibold text-ink-900">
+            {isToday
+              ? t('dashboard.today')
+              : new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                })}
+          </p>
+          {!isToday && (
+            <button
+              type="button"
+              onClick={() => setDay(todayIso())}
+              className="text-xs font-medium text-ink-600 underline underline-offset-2"
+            >
+              {t('dashboard.backToToday')}
+            </button>
+          )}
+        </div>
+        <IconButton
+          icon="chevronRight"
+          label={t('dashboard.nextDay')}
+          disabled={isToday}
+          onClick={() => setDay(shiftDay(day, 1))}
+        />
       </div>
 
-      {(duplicateCount > 0 || missingBillingCount > 0) && (
-        <div className="flex flex-wrap gap-2">
+      {/*
+        Triage row. It renders whenever the day has loaded — including the
+        all-clear — so "zero problems today" can never be mistaken for "the
+        flags haven't arrived", which is what two conditionally-rendered pills
+        used to produce on a flaky connection.
+      */}
+      {!loading && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="neutral" icon="clipboard">
+            {t('dashboard.jobCount', { count: jobs.length })}
+          </Badge>
           {duplicateCount > 0 && (
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+            <Badge tone="warn" icon="alertTriangle">
               {t('dashboard.duplicates', { count: duplicateCount })}
-            </span>
+            </Badge>
           )}
           {missingBillingCount > 0 && (
-            <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-700">
+            <Badge tone="neutral" icon="tag">
               {t('dashboard.missingBilling', { count: missingBillingCount })}
-            </span>
+            </Badge>
+          )}
+          {duplicateCount === 0 && missingBillingCount === 0 && jobs.length > 0 && (
+            <Badge tone="ok" icon="checkCircle">
+              {t('dashboard.allClear')}
+            </Badge>
           )}
         </div>
       )}
 
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder={t('dashboard.search') ?? ''}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base"
-      />
+      <div>
+        <SearchField value={search} onChange={setSearch} label={t('dashboard.search')} />
+        {/* The query is scoped to today. The copy now says so, instead of
+            promising a general search and reporting a car as never logged. */}
+        <p className="mt-1.5 text-xs text-ink-600">{t('dashboard.scopeNote')}</p>
+      </div>
 
-      {loading && <p className="text-sm text-slate-500">{t('common.loading')}</p>}
-      {!loading && filtered.length === 0 && <p className="text-sm text-slate-500">{t('dashboard.noResults')}</p>}
+      {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
+
+      {!loading && jobs.length === 0 && (
+        <EmptyState icon="clipboard" title={t('dashboard.emptyTitle')} body={t('dashboard.emptyBody')} />
+      )}
+
+      {!loading && jobs.length > 0 && filtered.length === 0 && (
+        <EmptyState icon="search" title={t('dashboard.noResults')} />
+      )}
 
       <div className="space-y-2">
         {filtered.map((job) => (
           <Link
             key={job.id}
             to={`/jobs/${job.id}`}
-            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3"
+            className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-line-strong"
           >
-            <div>
-              <p className="font-medium text-slate-900">
-                {job.plate} <span className="font-normal text-slate-400">· {job.brand ?? '—'}</span>
+            <div className="min-w-0">
+              <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
+                {job.plate}
+                <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
               </p>
-              <p className="text-xs text-slate-500">{job.vin}</p>
-              <p className="text-xs text-slate-400">
-                {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString()}
+              <p className="truncate font-mono text-xs text-ink-600">{job.vin}</p>
+              <p className="truncate text-xs text-ink-600">
+                {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString(i18n.language)}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              {job.duplicate_of_job_id && <span className="text-xs text-amber-700">⚠</span>}
-              {!job.billing_code && <span className="text-xs text-slate-400">no code</span>}
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              {job.duplicate_of_job_id && (
+                <Badge tone="warn" icon="alertTriangle">
+                  {t('dashboard.duplicateFlag')}
+                </Badge>
+              )}
+              {!job.billing_code && (
+                <Badge tone="neutral" icon="tag">
+                  {t('dashboard.noBillingCode')}
+                </Badge>
+              )}
+              <Icon name="chevronRight" size={18} className="text-ink-500" />
             </div>
           </Link>
         ))}
       </div>
-    </div>
+    </Page>
   );
 }

@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import Logo from '../components/Logo';
+import StatusBanner from '../components/StatusBanner';
+import { AuthShell, Button, Field, LanguageToggle, fieldClass, fieldErrorClass } from '../components/ui';
 
 export default function Login() {
   const { t } = useTranslation();
@@ -24,44 +27,70 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-slate-50 px-6">
-      <form onSubmit={(e) => void handleSubmit(e)} className="w-full max-w-sm space-y-4">
-        <h1 className="text-center text-xl font-semibold text-slate-900">{t('app.name')}</h1>
+    <AuthShell footer={<LanguageToggle compact />}>
+      {/* The wordmark is the brand moment; the heading is the product. Neither
+          is an eyebrow for the other, so they carry different weights. */}
+      <div className="text-ink-900">
+        <Logo height={24} title={t('app.name')} />
+      </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('auth.email')}</label>
+      <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">{t('auth.signIn')}</h1>
+      <p className="mt-2 text-base text-ink-600">{t('app.signInLead')}</p>
+
+      <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-5">
+        <Field htmlFor="login-email" label={t('auth.email')}>
           <input
+            id="login-email"
             type="email"
             required
+            inputMode="email"
             autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="next"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base"
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError(false);
+            }}
+            className={`${fieldClass} ${error ? fieldErrorClass : ''}`}
           />
-        </div>
+        </Field>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('auth.password')}</label>
+        <Field htmlFor="login-password" label={t('auth.password')}>
           <input
+            id="login-password"
             type="password"
             required
             autoComplete="current-password"
+            enterKeyHint="go"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base"
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(false);
+            }}
+            className={`${fieldClass} ${error ? fieldErrorClass : ''}`}
           />
-        </div>
+        </Field>
 
-        {error && <p className="text-sm text-red-600">{t('auth.error')}</p>}
+        {/* One error treatment, the same one the rest of the app uses — and it
+            names the recovery rather than only reporting the failure. */}
+        {error && (
+          <StatusBanner tone="error" live>
+            {t('auth.error')}
+          </StatusBanner>
+        )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-lg bg-brand-600 py-3 font-medium text-white disabled:opacity-60"
-        >
+        <Button type="submit" size="lg" block busy={submitting}>
           {submitting ? t('auth.signingIn') : t('auth.signIn')}
-        </button>
+        </Button>
       </form>
-    </div>
+
+      {/* There is no self-service reset, so the screen has to say what to do
+          instead of showing a "Forgot password?" link that goes nowhere. */}
+      <p className="mt-8 border-t border-line pt-6 text-sm leading-relaxed text-ink-600">
+        {t('auth.forgotHelp')}
+      </p>
+    </AuthShell>
   );
 }
