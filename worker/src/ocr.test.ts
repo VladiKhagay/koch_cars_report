@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatPlate, normalizePlate, normalizeVin, parseDetectObjects, parseOcrAnswer } from './ocr';
 import { isPhotoKind } from './upload';
+import app from './index';
 
 describe('normalizePlate — Israeli formats', () => {
   it('accepts the 8-digit format in every printed grouping', () => {
@@ -186,5 +187,36 @@ describe('isPhotoKind', () => {
     ]) {
       expect(isPhotoKind(bad)).toBe(false);
     }
+  });
+});
+
+/* ------------------------------------------------------------ error mapping */
+
+describe('unauthenticated requests', () => {
+  const env = {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_ANON_KEY: 'anon',
+  } as unknown as Parameters<typeof app.request>[2];
+
+  /*
+   * Regression: these all used to come back 500 "Internal error", because
+   * onError matched a message string the jwk middleware never emits. A worker
+   * whose session expired saw an outage instead of "sign in again", and real
+   * server faults were indistinguishable from routine auth failures.
+   */
+  it.each([
+    ['POST', '/upload?jobId=x&kind=plate'],
+    ['POST', '/ocr'],
+    ['GET', '/photo/abc/plate'],
+    ['POST', '/invite'],
+  ])('%s %s answers 401, not 500', async (method, path) => {
+    const res = await app.request(path, { method }, env);
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({ error: 'Unauthorized' });
+  });
+
+  it('leaves the unauthenticated health check alone', async () => {
+    const res = await app.request('/health', {}, env);
+    expect(res.status).toBe(200);
   });
 });

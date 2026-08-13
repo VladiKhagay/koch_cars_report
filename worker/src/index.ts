@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { jwk } from 'hono/jwk';
 import type { JwtVariables } from 'hono/jwt';
 import { handleOcr } from './ocr';
@@ -63,9 +64,19 @@ app.get('/photo/:jobId/:kind', handleGetPhoto);
 app.post('/invite', handleInvite);
 
 app.onError((err, c) => {
+  /*
+   * A rejected token is the caller's problem, not a server fault. The previous
+   * version matched on `err.message === 'Unauthorized'`, which the jwk
+   * middleware never produces — it throws an HTTPException — so every expired
+   * session, every missing header and every bad signature came back as
+   * 500 "Internal error". That reads as an outage, hides the one action that
+   * fixes it (sign in again), and buries real 500s in the same bucket.
+   */
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.status === 401 ? 'Unauthorized' : err.message }, err.status);
+  }
   console.error(err);
-  const status = err.message === 'Unauthorized' ? 401 : 500;
-  return c.json({ error: status === 401 ? 'Unauthorized' : 'Internal error' }, status);
+  return c.json({ error: 'Internal error' }, 500);
 });
 
 export default app;

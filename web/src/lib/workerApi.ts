@@ -60,17 +60,41 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
   }
 }
 
+/**
+ * Why a photo could not be shown. The viewer used to be told only "no url",
+ * so its one empty state blamed the 90-day expiry for everything — including
+ * photos that were never uploaded and sessions that had simply expired.
+ */
+export type PhotoFailure =
+  /** The Worker has no object at this key: never uploaded, or expired. */
+  | 'missing'
+  /** Token rejected or the job isn't visible to this user. */
+  | 'denied'
+  /** Network, or the Worker itself failed. Worth retrying. */
+  | 'failed';
+
+export type PhotoResult = { url: string } | { failure: PhotoFailure };
+
 /** Fetches a private R2 photo through the Worker and returns a local object URL. */
-export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<string | null> {
+export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<PhotoResult> {
+  // Resolved separately from the request: authHeader() throws when there is no
+  // session, and folding that into the network catch below would tell someone
+  // whose login had lapsed to go and check their connection.
+  let authorization: string;
   try {
-    const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, {
-      headers: { Authorization: await authHeader() },
-    });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
+    authorization = await authHeader();
   } catch {
-    return null;
+    return { failure: 'denied' };
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, { headers: { Authorization: authorization } });
+    if (res.ok) return { url: URL.createObjectURL(await res.blob()) };
+    if (res.status === 404) return { failure: 'missing' };
+    if (res.status === 401 || res.status === 403) return { failure: 'denied' };
+    return { failure: 'failed' };
+  } catch {
+    return { failure: 'failed' };
   }
 }
 

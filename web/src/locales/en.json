@@ -248,8 +248,12 @@
   },
   "photo": {
     "loading": "Loading photo…",
-    "unavailable": "Photo unavailable",
-    "expiredHint": "Photos are deleted 90 days after the job."
+    "missingTitle": "No photo saved",
+    "missingBody": "Either it was never uploaded, or the job is over 90 days old and the photo has been removed.",
+    "deniedTitle": "Can't open this photo",
+    "deniedBody": "Your session may have expired. Sign out and back in, then try again.",
+    "failedTitle": "Couldn't load the photo",
+    "failedBody": "Check your connection — the photo itself is fine."
   },
   "export": {
     "title": "Export",

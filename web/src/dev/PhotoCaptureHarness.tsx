@@ -10,6 +10,7 @@
  */
 import { useState } from 'react';
 import PhotoCapture from '../components/PhotoCapture';
+import PhotoViewer from '../components/PhotoViewer';
 import { Page, PageHeading } from '../components/ui';
 
 const PIXEL =
@@ -34,6 +35,15 @@ export default function PhotoCaptureHarness() {
         <PhotoCapture label="OCR failed" photo={pngBlob()} error="blurry" onCapture={() => {}} onTypeItIn={() => {}} />
         <PhotoCapture label="Removable" photo={pngBlob()} onCapture={() => {}} onRemove={() => {}} />
         <PhotoCapture label="Live" photo={photo} onCapture={setPhoto} onRemove={() => setPhoto(null)} />
+      </div>
+
+      {/* The three failure states, which need a signed-in manager and a
+          broken photo to reach in the real app. Every id below 404s. */}
+      <PageHeading>PhotoViewer failure states</PageHeading>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <PhotoViewer jobId="missing-job" kind="plate" label="missing (404)" />
+        <PhotoViewer jobId="denied-job" kind="vin" label="denied (401/403)" />
+        <PhotoViewer jobId="failed-job" kind="extra_1" label="failed (network)" />
       </div>
 
       <PageHeading>Extra photo slots</PageHeading>
