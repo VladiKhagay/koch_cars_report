@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-14T00:00:00.000Z",
+  "title": "Design System: Vehicle Prep Tracker",
+  "extensions": {
+    "colorMeta": {
+      "brand-graphite": {
+        "role": "primary",
+        "displayName": "Brand Graphite",
+        "canonical": "#1e1e1e",
+        "tonalRamp": ["#141414", "#1e1e1e", "#282d35", "#3b424d", "#525a67", "#67707e", "#9aa1ae", "#d3d8e0"]
+      },
+      "graphite-deep": {
+        "role": "primary",
+        "displayName": "Graphite Deep",
+        "canonical": "#141414",
+        "tonalRamp": ["#141414", "#1e1e1e", "#282d35", "#3b424d", "#525a67", "#67707e", "#9aa1ae", "#d3d8e0"]
+      },
+      "lockup-grey": {
+        "role": "secondary",
+        "displayName": "Lockup Grey",
+        "canonical": "#919396",
+        "tonalRamp": ["#2e2f30", "#454647", "#5c5d5f", "#747577", "#919396", "#adaeb1", "#c9cacc", "#e6e6e8"]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#141414", "#282d35", "#3b424d", "#67707e", "#9aa1ae", "#d3d8e0", "#f1f3f6", "#ffffff"]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "#f7f8fa",
+        "tonalRamp": ["#141414", "#282d35", "#3b424d", "#67707e", "#9aa1ae", "#d3d8e0", "#f1f3f6", "#f7f8fa"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e7eaef",
+        "tonalRamp": ["#141414", "#282d35", "#3b424d", "#525a67", "#9aa1ae", "#d3d8e0", "#e7eaef", "#f7f8fa"]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "#d3d8e0",
+        "tonalRamp": ["#141414", "#282d35", "#3b424d", "#525a67", "#9aa1ae", "#d3d8e0", "#e7eaef", "#f7f8fa"]
+      },
+      "slate-quiet": {
+        "role": "neutral",
+        "displayName": "Slate Quiet",
+        "canonical": "#67707e",
+        "tonalRamp": ["#141414", "#1e1e1e", "#282d35", "#3b424d", "#525a67", "#67707e", "#9aa1ae", "#d3d8e0"]
+      },
+      "slate-secondary": {
+        "role": "neutral",
+        "displayName": "Slate Secondary",
+        "canonical": "#525a67",
+        "tonalRamp": ["#141414", "#1e1e1e", "#282d35", "#3b424d", "#525a67", "#67707e", "#9aa1ae", "#d3d8e0"]
+      },
+      "confirm": {
+        "role": "tertiary",
+        "displayName": "Confirm",
+        "canonical": "#047857",
+        "tonalRamp": ["#022c22", "#036b4e", "#047857", "#0d9668", "#34b98a", "#6ed3ae", "#a7e3c6", "#ecfdf5"]
+      },
+      "caution": {
+        "role": "tertiary",
+        "displayName": "Caution",
+        "canonical": "#8a5a0b",
+        "tonalRamp": ["#3d2704", "#5c3b07", "#8a5a0b", "#b4780f", "#d99a24", "#e8bc63", "#f5dfa6", "#fffbeb"]
+      },
+      "alarm": {
+        "role": "tertiary",
+        "displayName": "Alarm",
+        "canonical": "#c0271d",
+        "tonalRamp": ["#4a0f0a", "#7a1a13", "#a52219", "#c0271d", "#d9503f", "#e88274", "#f4c4bd", "#fef2f2"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Largest stat readouts only. Rare." },
+      "headline": { "displayName": "Headline", "purpose": "The page title. One per screen." },
+      "title": { "displayName": "Title", "purpose": "Card-level section headings and empty-state titles. Sentence case." },
+      "body": { "displayName": "Body", "purpose": "Field input text and reading copy. Never below 1rem in a field — smaller triggers iOS zoom-on-focus." },
+      "label": { "displayName": "Label", "purpose": "The workhorse: field labels, button text, nav items, table cells, secondary copy." },
+      "micro": { "displayName": "Micro", "purpose": "Badges and dense metadata. Raised to 13px so a stray micro label still clears the sunlight legibility floor." },
+      "identifier": { "displayName": "Identifier", "purpose": "Plates, VINs, catalog numbers, stat values. Pinned LTR and bidi-isolated." }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)",
+        "purpose": "Every resting card, list row, skeleton, and empty state. Barely there by design; pairs with a hairline."
+      },
+      {
+        "name": "raised",
+        "value": "0 4px 8px -2px rgb(16 24 40 / 0.06), 0 12px 24px -6px rgb(16 24 40 / 0.1)",
+        "purpose": "Surfaces floating above the canvas — the sign-in panel at ≥640px, sheets, large panels."
+      },
+      {
+        "name": "bar",
+        "value": "0 -1px 2px 0 rgb(16 24 40 / 0.04), 0 -8px 24px -8px rgb(16 24 40 / 0.1)",
+        "purpose": "Upward-cast, exclusively for the fixed bottom tab bar."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "150ms",
+        "purpose": "The only duration in the system. Colour transitions on buttons, chips, fields, and nav items. Nothing animates geometry."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce → 0.01ms, iteration-count 1",
+        "purpose": "All animation and transition collapses globally. Honoured at the stylesheet root, not per-component."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action on a screen. Near-black on white — in a monochrome palette the highest-contrast pairing is also the most sunlight-legible.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg><span>Submit job</span></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--spacing-control, 3rem); padding: 0 16px; border: 1px solid var(--color-ink-900, #1e1e1e); border-radius: var(--radius-lg, 0.75rem); background: var(--color-ink-900, #1e1e1e); color: var(--color-surface, #fff); font: 600 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); transition: background-color 150ms; } .ds-btn-primary:hover { background: var(--color-ink-800, #282d35); } .ds-btn-primary:active { background: var(--color-ink-950, #141414); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-ink-900, #1e1e1e); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Everything that isn't the one action. Paper fill with a findable border.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--spacing-control, 3rem); padding: 0 16px; border: 1px solid var(--color-ink-300, #d3d8e0); border-radius: var(--radius-lg, 0.75rem); background: var(--color-surface, #fff); color: var(--color-ink-900, #1e1e1e); font: 600 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); transition: background-color 150ms; } .ds-btn-secondary:hover { background: var(--color-ink-50, #f7f8fa); } .ds-btn-secondary:active { background: var(--color-ink-100, #f1f3f6); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--color-ink-900, #1e1e1e); outline-offset: 2px; }"
+    },
+    {
+      "name": "Service Chip",
+      "kind": "chip",
+      "refersTo": "chip-selected",
+      "description": "The most-tapped control in the product — one tap per car, hundreds of times a day. Selection is marked by the glyph AND the fill, never by colour alone; the box never changes size between states.",
+      "html": "<div class=\"ds-chiprow\" role=\"radiogroup\" aria-label=\"Service\"><button class=\"ds-chip is-selected\" role=\"radio\" aria-checked=\"true\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6 9 17l-5-5\"/></svg><span>Exterior wash</span></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg><span>Interior detail</span></button></div>",
+      "css": ".ds-chiprow { display: flex; flex-wrap: wrap; gap: 8px; } .ds-chip { display: inline-flex; align-items: center; gap: 8px; min-height: var(--spacing-control, 3rem); padding: 0 14px; border: 1px solid var(--color-ink-300, #d3d8e0); border-radius: var(--radius-lg, 0.75rem); background: var(--color-surface, #fff); color: var(--color-ink-900, #1e1e1e); font: 600 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); transition: background-color 150ms; } .ds-chip:hover { background: var(--color-ink-50, #f7f8fa); } .ds-chip.is-selected { background: var(--color-ink-900, #1e1e1e); border-color: var(--color-ink-900, #1e1e1e); color: var(--color-surface, #fff); } .ds-chip:focus-visible { outline: 2px solid var(--color-ink-900, #1e1e1e); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "48px tall, 1rem text so iOS never zooms on focus. Focus shifts the border to brand graphite; the label is sentence case, never letterspaced caps.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-plate\">Plate<span class=\"ds-field-optional\">Optional</span></label><input class=\"ds-field-input\" id=\"ds-plate\" value=\"12-345-67\" inputmode=\"text\" autocapitalize=\"characters\"></div>",
+      "css": ".ds-field-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-bottom: 8px; color: var(--color-ink-700, #3b424d); font: 500 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); } .ds-field-optional { color: var(--color-ink-500, #67707e); } .ds-field-input { display: block; width: 100%; height: var(--spacing-control, 3rem); padding: 0 14px; border: 1px solid var(--color-ink-300, #d3d8e0); border-radius: var(--radius-lg, 0.75rem); background: var(--color-surface, #fff); color: var(--color-ink-900, #1e1e1e); font: 400 1rem/1.5rem var(--font-mono, ui-monospace, monospace); direction: ltr; unicode-bidi: isolate; transition: border-color 150ms; } .ds-field-input::placeholder { color: var(--color-ink-500, #67707e); opacity: 1; } .ds-field-input:focus { border-color: var(--color-ink-900, #1e1e1e); } .ds-field-input:focus-visible { outline: 2px solid var(--color-ink-900, #1e1e1e); outline-offset: 2px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Hairline plus the Card shadow. At this contrast level neither alone reads as a surface.",
+      "html": "<div class=\"ds-card\"><h2 class=\"ds-card-title\">Today</h2><p class=\"ds-card-body\">42 jobs recorded across 3 sites.</p></div>",
+      "css": ".ds-card { padding: 16px; border: 1px solid var(--color-ink-200, #e7eaef); border-radius: var(--radius-xl, 1rem); background: var(--color-surface, #fff); box-shadow: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06); } .ds-card-title { margin: 0 0 12px; color: var(--color-ink-900, #1e1e1e); font: 600 1rem/1.5rem var(--font-sans, system-ui, sans-serif); letter-spacing: -0.014em; } .ds-card-body { margin: 0; color: var(--color-ink-600, #525a67); font: 400 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-ok",
+      "description": "Read-only. Deliberately not a button and never wired to an action — the old UI used one element as both the Active badge and the deactivate control. Always an icon AND a word.",
+      "html": "<div class=\"ds-badgerow\"><span class=\"ds-badge ds-badge-ok\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg>Complete</span><span class=\"ds-badge ds-badge-warn\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m10.29 3.86-8.47 14.14A2 2 0 0 0 3.53 21h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z\"/><path d=\"M12 9v4M12 17h.01\"/></svg>Check VIN</span><span class=\"ds-badge ds-badge-neutral\">Queued</span></div>",
+      "css": ".ds-badgerow { display: flex; flex-wrap: wrap; gap: 8px; } .ds-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid; border-radius: 6px; font: 600 0.8125rem/1.125rem var(--font-sans, system-ui, sans-serif); } .ds-badge-ok { background: var(--color-ok-50, #ecfdf5); border-color: var(--color-ok-200, #a7e3c6); color: var(--color-ok-700, #036b4e); } .ds-badge-warn { background: var(--color-warn-50, #fffbeb); border-color: var(--color-warn-200, #f5dfa6); color: var(--color-warn-700, #8a5a0b); } .ds-badge-neutral { background: var(--color-ink-50, #f7f8fa); border-color: var(--color-ink-200, #e7eaef); color: var(--color-ink-700, #3b424d); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Persistent at ≥768px. Active state is a filled near-black row; resting rows carry a quieter glyph than their label so the icon never outshouts the word.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main\"><a class=\"ds-nav-item is-active\" href=\"#\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg><span>New job</span></a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01\"/></svg><span>My jobs</span></a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 4px; width: 240px; padding: 16px; background: var(--color-surface, #fff); } .ds-nav-item { display: flex; align-items: center; gap: 12px; min-height: var(--spacing-tap, 2.75rem); padding: 0 12px; border-radius: var(--radius-lg, 0.75rem); color: var(--color-ink-700, #3b424d); text-decoration: none; font: 600 0.875rem/1.25rem var(--font-sans, system-ui, sans-serif); transition: background-color 150ms; } .ds-nav-item svg { color: var(--color-ink-500, #67707e); } .ds-nav-item:hover { background: var(--color-ink-100, #f1f3f6); } .ds-nav-item.is-active { background: var(--color-ink-900, #1e1e1e); color: var(--color-surface, #fff); } .ds-nav-item.is-active svg { color: inherit; } .ds-nav-item:focus-visible { outline: 2px solid var(--color-ink-900, #1e1e1e); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calibrated Instrument",
+    "overview": "This is a measuring tool that happens to run in a browser. A worker holds it in one hand, next to a car, in direct sunlight, and uses it to record a fact — plate, VIN, service, photo — that a customer will later be billed against. Every visual decision answers to that scene. The body of the instrument is monochrome and quiet, because an instrument that decorates itself is competing with the reading it is supposed to give. Colour is the reading: it appears only where a state must register instantly, and it never appears alone.\n\nThe identity is inherited, not invented. Koch-Chemie supplies three values — a near-black (#1e1e1e), a grey (#919396), and white — and those are brand moments, not an interface. Building whole surfaces out of three monochrome values produced flat, dated grey; so the working ramp carries a slight cool cast that stays visually neutral beside the brand near-black while reading crisp rather than photocopier-grey. The exact brand near-black survives untouched as the darkest working step, where it does the most work: body text, the primary action, the selected chip, the active nav item.\n\nDepth is structural, not decorative. Hairlines are deliberately light and carry only the edge of a thing; separation comes from a small, cool-tinted elevation vocabulary. Density is generous by mandate rather than by taste — nothing tappable is under 44px, and the spacing scale names that floor so it is legible in the markup instead of buried in a padding value. The product is light-mode only by client decision, but every surface, line, and text value is a semantic alias over the ramp, so a future dark theme redefines aliases rather than components.",
+    "keyCharacteristics": [
+      "Monochrome body, one high-contrast action, status colour used sparingly and always doubled with an icon and a word",
+      "A cool-cast neutral ramp anchored on the exact brand near-black",
+      "One system font stack, no webfont — full Cyrillic and Hebrew coverage without shipping a file over mobile data",
+      "Touch floors named in the token set, not implied by padding",
+      "Elevation carries depth; hairlines only define edges",
+      "Sentence case everywhere; no letterspaced all-caps micro-labels",
+      "Latin-script identifiers (plate, VIN, catalog number) are pinned LTR and bidi-isolated inside any script"
+    ],
+    "rules": [
+      { "name": "The Lockup-Only Rule", "body": "#919396 is a brand value, not a UI value. At 3.08:1 it is too heavy for a hairline and unusable for body copy. It appears in the wordmark and nowhere else.", "section": "colors" },
+      { "name": "The Never-Alone Rule", "body": "Colour never carries meaning by itself. Every status surface pairs its hue with an icon and a word. A phone screen in direct sun loses hue long before it loses shape.", "section": "colors" },
+      { "name": "The One Dark Rule", "body": "There is exactly one near-black. If a surface needs to be dark, it is Brand Graphite — not a second, softer black chosen for a particular screen.", "section": "colors" },
+      { "name": "The Sentence-Case Rule", "body": "Every label, heading, and button is sentence case. Letterspaced all-caps micro-labels are banned outright: they read as a database column header rather than as the heading of the thing beneath them.", "section": "typography" },
+      { "name": "The Identifier Isolation Rule", "body": "font-mono marks exactly one thing: a Latin-script identifier. Those runs are pinned direction: ltr with unicode-bidi: isolate, because inside a Hebrew paragraph the bidi algorithm can reorder a VIN. A VIN is not a sentence.", "section": "typography" },
+      { "name": "The 16px Field Rule", "body": "Never set an input below 1rem.", "section": "typography" },
+      { "name": "The One Container Rule", "body": "A page never sets its own max-width. If a width is wrong, the container's three settings are wrong.", "section": "layout" },
+      { "name": "The md-Not-lg Rule", "body": "Any layout change that responds to the sidebar happens at md, because that is where the sidebar appears.", "section": "layout" },
+      { "name": "The Border-Plus-Elevation Rule", "body": "A card carries both a hairline and the Card shadow. The hairline defines where the surface ends; the shadow says it is above the page. Neither alone is enough at this contrast level.", "section": "elevation" },
+      { "name": "The No-Shift Rule", "body": "State changes swap colour, never geometry. A selected chip and an unselected chip occupy exactly the same box.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do resolve every brand-carrying value from the @theme block in web/src/index.css. It is the single source of truth; swapping the ramp should re-skin the product, charts, and install splash with no component edits.",
+      "Do pair every status colour with an icon and a word.",
+      "Do keep anything tappable at 44px minimum, and use the named tap / control / control-lg tokens so the floor is visible in the markup.",
+      "Do set inputs at 1rem or larger, always.",
+      "Do use logical directional properties (start/end, ps/pe, border-e) so Hebrew mirrors for free.",
+      "Do mark Latin-script identifiers with the monospace role, which pins them LTR and bidi-isolates them.",
+      "Do paint charts with token-bound fill/stroke utilities so they swap with the palette.",
+      "Do give a card both a hairline and the Card shadow.",
+      "Do route every page's width through the one container, widening at md.",
+      "Do name an icon-only control; the label is both its accessible name and its tooltip."
+    ],
+    "donts": [
+      "Don't build surfaces out of the three brand values alone (#1e1e1e / #919396 / #ffffff). That combination produced the flat, dated grey this system was built to replace.",
+      "Don't use Lockup Grey (#919396) for hairlines, borders, or body text. At 3.08:1 it fails both.",
+      "Don't mute the status hues toward sepia. Muddied status colour was the main reason the earlier pass read as dated.",
+      "Don't use letterspaced all-caps micro-labels anywhere.",
+      "Don't use Slate Mute (#9aa1ae) as text. It is 2.9:1 — disabled states and empty-state glyphs only.",
+      "Don't introduce a second near-black, a second accent, or a webfont.",
+      "Don't let a state change alter geometry; swap colour, keep the box.",
+      "Don't write a hex value, a slate-* utility, or a raw pixel radius into a component.",
+      "Don't wire a badge to an action, or let anything destructive fire on first tap.",
+      "Don't ship a dark theme. Light mode is a client decision; the structure is dark-ready, but the decision is not ours to reverse.",
+      "Don't add a decorative icon, or an icon tile above a heading."
+    ]
+  }
+}

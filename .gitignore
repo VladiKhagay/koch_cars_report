@@ -25,3 +25,6 @@ web/.design-sync/compiled.css
 # and per-user permissions. Nothing here is needed to build or deploy.
 # Drop this line if you decide the team should share it.
 .claude/
+
+# Generated knowledge graph (graphify) — rebuildable, 1.3M with cache
+graphify-out/
