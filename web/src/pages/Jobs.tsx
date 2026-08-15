@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
 import { searchTerm } from '../lib/search';
 import { useSiteScope } from '../lib/useSiteScope';
@@ -41,6 +42,7 @@ import {
   ConfirmPanel,
   EmptyState,
   IconButton,
+  Group,
   Page,
   PageHeading,
   SearchField,
@@ -194,7 +196,7 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
     helper.accessor('vin', {
       id: 'vin',
       header: () => t('jobs.vin'),
-      cell: ({ getValue }) => <CellMuted>{getValue()}</CellMuted>,
+      cell: ({ getValue }) => <CellMuted mono>{getValue()}</CellMuted>,
     }),
     helper.accessor((row) => handlers.current.serviceName(row), {
       id: 'service',
@@ -236,6 +238,15 @@ export default function Jobs() {
   const [rows, setRows] = useState<JobRow[]>(NO_ROWS);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+
+  /* Paging swapped the rows out from under the reader: you pressed Next at the
+     bottom of fifty rows and stayed at the bottom, now looking at row 50 of the
+     next page. Send them back to the first row. */
+  const goToPage = useCallback((next: (p: number) => number) => {
+    setPage(next);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  }, []);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [workers, setWorkers] = useState<Pick<AppUser, 'id' | 'name'>[]>([]);
@@ -328,8 +339,7 @@ export default function Jobs() {
   );
 
   const serviceName = useCallback(
-    (job: JobRow) =>
-      job.service ? (i18n.language === 'ru' && job.service.name_ru ? job.service.name_ru : job.service.name_en) : '—',
+    (job: JobRow): string => localizedServiceName(job.service, i18n.language) ?? '—',
     [i18n.language],
   );
 
@@ -414,189 +424,192 @@ export default function Jobs() {
   const filtered = Boolean(search || workerFilter || from || to || (canSwitch && siteFilter));
 
   return (
-    <Page width="wide" className="space-y-5">
+    <Page width="wide">
       <PageHeading lead={t('jobs.lead')}>{t('jobs.title')}</PageHeading>
 
-      <TableCard
-        toolbar={
-          <div className="space-y-2">
-            <SearchField value={search} onChange={setSearch} label={t('jobs.search')} />
+      {/* The table, the states it can be in, and its pager. */}
+      <Group>
+        <TableCard
+          toolbar={
+            <div className="space-y-2">
+              <SearchField value={search} onChange={setSearch} label={t('jobs.search')} />
 
-            <div className="flex flex-wrap items-end gap-2">
-              {canSwitch && (
+              <div className="flex flex-wrap items-end gap-2">
+                {canSwitch && (
+                  <label className="min-w-40 flex-1">
+                    <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.site')}</span>
+                    <Select value={siteFilter ?? ''} onChange={(e) => setSiteFilter(e.target.value)}>
+                      <option value="">{t('jobs.allSites')}</option>
+                      {sites.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                )}
+
                 <label className="min-w-40 flex-1">
-                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.site')}</span>
-                  <Select value={siteFilter ?? ''} onChange={(e) => setSiteFilter(e.target.value)}>
-                    <option value="">{t('jobs.allSites')}</option>
-                    {sites.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
+                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.worker')}</span>
+                  <Select value={workerFilter} onChange={(e) => setWorkerFilter(e.target.value)}>
+                    <option value="">{t('jobs.allWorkers')}</option>
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
                       </option>
                     ))}
                   </Select>
                 </label>
-              )}
 
-              <label className="min-w-40 flex-1">
-                <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.worker')}</span>
-                <Select value={workerFilter} onChange={(e) => setWorkerFilter(e.target.value)}>
-                  <option value="">{t('jobs.allWorkers')}</option>
-                  {workers.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+                <label className="min-w-32 flex-1">
+                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.from')}</span>
+                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
+                </label>
 
-              <label className="min-w-32 flex-1">
-                <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.from')}</span>
-                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
-              </label>
+                <label className="min-w-32 flex-1">
+                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.to')}</span>
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
+                </label>
 
-              <label className="min-w-32 flex-1">
-                <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.to')}</span>
-                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
-              </label>
-
-              {filtered && (
-                <Button
-                  variant="secondary"
-                  icon="x"
-                  onClick={() => {
-                    setSearch('');
-                    setWorkerFilter('');
-                    setFrom('');
-                    setTo('');
-                    if (canSwitch) setSiteFilter(siteId);
-                  }}
-                >
-                  {t('jobs.clearFilters')}
-                </Button>
-              )}
+                {filtered && (
+                  <Button
+                    variant="secondary"
+                    icon="x"
+                    onClick={() => {
+                      setSearch('');
+                      setWorkerFilter('');
+                      setFrom('');
+                      setTo('');
+                      if (canSwitch) setSiteFilter(siteId);
+                    }}
+                  >
+                    {t('jobs.clearFilters')}
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        }
-      >
-        <Table minWidth={68}>
-          <THead>
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => (
-                  <Th key={header.id} align={header.column.id === 'flags' ? 'end' : 'start'}>
-                    {header.isPlaceholder ? null : <table.FlexRender header={header} />}
-                  </Th>
+          }
+        >
+          <Table minWidth={68}>
+            <THead>
+              {table.getHeaderGroups().map((group) => (
+                <tr key={group.id}>
+                  {group.headers.map((header) => (
+                    <Th key={header.id} align={header.column.id === 'flags' ? 'end' : 'start'}>
+                      {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                    </Th>
+                  ))}
+                </tr>
+              ))}
+            </THead>
+            <TBody>
+              {loading &&
+                rows.length === 0 &&
+                Array.from({ length: 6 }).map((_, i) => (
+                  <Tr key={`skeleton-${i}`}>
+                    {Array.from({ length: columnCount }).map((__, j) => (
+                      <Td key={j}>
+                        <Skeleton className="h-4 w-full" />
+                      </Td>
+                    ))}
+                  </Tr>
                 ))}
-              </tr>
-            ))}
-          </THead>
-          <TBody>
-            {loading &&
-              rows.length === 0 &&
-              Array.from({ length: 6 }).map((_, i) => (
-                <Tr key={`skeleton-${i}`}>
-                  {Array.from({ length: columnCount }).map((__, j) => (
-                    <Td key={j}>
-                      <Skeleton className="h-4 w-full" />
+
+              {/* A row and its duplicate panel are two <tr>s that belong together —
+                  a Fragment keys them as one unit without wrapping them in an
+                  element <tbody> would reject. */}
+              {table.getRowModel().rows.map((row) => (
+                <Fragment key={row.id}>
+                <Tr active={dupeFor === row.original.id}>
+                  {row.getAllCells().map((cell) => (
+                    <Td key={cell.id} align={cell.column.id === 'flags' ? 'end' : 'start'}>
+                      <table.FlexRender cell={cell} />
                     </Td>
                   ))}
                 </Tr>
+
+                {dupeFor === row.original.id && (
+                  <TrExpanded colSpan={columnCount}>
+                    {original === null ? (
+                      <Skeleton className="h-24 w-full" />
+                    ) : original === 'missing' ? (
+                      // Still offer the delete: the flag is on this row, and the
+                      // manager can see the row it flags even if we can't.
+                      <ConfirmPanel
+                        icon="trash"
+                        question={t('jobs.duplicateUnknown')}
+                        confirmLabel={t('jobs.deleteCopy')}
+                        onConfirm={() => void deleteCopy(row.original)}
+                        onCancel={() => setDupeFor(null)}
+                      />
+                    ) : (
+                      <ConfirmPanel
+                        icon="trash"
+                        question={t('jobs.duplicateQuestion', {
+                          plate: original.plate,
+                          date: new Date(original.created_at).toLocaleString(i18n.language, {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          }),
+                          worker: original.worker?.name ?? '—',
+                          service: serviceName(original),
+                        })}
+                        confirmLabel={t('jobs.deleteCopy')}
+                        onConfirm={() => void deleteCopy(row.original)}
+                        onCancel={() => setDupeFor(null)}
+                      />
+                    )}
+                  </TrExpanded>
+                )}
+                </Fragment>
               ))}
+            </TBody>
+          </Table>
+        </TableCard>
 
-            {/* A row and its duplicate panel are two <tr>s that belong together —
-                a Fragment keys them as one unit without wrapping them in an
-                element <tbody> would reject. */}
-            {table.getRowModel().rows.map((row) => (
-              <Fragment key={row.id}>
-              <Tr active={dupeFor === row.original.id}>
-                {row.getAllCells().map((cell) => (
-                  <Td key={cell.id} align={cell.column.id === 'flags' ? 'end' : 'start'}>
-                    <table.FlexRender cell={cell} />
-                  </Td>
-                ))}
-              </Tr>
+        {failed && (
+          <EmptyState icon="alertCircle" title={t('common.error')} action={<Button icon="sync" onClick={() => void load()}>{t('common.retry')}</Button>} />
+        )}
 
-              {dupeFor === row.original.id && (
-                <TrExpanded colSpan={columnCount}>
-                  {original === null ? (
-                    <Skeleton className="h-24 w-full" />
-                  ) : original === 'missing' ? (
-                    // Still offer the delete: the flag is on this row, and the
-                    // manager can see the row it flags even if we can't.
-                    <ConfirmPanel
-                      icon="trash"
-                      question={t('jobs.duplicateUnknown')}
-                      confirmLabel={t('jobs.deleteCopy')}
-                      onConfirm={() => void deleteCopy(row.original)}
-                      onCancel={() => setDupeFor(null)}
-                    />
-                  ) : (
-                    <ConfirmPanel
-                      icon="trash"
-                      question={t('jobs.duplicateQuestion', {
-                        plate: original.plate,
-                        date: new Date(original.created_at).toLocaleString(i18n.language, {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        }),
-                        worker: original.worker?.name ?? '—',
-                        service: serviceName(original),
-                      })}
-                      confirmLabel={t('jobs.deleteCopy')}
-                      onConfirm={() => void deleteCopy(row.original)}
-                      onCancel={() => setDupeFor(null)}
-                    />
-                  )}
-                </TrExpanded>
-              )}
-              </Fragment>
-            ))}
-          </TBody>
-        </Table>
-      </TableCard>
+        {!loading && !failed && total === 0 && (
+          <EmptyState
+            icon={filtered ? 'search' : 'clipboard'}
+            title={filtered ? t('jobs.noMatchesTitle') : t('jobs.emptyTitle')}
+            body={filtered ? t('jobs.noMatchesBody') : t('jobs.emptyBody')}
+          />
+        )}
 
-      {failed && (
-        <EmptyState icon="alertCircle" title={t('common.error')} action={<Button icon="sync" onClick={() => void load()}>{t('common.retry')}</Button>} />
-      )}
-
-      {!loading && !failed && total === 0 && (
-        <EmptyState
-          icon={filtered ? 'search' : 'clipboard'}
-          title={filtered ? t('jobs.noMatchesTitle') : t('jobs.emptyTitle')}
-          body={filtered ? t('jobs.noMatchesBody') : t('jobs.emptyBody')}
-        />
-      )}
-
-      {total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-ink-600" role="status" aria-live="polite">
-            {t('jobs.showing', { first: firstShown, last: lastShown, total })}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              icon="chevronLeft"
-              disabled={page === 0 || loading}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-            >
-              {t('jobs.prev')}
-            </Button>
-            <span className="text-sm font-medium tabular-nums text-ink-700">
-              {t('jobs.pageOf', { page: page + 1, pages: lastPage + 1 })}
-            </span>
-            <Button
-              variant="secondary"
-              icon="chevronRight"
-              disabled={page >= lastPage || loading}
-              onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
-            >
-              {t('jobs.next')}
-            </Button>
+        {total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-ink-600" role="status" aria-live="polite">
+              {t('jobs.showing', { first: firstShown, last: lastShown, total })}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                icon="chevronLeft"
+                disabled={page === 0 || loading}
+                onClick={() => goToPage((p) => Math.max(0, p - 1))}
+              >
+                {t('jobs.prev')}
+              </Button>
+              <span className="text-sm font-medium tabular-nums text-ink-700">
+                {t('jobs.pageOf', { page: page + 1, pages: lastPage + 1 })}
+              </span>
+              <Button
+                variant="secondary"
+                icon="chevronRight"
+                disabled={page >= lastPage || loading}
+                onClick={() => goToPage((p) => Math.min(lastPage, p + 1))}
+              >
+                {t('jobs.next')}
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Group>
     </Page>
   );
 }

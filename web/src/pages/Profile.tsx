@@ -78,7 +78,7 @@ export default function Profile() {
   }
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       <PageHeading>{t('profile.title')}</PageHeading>
 
       {/*
@@ -87,7 +87,7 @@ export default function Profile() {
         a worker who has been moved to the wrong site needs to be able to spot
         that themselves rather than discover it as a missing car.
       */}
-      <Card className="p-5">
+      <Card>
         <SectionHeading icon="user">{t('profile.account')}</SectionHeading>
 
         <DataList
@@ -132,7 +132,7 @@ export default function Profile() {
         </form>
       </Card>
 
-      <Card className="p-5">
+      <Card>
         <SectionHeading icon="lock">{t('profile.passwordSection')}</SectionHeading>
 
         <form onSubmit={(e) => void savePassword(e)} className="space-y-4">
@@ -200,7 +200,7 @@ export default function Profile() {
         and wired to nothing, which left a bilingual app with no way to change
         language — for a Russian-speaking worker that is the whole interface.
       */}
-      <Card className="p-5">
+      <Card>
         <SectionHeading icon="language">{t('profile.languageSection')}</SectionHeading>
         <LanguageToggle block />
       </Card>

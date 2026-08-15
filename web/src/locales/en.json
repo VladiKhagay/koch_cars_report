@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Vehicle Prep Tracker",
+    "name": "Koch-Chemie Car Tracker",
     "signInLead": "Sign in to log vehicle prep jobs."
   },
   "auth": {
@@ -26,7 +26,8 @@
     "more": "More",
     "profile": "Profile",
     "account": "Account",
-    "mainNav": "Main navigation"
+    "mainNav": "Main navigation",
+    "skipToContent": "Skip to content"
   },
   "welcome": {
     "title": "Welcome",

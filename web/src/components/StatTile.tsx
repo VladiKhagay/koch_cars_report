@@ -6,9 +6,12 @@
  */
 export default function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+    /* These sit three across on the worker's own phone, so the padding gives
+       way before the label does: at 320px a fixed p-4 leaves ~56px of text
+       column and "Jobs this month" breaks into four lines. */
+    <div className="rounded-xl border border-line bg-surface p-3 shadow-card sm:p-4">
       <p className="text-sm font-medium text-ink-700">{label}</p>
-      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-ink-900">{value}</p>
+      <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-ink-900 sm:text-2xl">{value}</p>
     </div>
   );
 }

@@ -48,7 +48,7 @@ export default function PhotoViewer({ jobId, kind, label }: { jobId: string; kin
 
   return (
     <figure className="m-0">
-      <figcaption className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-600">{label}</figcaption>
+      <figcaption className="mb-1.5 text-sm font-medium text-ink-700">{label}</figcaption>
 
       {url && (
         <img

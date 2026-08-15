@@ -11,8 +11,10 @@
  * the manager last saw it. Columns that can be dropped on a narrow screen say
  * so themselves via `hideBelow`.
  *
- * Row height still respects the 44px tap floor — these screens are used on a
- * phone often enough that a dense desktop grid would be unusable there.
+ * Rows are compact, because a manager scanning fifty of them is at a desk with
+ * a mouse. The 44px tap floor is not abandoned, only made conditional: at a
+ * coarse pointer `.table-dense` (in index.css) puts every inline control back
+ * to full size, since these screens are used on a phone too.
  */
 import type { ReactNode } from 'react';
 
@@ -27,7 +29,7 @@ export function TableCard({
   className?: string;
 }) {
   return (
-    <div className={`overflow-hidden rounded-xl border border-line bg-surface shadow-card ${className}`}>
+    <div className={`table-dense overflow-hidden rounded-xl border border-line bg-surface shadow-card ${className}`}>
       {toolbar && <div className="border-b border-line p-3">{toolbar}</div>}
       {/* The scroll container is the table's own, so a wide table never makes
           the whole page scroll sideways. */}
@@ -78,7 +80,7 @@ export function Th({
       scope="col"
       /* Sentence case, not letterspaced caps: a column header should read as a
          word, not as a database field name. */
-      className={`border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-500 ${ALIGN[align]} ${
+      className={`border-b border-line px-3 py-[5px] text-xs font-semibold text-ink-500 ${ALIGN[align]} ${
         hideBelow ? HIDE[hideBelow] : ''
       } ${className}`}
     >
@@ -124,7 +126,7 @@ export function Td({
   return (
     <td
       colSpan={colSpan}
-      className={`px-4 py-2.5 align-middle text-ink-900 ${ALIGN[align]} ${hideBelow ? HIDE[hideBelow] : ''} ${className}`}
+      className={`px-3 py-[5px] align-middle text-ink-900 ${ALIGN[align]} ${hideBelow ? HIDE[hideBelow] : ''} ${className}`}
     >
       {children}
     </td>
@@ -134,7 +136,7 @@ export function Td({
 /** The trailing action cluster. Pinned to the inline end and never wraps. */
 export function TdActions({ children }: { children: ReactNode }) {
   return (
-    <td className="w-px whitespace-nowrap py-2 pe-3 ps-2 text-end align-middle">
+    <td className="w-px whitespace-nowrap py-[5px] pe-3 ps-2 text-end align-middle">
       <div className="flex items-center justify-end gap-0.5">{children}</div>
     </td>
   );
@@ -162,9 +164,15 @@ export function CellTitle({ children, mono }: { children: ReactNode; mono?: bool
   );
 }
 
-export function CellMuted({ children, lang }: { children: ReactNode; lang?: string }) {
+/**
+ * `mono` is not styling — it is what marks a Latin-script identifier, and the
+ * base layer pins those `direction: ltr; unicode-bidi: isolate`. CellTitle has
+ * always had it; CellMuted did not, so the VIN column was the one identifier in
+ * the app that a Hebrew page could re-sequence.
+ */
+export function CellMuted({ children, lang, mono }: { children: ReactNode; lang?: string; mono?: boolean }) {
   return (
-    <span lang={lang} className="text-ink-600">
+    <span lang={lang} className={`text-ink-600 ${mono ? 'font-mono' : ''}`}>
       {children}
     </span>
   );

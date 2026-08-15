@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { JobMonthlyStat } from '../lib/types';
 import BarChart from '../components/BarChart';
 import StatTile from '../components/StatTile';
-import { EmptyState, Page, PageHeading, Skeleton } from '../components/ui';
+import { EmptyState, Group, Page, PageHeading, Skeleton } from '../components/ui';
 
 function monthLabel(iso: string, locale: string) {
   return new Date(iso).toLocaleDateString(locale, { month: 'short', year: '2-digit' });
@@ -38,7 +38,7 @@ export default function MyStats() {
   const chartData = rows.slice(-12).map((r) => ({ label: monthLabel(r.month, i18n.language), value: r.job_count }));
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       <PageHeading>{t('stats.myStatsTitle')}</PageHeading>
 
       {loading && (
@@ -57,13 +57,16 @@ export default function MyStats() {
 
       {!loading && rows.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-3">
-            <StatTile label={t('stats.totalJobs')} value={total} />
-            <StatTile label={t('stats.jobsThisMonth')} value={thisMonth} />
-            <StatTile label={t('stats.avgPerMonth')} value={avgPerMonth} />
-          </div>
+          <Group>
+            <div className="grid grid-cols-3 gap-3">
+              <StatTile label={t('stats.totalJobs')} value={total} />
+              <StatTile label={t('stats.jobsThisMonth')} value={thisMonth} />
+              <StatTile label={t('stats.avgPerMonth')} value={avgPerMonth} />
+            </div>
 
-          <BarChart title={t('stats.jobsByMonth')} data={chartData} valueLabel={t('stats.jobs')} />
+            {/* Same numbers, shown over time — held close to the tiles they explain. */}
+            <BarChart title={t('stats.jobsByMonth')} data={chartData} valueLabel={t('stats.jobs')} />
+          </Group>
         </>
       )}
     </Page>

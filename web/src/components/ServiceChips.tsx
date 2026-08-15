@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { Service } from '../lib/types';
+import { serviceName } from '../lib/serviceName';
 import Icon from './Icon';
 
 interface Props {
@@ -36,7 +37,7 @@ export default function ServiceChips({ services, selected, onSelect, label }: Pr
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
       {services.map((service) => {
         const active = selected === service.id;
-        const name = i18n.language === 'ru' && service.name_ru ? service.name_ru : service.name_en;
+        const name = serviceName(service, i18n.language);
         return (
           <button
             key={service.id}

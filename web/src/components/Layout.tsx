@@ -53,9 +53,32 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-full flex-col bg-sunken md:flex-row">
-      {/* Desktop sidebar. Managers and admins live here, so it is a persistent
-          shell; phones keep the bottom tab bar. */}
-      <aside className="safe-top hidden w-60 shrink-0 flex-col border-e border-line bg-surface p-4 md:flex">
+      {/* The nav is the same five-to-seven stops on every page. Without this a
+          keyboard user tabs through all of them before reaching the form they
+          came for — and on New Job that is the difference between one car and
+          the next. Visible only when focused, so it costs nothing on screen. */}
+      {/* Parked off-screen by transform rather than the usual
+          `sr-only focus:not-sr-only`: that pair resolves `position` twice at
+          the same specificity, so which of static/fixed wins comes down to
+          stylesheet order. A transform has nothing to tie with. */}
+      <a
+        href="#main"
+        className="fixed start-4 top-4 z-30 inline-flex min-h-tap -translate-y-24 items-center rounded-lg bg-ink-900 px-4 font-semibold text-surface shadow-raised transition-transform duration-150 focus:translate-y-0"
+      >
+        {t('nav.skipToContent')}
+      </a>
+      {/*
+        Desktop sidebar. Managers and admins live here, so it is a persistent
+        shell; phones keep the bottom tab bar.
+
+        `sticky` + `h-dvh` is what actually makes it persistent. As a plain flex
+        child it stretched to the height of the *page*, so on a long jobs table
+        the nav scrolled off the top and the shell stopped being a shell.
+        Scrolling inside it also covers the short-viewport case — a phone in
+        landscape is past `md`, so it gets this sidebar in ~390px of height,
+        which is less than the nav needs.
+      */}
+      <aside className="safe-top hidden w-60 shrink-0 flex-col border-e border-line bg-surface p-4 md:sticky md:top-0 md:flex md:h-dvh md:overflow-y-auto">
         <div className="mb-7 px-1 pt-1 text-ink-900">
           <Logo height={22} decorative />
         </div>
@@ -67,7 +90,7 @@ export default function Layout() {
               to={item.to}
               className={({ isActive }) =>
                 `flex min-h-tap items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-colors duration-150 ${
-                  isActive ? 'bg-ink-900 text-surface' : 'text-ink-700 hover:bg-ink-100'
+                  isActive ? 'bg-ink-900 text-surface' : 'text-ink-700 hover:bg-ink-100 active:bg-ink-200'
                 }`
               }
             >
@@ -113,14 +136,14 @@ export default function Layout() {
             <NavLink
               to="/profile"
               aria-label={t('nav.account')}
-              className="inline-flex size-control items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100"
+              className="inline-flex size-control items-center justify-center rounded-lg text-ink-700 transition-colors duration-150 hover:bg-ink-100 active:bg-ink-200"
             >
               <Icon name="user" size={22} />
             </NavLink>
           </div>
         </header>
 
-        <main className="flex-1 pb-24 md:pb-0">
+        <main id="main" tabIndex={-1} className="flex-1 pb-24 md:pb-0">
           <Outlet />
         </main>
 
@@ -136,7 +159,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `relative flex min-h-control-lg min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-[11px] font-semibold leading-[1.15] ${
+                `relative flex min-h-control-lg min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-[11px] font-semibold leading-[1.15] active:bg-ink-50 ${
                   isActive ? 'text-ink-900' : 'text-ink-500'
                 }`
               }

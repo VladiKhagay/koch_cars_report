@@ -216,8 +216,13 @@ export default function Services() {
   const searching = search.trim().length > 0;
 
   return (
-    <Page width="wide" className="space-y-5">
-      {appUser?.role === 'admin' && <AdminTabs active="services" />}
+    <Page width="wide">
+      {/* The tab strip labels the heading under it. */}
+      {appUser?.role === 'admin' && (
+        <div className="space-y-2">
+          <AdminTabs active="services" />
+        </div>
+      )}
 
       {/* Why the order matters is stated where the order is set — this list is
           the exact order a worker scrolls through on every single job. */}
@@ -233,7 +238,7 @@ export default function Services() {
       </PageHeading>
 
       {adding && (
-        <Card className="p-5">
+        <Card>
           <SectionHeading icon="plus">{t('services.addTitle')}</SectionHeading>
 
           <div className="space-y-4">

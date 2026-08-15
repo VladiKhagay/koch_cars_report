@@ -133,8 +133,11 @@ export default function AdminUsers() {
   }, [users, search, sites]);
 
   return (
-    <Page width="wide" className="space-y-5">
-      <AdminTabs active="users" />
+    <Page width="wide">
+      {/* The tab strip labels the heading under it. */}
+      <div className="space-y-2">
+        <AdminTabs active="users" />
+      </div>
 
       <PageHeading
         action={
@@ -151,7 +154,7 @@ export default function AdminUsers() {
       </PageHeading>
 
       {inviting && (
-        <Card className="p-5">
+        <Card>
           <SectionHeading icon="plus">{t('admin.inviteTitle')}</SectionHeading>
 
           <div className="space-y-4">

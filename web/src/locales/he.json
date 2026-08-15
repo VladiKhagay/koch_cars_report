@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "מעקב הכנת רכבים",
+    "name": "Koch-Chemie Car Tracker",
     "signInLead": "התחברו כדי לתעד עבודות הכנת רכב."
   },
   "auth": {
@@ -26,7 +26,8 @@
     "more": "עוד",
     "profile": "פרופיל",
     "account": "חשבון",
-    "mainNav": "ניווט ראשי"
+    "mainNav": "ניווט ראשי",
+    "skipToContent": "דלג לתוכן"
   },
   "welcome": {
     "title": "ברוכים הבאים",

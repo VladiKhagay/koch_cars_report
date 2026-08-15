@@ -154,10 +154,10 @@ export default function Export() {
   const visibleCount = columns?.filter((c) => c.visible).length ?? 0;
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       <PageHeading>{t('export.title')}</PageHeading>
 
-      <Card className="space-y-4 p-4">
+      <Card className="space-y-4">
         {canSwitch && sites.length > 0 && (
           <Field htmlFor="export-site" label={t('export.site')}>
             <Select id="export-site" value={siteId ?? ''} onChange={(e) => setSiteId(e.target.value)}>
@@ -229,7 +229,7 @@ export default function Export() {
       </Card>
 
       {canSeePay && (
-        <Card className="space-y-3 p-4">
+        <Card className="space-y-3">
           <SectionHeading icon="users">{t('export.paymentsTitle')}</SectionHeading>
           <p className="text-sm text-ink-600">{t('export.paymentsHelp')}</p>
           <Button
@@ -246,7 +246,7 @@ export default function Export() {
       )}
 
       {/* ------------------------------------------------ report layout ---- */}
-      <Card className="p-4">
+      <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <SectionHeading icon="settings">{t('export.configTitle')}</SectionHeading>
           <Button variant="secondary" onClick={() => setConfiguring((v) => !v)}>

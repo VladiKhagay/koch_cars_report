@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
 import type { Job, PhotoKind, Service } from '../lib/types';
 import PhotoViewer from '../components/PhotoViewer';
@@ -74,7 +75,7 @@ export default function JobDetail() {
       // does. This screen was the only place in the app that always rendered
       // name_en, so a Russian-speaking manager saw English service names here
       // and nowhere else.
-      setServiceName(svc ? (i18n.language === 'ru' && svc.name_ru ? svc.name_ru : svc.name_en) : '');
+      setServiceName(localizedServiceName(svc, i18n.language) ?? '');
     } else {
       setServiceName('');
     }
@@ -108,7 +109,7 @@ export default function JobDetail() {
 
   if (loading) {
     return (
-      <Page width="list" className="space-y-5">
+      <Page width="list">
         <Skeleton className="h-7 w-48" />
         <div className="grid grid-cols-2 gap-3">
           <Skeleton className="h-44" />
@@ -139,19 +140,24 @@ export default function JobDetail() {
   const canManage = appUser?.role === 'manager' || appUser?.role === 'admin';
 
   return (
-    <Page width="list" className="space-y-5">
-      <Link
-        to="/dashboard"
-        className="inline-flex min-h-tap items-center gap-1.5 text-sm font-semibold text-ink-700 hover:text-ink-900"
-      >
-        <Icon name="chevronLeft" size={18} />
-        {t('jobDetail.back')}
-      </Link>
+    <Page width="list">
+      {/* The back link labels the title; tight, not a section of its own. */}
+      <div className="space-y-2">
+        <Link
+          to="/dashboard"
+          className="inline-flex min-h-tap items-center gap-1.5 text-sm font-semibold text-ink-700 hover:text-ink-900"
+        >
+          <Icon name="chevronLeft" size={18} />
+          {t('jobDetail.back')}
+        </Link>
 
-      <h1 className="font-mono text-2xl font-semibold tracking-wide text-ink-900">
-        {job.plate}
-        <span className="ms-3 font-sans text-base font-normal tracking-normal text-ink-600">{job.brand ?? '—'}</span>
-      </h1>
+        <h1 className="font-mono text-2xl font-semibold tracking-wide text-ink-900">
+          {job.plate}
+          <span className="ms-3 font-sans text-base font-normal tracking-normal text-ink-600">
+            {job.brand ?? '—'}
+          </span>
+        </h1>
+      </div>
 
       {job.deleted_at && <StatusBanner tone="warning">{t('jobDetail.deletedNotice')}</StatusBanner>}
       {job.duplicate_of_job_id && <StatusBanner tone="warning">{t('jobDetail.duplicateOf')}</StatusBanner>}
@@ -169,7 +175,7 @@ export default function JobDetail() {
             ))}
           </div>
 
-          <Card className="p-4">
+          <Card>
             <SectionHeading icon="clipboard">{t('jobDetail.details')}</SectionHeading>
             {/*
               Label above value rather than a justify-between row. A 17-character
@@ -188,7 +194,7 @@ export default function JobDetail() {
         </div>
 
         {canManage && (
-          <Card className="space-y-4 p-4">
+          <Card className="space-y-4">
             <SectionHeading icon="tag">{t('jobDetail.billingCode')}</SectionHeading>
 
             <Field htmlFor="billing-code" label={t('jobDetail.billingCode')}>
@@ -245,7 +251,7 @@ export default function JobDetail() {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-      <dt className="text-xs font-semibold uppercase tracking-wide text-ink-600">{label}</dt>
+      <dt className="text-sm font-medium text-ink-600">{label}</dt>
       <dd className={`mt-0.5 break-words text-ink-900 ${mono ? 'font-mono tracking-wide' : ''}`}>{value}</dd>
     </div>
   );

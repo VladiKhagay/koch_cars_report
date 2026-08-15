@@ -29,7 +29,7 @@ export default function More() {
   if (secondary.length === 0) return <Navigate to="/" replace />;
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       <PageHeading>{t('nav.more')}</PageHeading>
 
       <nav aria-label={t('nav.more')} className="space-y-2">
@@ -37,7 +37,7 @@ export default function More() {
           <Link
             key={item.to}
             to={item.to}
-            className="flex min-h-control-lg items-center gap-3 rounded-xl border border-line bg-surface p-4 text-base font-semibold text-ink-900 shadow-card transition-colors duration-150 hover:border-line-strong"
+            className="flex min-h-control-lg items-center gap-3 rounded-xl border border-line bg-surface p-4 text-base font-semibold text-ink-900 shadow-card transition-colors duration-150 hover:border-line-strong active:bg-ink-50"
           >
             <Icon name={item.icon} size={22} className="shrink-0 text-ink-500" />
             <span className="min-w-0 break-words">{item.label}</span>

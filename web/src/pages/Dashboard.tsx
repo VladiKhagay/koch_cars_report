@@ -8,6 +8,7 @@ import Icon from '../components/Icon';
 import {
   Badge,
   EmptyState,
+  Group,
   IconButton,
   LoadingRegion,
   Page,
@@ -75,7 +76,7 @@ export default function Dashboard() {
   }, [jobs, search]);
 
   return (
-    <Page width="list" className="space-y-5">
+    <Page width="list">
       <PageHeading
         action={
           canSwitch && sites.length > 0 ? (
@@ -97,117 +98,123 @@ export default function Dashboard() {
         {t('dashboard.title')}
       </PageHeading>
 
-      {/* Day stepper. "Next" is disabled on today rather than hidden, so the
-          control never changes shape as you move through the week. */}
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface p-2 shadow-card">
-        <IconButton icon="chevronLeft" label={t('dashboard.prevDay')} onClick={() => setDay(shiftDay(day, -1))} />
-        <div className="min-w-0 text-center">
-          <p className="truncate text-sm font-semibold text-ink-900">
-            {isToday
-              ? t('dashboard.today')
-              : new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                })}
-          </p>
-          {!isToday && (
-            <button
-              type="button"
-              onClick={() => setDay(todayIso())}
-              className="text-xs font-medium text-ink-600 underline underline-offset-2"
+      {/* Which day, and whether anything on it needs attention. */}
+      <Group>
+        {/* Day stepper. "Next" is disabled on today rather than hidden, so the
+            control never changes shape as you move through the week. */}
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-surface p-2 shadow-card">
+          <IconButton icon="chevronLeft" label={t('dashboard.prevDay')} onClick={() => setDay(shiftDay(day, -1))} />
+          <div className="min-w-0 text-center">
+            <p className="truncate text-sm font-semibold text-ink-900">
+              {isToday
+                ? t('dashboard.today')
+                : new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+            </p>
+            {!isToday && (
+              <button
+                type="button"
+                onClick={() => setDay(todayIso())}
+                className="text-xs font-medium text-ink-600 underline underline-offset-2"
+              >
+                {t('dashboard.backToToday')}
+              </button>
+            )}
+          </div>
+          <IconButton
+            icon="chevronRight"
+            label={t('dashboard.nextDay')}
+            disabled={isToday}
+            onClick={() => setDay(shiftDay(day, 1))}
+          />
+        </div>
+
+        {/*
+          Triage row. It renders whenever the day has loaded — including the
+          all-clear — so "zero problems today" can never be mistaken for "the
+          flags haven't arrived", which is what two conditionally-rendered pills
+          used to produce on a flaky connection.
+        */}
+        {!loading && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="neutral" icon="clipboard">
+              {t('dashboard.jobCount', { count: jobs.length })}
+            </Badge>
+            {duplicateCount > 0 && (
+              <Badge tone="warn" icon="alertTriangle">
+                {t('dashboard.duplicates', { count: duplicateCount })}
+              </Badge>
+            )}
+            {missingBillingCount > 0 && (
+              <Badge tone="info" icon="tag">
+                {t('dashboard.missingBilling', { count: missingBillingCount })}
+              </Badge>
+            )}
+            {duplicateCount === 0 && missingBillingCount === 0 && jobs.length > 0 && (
+              <Badge tone="ok" icon="checkCircle">
+                {t('dashboard.allClear')}
+              </Badge>
+            )}
+          </div>
+        )}
+      </Group>
+
+      {/* Finding one car inside that day. */}
+      <Group>
+        <div>
+          <SearchField value={search} onChange={setSearch} label={t('dashboard.search')} />
+          {/* The query is scoped to today. The copy now says so, instead of
+              promising a general search and reporting a car as never logged. */}
+          <p className="mt-1.5 text-xs text-ink-600">{t('dashboard.scopeNote')}</p>
+        </div>
+
+        {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
+
+        {!loading && jobs.length === 0 && (
+          <EmptyState icon="clipboard" title={t('dashboard.emptyTitle')} body={t('dashboard.emptyBody')} />
+        )}
+
+        {!loading && jobs.length > 0 && filtered.length === 0 && (
+          <EmptyState icon="search" title={t('dashboard.noResults')} />
+        )}
+        <div className="space-y-2">
+          {filtered.map((job) => (
+            <Link
+              key={job.id}
+              to={`/jobs/${job.id}`}
+              className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-line-strong active:bg-ink-50"
             >
-              {t('dashboard.backToToday')}
-            </button>
-          )}
+              <div className="min-w-0">
+                <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
+                  {job.plate}
+                  <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
+                </p>
+                <p className="truncate font-mono text-xs text-ink-600">{job.vin}</p>
+                <p className="truncate text-xs text-ink-600">
+                  {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString(i18n.language)}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {job.duplicate_of_job_id && (
+                  <Badge tone="warn" icon="alertTriangle">
+                    {t('dashboard.duplicateFlag')}
+                  </Badge>
+                )}
+                {!job.billing_code && (
+                  <Badge tone="neutral" icon="tag">
+                    {t('dashboard.noBillingCode')}
+                  </Badge>
+                )}
+                <Icon name="chevronRight" size={18} className="text-ink-500" />
+              </div>
+            </Link>
+          ))}
         </div>
-        <IconButton
-          icon="chevronRight"
-          label={t('dashboard.nextDay')}
-          disabled={isToday}
-          onClick={() => setDay(shiftDay(day, 1))}
-        />
-      </div>
+      </Group>
 
-      {/*
-        Triage row. It renders whenever the day has loaded — including the
-        all-clear — so "zero problems today" can never be mistaken for "the
-        flags haven't arrived", which is what two conditionally-rendered pills
-        used to produce on a flaky connection.
-      */}
-      {!loading && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="neutral" icon="clipboard">
-            {t('dashboard.jobCount', { count: jobs.length })}
-          </Badge>
-          {duplicateCount > 0 && (
-            <Badge tone="warn" icon="alertTriangle">
-              {t('dashboard.duplicates', { count: duplicateCount })}
-            </Badge>
-          )}
-          {missingBillingCount > 0 && (
-            <Badge tone="neutral" icon="tag">
-              {t('dashboard.missingBilling', { count: missingBillingCount })}
-            </Badge>
-          )}
-          {duplicateCount === 0 && missingBillingCount === 0 && jobs.length > 0 && (
-            <Badge tone="ok" icon="checkCircle">
-              {t('dashboard.allClear')}
-            </Badge>
-          )}
-        </div>
-      )}
-
-      <div>
-        <SearchField value={search} onChange={setSearch} label={t('dashboard.search')} />
-        {/* The query is scoped to today. The copy now says so, instead of
-            promising a general search and reporting a car as never logged. */}
-        <p className="mt-1.5 text-xs text-ink-600">{t('dashboard.scopeNote')}</p>
-      </div>
-
-      {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
-
-      {!loading && jobs.length === 0 && (
-        <EmptyState icon="clipboard" title={t('dashboard.emptyTitle')} body={t('dashboard.emptyBody')} />
-      )}
-
-      {!loading && jobs.length > 0 && filtered.length === 0 && (
-        <EmptyState icon="search" title={t('dashboard.noResults')} />
-      )}
-
-      <div className="space-y-2">
-        {filtered.map((job) => (
-          <Link
-            key={job.id}
-            to={`/jobs/${job.id}`}
-            className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-line-strong"
-          >
-            <div className="min-w-0">
-              <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
-                {job.plate}
-                <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
-              </p>
-              <p className="truncate font-mono text-xs text-ink-600">{job.vin}</p>
-              <p className="truncate text-xs text-ink-600">
-                {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString(i18n.language)}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              {job.duplicate_of_job_id && (
-                <Badge tone="warn" icon="alertTriangle">
-                  {t('dashboard.duplicateFlag')}
-                </Badge>
-              )}
-              {!job.billing_code && (
-                <Badge tone="neutral" icon="tag">
-                  {t('dashboard.noBillingCode')}
-                </Badge>
-              )}
-              <Icon name="chevronRight" size={18} className="text-ink-500" />
-            </div>
-          </Link>
-        ))}
-      </div>
     </Page>
   );
 }

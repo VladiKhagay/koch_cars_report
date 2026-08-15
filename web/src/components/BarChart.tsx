@@ -61,7 +61,7 @@ export default function BarChart({ title, data, valueLabel }: Props) {
           type="button"
           onClick={() => setShowTable((s) => !s)}
           aria-pressed={showTable}
-          className="inline-flex min-h-tap items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-ink-700 hover:bg-ink-100"
+          className="inline-flex min-h-tap items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-ink-700 transition-colors duration-150 hover:bg-ink-100 active:bg-ink-200"
         >
           <Icon name={showTable ? 'chart' : 'list'} size={16} />
           {showTable ? t('stats.showChart') : t('stats.showTable')}
@@ -166,7 +166,7 @@ export default function BarChart({ title, data, valueLabel }: Props) {
       {data.length > 0 && showTable && (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-start text-xs font-semibold uppercase tracking-wide text-ink-600">
+            <tr className="text-start text-xs font-semibold text-ink-600">
               <th className="py-1.5">{title}</th>
               <th className="py-1.5 text-end">{valueLabel ?? t('stats.jobs')}</th>
             </tr>

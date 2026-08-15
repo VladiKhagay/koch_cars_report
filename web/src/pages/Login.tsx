@@ -37,7 +37,7 @@ export default function Login() {
       <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">{t('auth.signIn')}</h1>
       <p className="mt-2 text-base text-ink-600">{t('app.signInLead')}</p>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-5">
+      <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">
         <Field htmlFor="login-email" label={t('auth.email')}>
           <input
             id="login-email"

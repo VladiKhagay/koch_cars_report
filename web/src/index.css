@@ -8,10 +8,12 @@
      - components/pages use the utilities generated here (no hex, no slate-*)
      - BarChart paints with Tailwind fill- / stroke- utilities, so charts swap
        with the palette instead of staying on a stale hardcoded colour
-     - vite.config.ts parses --color-surface and --color-ink-900 out of THIS
-       FILE at build time for the PWA manifest theme_color/background_color and
-       the <meta name="theme-color"> tag, so the install splash can never drift
-       away from the app.
+     - vite.config.ts reads --color-surface out of THIS FILE at build time for
+       the PWA manifest theme_color/background_color and the
+       <meta name="theme-color"> tag, so the install splash can never drift
+       away from the app. It throws if the token is missing rather than
+       falling back — a wrong splash colour is invisible in review and
+       permanent on someone's home screen.
    Swapping the ramp below re-skins the entire product, charts and splash
    included, with no component edits.
 
@@ -185,6 +187,44 @@
   .font-mono {
     direction: ltr;
     unicode-bidi: isolate;
+  }
+}
+
+@layer components {
+  /* Management tables run to ~50 rows at a desk, so a row is compacted to its
+     text plus 5px (the cells set that themselves, in utilities).
+     What utilities on the cell cannot reach is the inline controls — a
+     receipt-number field or a flag button is rendered by the page, not by the
+     table — and those, not the text, are what actually set row height.
+     Compacted for a mouse only: at a coarse pointer every control returns to
+     the 44px tap floor, because these screens are used on a phone too. */
+  .table-dense td {
+    font-variant-numeric: tabular-nums;
+  }
+  .table-dense td :is(input, button) {
+    height: 1.875rem; /* 30px */
+    border-radius: 0.5rem;
+  }
+  .table-dense td input {
+    font-size: var(--text-sm);
+    padding-inline: 0.5rem;
+  }
+  .table-dense td button {
+    width: 1.875rem;
+  }
+  .table-dense td button svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  @media (pointer: coarse) {
+    .table-dense :is(th, td) {
+      padding-block: 0.5rem;
+    }
+    .table-dense td :is(input, button) {
+      height: var(--spacing-tap);
+      min-width: var(--spacing-tap);
+    }
   }
 }
 

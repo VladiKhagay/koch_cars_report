@@ -16,22 +16,32 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LANGUAGES, setLanguage, type Lang } from '../lib/i18n';
 import Icon, { type IconName } from './Icon';
+import { PAGE_WIDTH, type PageWidth } from '../lib/pageWidth';
 
 /* ------------------------------------------------------------------ layout */
 
-type PageWidth = 'form' | 'list' | 'wide';
-
 /**
- * The single page container. It exists mostly to close the 768–1023px dead
- * zone: the shell's sidebar appears at `md`, so page columns have to widen at
- * `md` too, not at `lg`. Every page uses this instead of its own max-width.
+ * The single page container: one max-width source (see lib/pageWidth) and the
+ * page's vertical rhythm, which it owns so no screen has to repeat a spacing
+ * class.
+ *
+ * There are exactly three intervals in this app, and the contrast between them
+ * is what makes a screen scannable at a glance:
+ *
+ *   section  24 / 32px   the gap between subjects — this container. A page's
+ *                        direct children are the questions the screen answers,
+ *                        and the title is one of them, so it gets the same
+ *                        generous break and finally reads as owning what
+ *                        follows rather than as another slab in the stack.
+ *   group    16px        {@link Group}: blocks that answer the SAME question —
+ *                        a day stepper and the flags for that day, a stat trio
+ *                        and its chart, a table and its pager.
+ *   tight     8px        `space-y-2`: rows of one list.
+ *
+ * Everything used to be 20px, which is none of these: with one interval
+ * repeated, proximity carried no meaning and grouping fell to drawing a card
+ * around things.
  */
-const PAGE_WIDTH: Record<PageWidth, string> = {
-  form: 'max-w-md md:max-w-xl',
-  list: 'max-w-2xl md:max-w-3xl lg:max-w-5xl',
-  wide: 'max-w-2xl md:max-w-4xl lg:max-w-6xl',
-};
-
 export function Page({
   width = 'form',
   children,
@@ -41,7 +51,20 @@ export function Page({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={`mx-auto w-full ${PAGE_WIDTH[width]} p-4 md:p-6 lg:p-8 ${className}`}>{children}</div>;
+  return (
+    <div className={`mx-auto w-full space-y-6 p-4 md:space-y-8 md:p-6 lg:p-8 ${PAGE_WIDTH[width]} ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Blocks that answer the same question as each other, held closer together
+ * than the sections around them. Proximity does the grouping, so the parts
+ * don't each need a container to look related.
+ */
+export function Group({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`space-y-4 ${className}`}>{children}</div>;
 }
 
 export function PageHeading({
@@ -65,9 +88,29 @@ export function PageHeading({
   );
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+/**
+ * The card owns its own padding.
+ *
+ * It used to ship with none, so all eleven call sites invented one: six chose
+ * 16px and five chose 20px — a value that is not on the spacing scale at all.
+ * A shared primitive that leaves its most-used decision to the caller is how a
+ * system drifts one screen at a time, so the default is now the documented
+ * 16px. `padding={false}` is for the cards whose children own the edges (a
+ * table, a list that draws its own dividers).
+ */
+export function Card({
+  children,
+  className = '',
+  padding = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  padding?: boolean;
+}) {
   return (
-    <div className={`rounded-xl border border-line bg-surface shadow-card ${className}`}>{children}</div>
+    <div className={`rounded-xl border border-line bg-surface shadow-card ${padding ? 'p-4' : ''} ${className}`}>
+      {children}
+    </div>
   );
 }
 
@@ -104,8 +147,13 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
        outright, so putting it on the same node as `py-10` would zero the page's
        own top padding on every device without a notch. */
     <div className="safe-top safe-bottom flex min-h-full flex-col bg-surface sm:bg-sunken">
-      <div className="flex flex-1 flex-col px-5 py-10 sm:justify-center sm:px-6 sm:py-12">
-        <div className="mx-auto w-full max-w-md">
+      <div className="flex flex-1 flex-col px-5 py-10 sm:px-6 sm:py-12">
+        {/* Centred with auto margins rather than `justify-center`. Centring on
+            the main axis pushes the overflow of a too-tall panel off BOTH ends,
+            and you cannot scroll above the top of a document — so on a phone in
+            landscape the heading became unreachable. Auto margins centre only
+            while there is room to spare. */}
+        <div className="mx-auto w-full max-w-md sm:my-auto">
           <div className="sm:rounded-2xl sm:border sm:border-line sm:bg-surface sm:p-8 sm:shadow-raised">
             {children}
           </div>

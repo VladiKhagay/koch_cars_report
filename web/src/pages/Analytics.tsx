@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
+import { serviceName, type ServiceNames } from '../lib/serviceName';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { JobDailyStat } from '../lib/types';
 import BarChart from '../components/BarChart';
 import StatTile from '../components/StatTile';
-import { Button, Card, Field, Page, PageHeading, SectionHeading, Select, Skeleton, fieldClass } from '../components/ui';
+import { Button, Card, Field, fieldClass, Group, Page, PageHeading, SectionHeading, Select, Skeleton } from '../components/ui';
 
 function isoDaysAgo(days: number) {
   const d = new Date();
@@ -75,7 +76,7 @@ export default function Analytics() {
           // of the visible width on a phone.
           (data ?? []).map((s) => ({
             id: s.id,
-            label: i18n.language === 'ru' && s.name_ru ? s.name_ru : s.name_en,
+            label: serviceName(s, i18n.language) ?? '',
           })),
         ),
       );
@@ -114,7 +115,7 @@ export default function Analytics() {
     setExtraLabels({
       ...Object.fromEntries((users ?? []).map((u) => [u.id, u.name])),
       ...Object.fromEntries(
-        (svc ?? []).map((s: any) => [s.id, i18n.language === 'ru' && s.name_ru ? s.name_ru : s.name_en]),
+        (svc ?? []).map((s: ServiceNames & { id: string }) => [s.id, serviceName(s, i18n.language) ?? '']),
       ),
     });
   }
@@ -210,7 +211,7 @@ export default function Analytics() {
   }
 
   return (
-    <Page width="list" className="space-y-5">
+    <Page width="list">
       <PageHeading
         action={
           isAdmin && sites.length > 0 ? (
@@ -232,7 +233,7 @@ export default function Analytics() {
         {t('stats.analyticsTitle')}
       </PageHeading>
 
-      <Card className="p-4">
+      <Card>
         <SectionHeading icon="calendar">{t('stats.filters')}</SectionHeading>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field htmlFor="stats-from" label={t('export.from')}>
@@ -270,25 +271,28 @@ export default function Analytics() {
         </div>
       </Card>
 
-      {loading ? (
-        <div className="grid grid-cols-2 gap-3 sm:max-w-md" aria-hidden>
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:max-w-md">
-          <StatTile label={t('stats.jobsInRange')} value={total} />
-          <StatTile label={t('stats.activeWorkers')} value={byWorker.length} />
-        </div>
-      )}
+      {/* The totals and the same numbers broken out — one reading. */}
+      <Group>
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3 sm:max-w-md" aria-hidden>
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+            <StatTile label={t('stats.jobsInRange')} value={total} />
+            <StatTile label={t('stats.activeWorkers')} value={byWorker.length} />
+          </div>
+        )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="lg:col-span-2">
-          <BarChart title={t('stats.jobsByMonth')} data={monthlyTrend} valueLabel={t('stats.jobs')} />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="lg:col-span-2">
+            <BarChart title={t('stats.jobsByMonth')} data={monthlyTrend} valueLabel={t('stats.jobs')} />
+          </div>
+          <BarChart title={t('stats.jobsByWorker')} data={byWorker} valueLabel={t('stats.jobs')} />
+          <BarChart title={t('stats.jobsByService')} data={byService} valueLabel={t('stats.jobs')} />
         </div>
-        <BarChart title={t('stats.jobsByWorker')} data={byWorker} valueLabel={t('stats.jobs')} />
-        <BarChart title={t('stats.jobsByService')} data={byService} valueLabel={t('stats.jobs')} />
-      </div>
+      </Group>
 
       <div className="flex flex-wrap gap-2">
         <Button icon="download" busy={exporting} disabled={!siteId} onClick={() => void exportStats(false)}>

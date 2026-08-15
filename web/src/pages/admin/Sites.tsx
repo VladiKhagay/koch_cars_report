@@ -62,8 +62,11 @@ export default function AdminSites() {
   const invalid = status === 'required' || status === 'duplicate';
 
   return (
-    <Page width="list" className="space-y-5">
-      <AdminTabs active="sites" />
+    <Page width="list">
+      {/* The tab strip labels the heading under it. */}
+      <div className="space-y-2">
+        <AdminTabs active="sites" />
+      </div>
 
       {/*
         A site name is written into every export and every analytics screen and

@@ -34,7 +34,7 @@ export default function Team() {
   }
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       {/* The scope rule is stated once at the top rather than repeated as a
           disabled-control tooltip on every row it doesn't apply to. */}
       <PageHeading lead={t('team.cannotChange')}>{t('team.title')}</PageHeading>
@@ -49,7 +49,7 @@ export default function Team() {
         {users.map((u) => {
           const canToggle = u.role === 'worker' && u.id !== appUser?.id;
           return (
-            <Card key={u.id} className="p-4">
+            <Card key={u.id}>
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                 <div className="min-w-0">
                   <p className="break-words text-base font-semibold tracking-tight text-ink-900">{u.name}</p>

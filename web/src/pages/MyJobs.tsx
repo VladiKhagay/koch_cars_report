@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { serviceName } from '../lib/serviceName';
 import { useQueuedJobs } from '../lib/useQueue';
 import type { Job, Service } from '../lib/types';
 import ServiceChips from '../components/ServiceChips';
@@ -68,14 +69,10 @@ export default function MyJobs() {
     await load();
   }
 
-  const serviceLabel = (id: string) => {
-    const service = services.find((s) => s.id === id);
-    if (!service) return null;
-    return i18n.language === 'ru' && service.name_ru ? service.name_ru : service.name_en;
-  };
+  const serviceLabel = (id: string) => serviceName(services.find((s) => s.id === id), i18n.language);
 
   return (
-    <Page width="form" className="space-y-5">
+    <Page width="form">
       <PageHeading>{t('myJobs.title')}</PageHeading>
 
       {/*
@@ -89,7 +86,7 @@ export default function MyJobs() {
           <SectionHeading icon="sync">{t('queue.title')}</SectionHeading>
           <p className="text-sm text-ink-600">{t('queue.body')}</p>
           {queued.map((job) => (
-            <Card key={job.queuedId} className="border-ink-900 p-4">
+            <Card key={job.queuedId} className="border-ink-900">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-base font-semibold tracking-wide text-ink-900">{job.plate}</p>
@@ -121,7 +118,7 @@ export default function MyJobs() {
           const name = job.service_id ? serviceLabel(job.service_id) : null;
 
           return (
-            <Card key={job.id} className="p-4">
+            <Card key={job.id}>
               <div className="flex items-start justify-between gap-3">
                 {/* The work done is the title. A worker scanning their own day
                     is looking for "what did I do to that car", not re-reading

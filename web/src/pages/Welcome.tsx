@@ -113,7 +113,7 @@ export default function Welcome() {
       <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">{t('welcome.title')}</h1>
       <p className="mt-2 text-base text-ink-600">{t('welcome.subtitle')}</p>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-5">
+      <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">
         {/* The length rule is stated before it can be broken rather than only
             as an error after the fact. */}
         <Field htmlFor="welcome-password" label={t('welcome.password')}>
