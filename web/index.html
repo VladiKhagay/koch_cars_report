@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- ?v=2 is not versioning, it is cache eviction: Chrome keeps a favicon
+         per origin and will not re-fetch the same URL, so browsers that saw
+         the Vite placeholder still show it. A URL they have never requested
+         is the only thing that dislodges it. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- content is rewritten from --color-surface in src/index.css at build
