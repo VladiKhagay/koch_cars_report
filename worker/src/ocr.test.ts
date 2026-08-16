@@ -1,38 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { formatPlate, normalizePlate, normalizeVin, parseDetectObjects, parseOcrAnswer } from './ocr';
+import { normalizePlate, normalizeVin, parseDetectObjects, parseOcrAnswer } from './ocr';
 import { isPhotoKind } from './upload';
 import app from './index';
 
-describe('normalizePlate — Israeli formats', () => {
-  it('accepts the 8-digit format in every printed grouping', () => {
-    expect(normalizePlate('12345678')).toBe('123-45-678');
-    expect(normalizePlate('123-45-678')).toBe('123-45-678');
-    expect(normalizePlate('123 45 678')).toBe('123-45-678');
-  });
-
-  it('accepts the 7-digit format', () => {
-    expect(normalizePlate('1234567')).toBe('12-345-67');
-    expect(normalizePlate('12-345-67')).toBe('12-345-67');
-    expect(normalizePlate('12 345 67')).toBe('12-345-67');
-  });
-
-  it('accepts older 5- and 6-digit plates still in service', () => {
-    expect(normalizePlate('123456')).toBe('123-456');
-    expect(normalizePlate('12345')).toBe('12-345');
+describe('normalizePlate — Israeli 8-digit format', () => {
+  it('accepts every printed grouping, returning bare digits', () => {
+    expect(normalizePlate('12345678')).toBe('12345678');
+    expect(normalizePlate('123-45-678')).toBe('12345678');
+    expect(normalizePlate('123 45 678')).toBe('12345678');
   });
 
   it('reads the real plate observed in production', () => {
-    expect(normalizePlate('817-07-504')).toBe('817-07-504');
+    expect(normalizePlate('817-07-504')).toBe('81707504');
   });
 
   it('strips chatty preambles', () => {
-    expect(normalizePlate('The plate is 12345678')).toBe('123-45-678');
-    expect(normalizePlate('I can read the plate: 12345678')).toBe('123-45-678');
+    expect(normalizePlate('The plate is 12345678')).toBe('12345678');
+    expect(normalizePlate('I can read the plate: 12345678')).toBe('12345678');
   });
 
   it('does not merge unrelated numbers into one plate', () => {
     // The year must not be glued onto the plate digits.
-    expect(normalizePlate('12-345-67 on a 2019 Toyota')).toBe('12-345-67');
+    expect(normalizePlate('123-45-678 on a 2019 Toyota')).toBe('12345678');
   });
 
   it('rejects prose with no plausible plate', () => {
@@ -41,26 +30,18 @@ describe('normalizePlate — Israeli formats', () => {
     expect(normalizePlate('')).toBeNull();
   });
 
-  it('rejects digit runs that are not a legal plate length', () => {
-    expect(normalizePlate('123')).toBeNull(); // too short
+  it('rejects partial reads — only a full 8 digits counts', () => {
+    expect(normalizePlate('123')).toBeNull();
+    expect(normalizePlate('1234567')).toBeNull(); // one digit short
     expect(normalizePlate('123456789012')).toBeNull(); // too long
   });
 
   it('repairs letter/digit confusions inside numeric tokens only', () => {
     // I->1 and O->0 inside a mostly-numeric token.
-    expect(normalizePlate('I2345678')).toBe('123-45-678');
-    expect(normalizePlate('I234567O')).toBe('123-45-670');
+    expect(normalizePlate('I2345678')).toBe('12345678');
+    expect(normalizePlate('I234567O')).toBe('12345670');
     // ...but prose is never mangled into digits.
     expect(normalizePlate('No plate visible in image')).toBeNull();
-  });
-});
-
-describe('formatPlate', () => {
-  it('groups each length the way it is printed', () => {
-    expect(formatPlate('12345678')).toBe('123-45-678');
-    expect(formatPlate('1234567')).toBe('12-345-67');
-    expect(formatPlate('123456')).toBe('123-456');
-    expect(formatPlate('12345')).toBe('12-345');
   });
 });
 
@@ -98,13 +79,13 @@ describe('normalizeVin', () => {
 
 describe('parseOcrAnswer', () => {
   it('returns a normalised plate', () => {
-    expect(parseOcrAnswer('123-45-678', 'plate')).toEqual({ text: '123-45-678', reason: null });
+    expect(parseOcrAnswer('123-45-678', 'plate')).toEqual({ text: '12345678', reason: null });
   });
 
   it('recovers a value the model prefixed with UNREADABLE', () => {
     // Observed in production before the prompt was changed.
     expect(parseOcrAnswer('UNREADABLE 817-07-504', 'plate')).toEqual({
-      text: '817-07-504',
+      text: '81707504',
       reason: null,
     });
   });

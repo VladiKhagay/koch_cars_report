@@ -7,7 +7,7 @@ name: Deploy Web
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID  (same as the Worker deploy)
 #   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_WORKER_URL
-#   (build-time vars — same values as web/.env.local; VITE_PLATE_REGEX optional)
+#   (build-time vars — same values as web/.env.local)
 on:
   push:
     branches: [main]
@@ -34,7 +34,6 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_WORKER_URL: ${{ secrets.VITE_WORKER_URL }}
-          VITE_PLATE_REGEX: ${{ secrets.VITE_PLATE_REGEX }}
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

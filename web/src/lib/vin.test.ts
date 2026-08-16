@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidVinFormat, vinChecksumValid, guessBrandFromVin, isValidPlate } from './vin';
+import { isValidVinFormat, vinChecksumValid, guessBrandFromVin, isValidPlate, stripPlate } from './vin';
 
 describe('isValidVinFormat', () => {
   it('accepts a 17-char VIN without I/O/Q', () => {
@@ -57,17 +57,23 @@ describe('guessBrandFromVin', () => {
 });
 
 describe('isValidPlate (default pattern)', () => {
-  it('accepts common alphanumeric plates with hyphens', () => {
-    expect(isValidPlate('12-345-67')).toBe(true);
-    expect(isValidPlate('AB123CD')).toBe(true);
+  it('accepts a bare 8-digit Israeli plate', () => {
+    expect(isValidPlate('12345678')).toBe(true);
   });
 
-  it('uppercases before matching', () => {
-    expect(isValidPlate('ab123cd')).toBe(true);
+  it('accepts the plate as printed on the car, separators and all', () => {
+    expect(isValidPlate('123-45-678')).toBe(true);
+    expect(isValidPlate('123 45 678')).toBe(true);
   });
 
-  it('rejects too-short and too-long values', () => {
-    expect(isValidPlate('A1')).toBe(false);
-    expect(isValidPlate('ABCDEFGHIJK')).toBe(false);
+  it('rejects anything that is not exactly 8 digits', () => {
+    expect(isValidPlate('1234567')).toBe(false);
+    expect(isValidPlate('12-345-67')).toBe(false);
+    expect(isValidPlate('123456789')).toBe(false);
+    expect(isValidPlate('AB123CD')).toBe(false);
+  });
+
+  it('strips to the stored form', () => {
+    expect(stripPlate('123-45-678')).toBe('12345678');
   });
 });

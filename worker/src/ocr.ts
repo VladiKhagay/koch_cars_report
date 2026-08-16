@@ -25,8 +25,8 @@ const DETECT_MODEL = DEFAULT_MODEL;
 const PROMPTS: Record<'plate' | 'vin', string> = {
   plate:
     'Read the Israeli vehicle license plate in this image. ' +
-    'Israeli plates are digits only — no letters. ' +
-    'Return ONLY the plate digits. ' +
+    'Israeli plates are 8 digits, no letters. ' +
+    'Return ONLY the 8 plate digits. ' +
     'Do not include spaces, hyphens, punctuation, explanations, or any other text. ' +
     'Always make your best guess.',
   vin:
@@ -116,29 +116,17 @@ const DIGIT_CONFUSIONS: Record<string, string> = {
   G: '6',
 };
 
-const PLATE_LENGTHS = [8, 7, 6, 5];
-
-/** Groups digits the way they are printed on the plate, for easy eyeballing. */
-export function formatPlate(digits: string): string {
-  switch (digits.length) {
-    case 8:
-      return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
-    case 7:
-      return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
-    case 6:
-      return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-    case 5:
-      return `${digits.slice(0, 2)}-${digits.slice(2)}`;
-    default:
-      return digits;
-  }
-}
+const PLATE_LENGTH = 8;
 
 /**
  * Extracts an Israeli plate from free model text.
  *
  * Works on digit *runs* rather than stripping all non-digits globally, so
- * "12-345-67 on a 2019 Toyota" yields 1234567 and not 12345672019.
+ * "123-45-678 on a 2019 Toyota" yields 12345678 and not 123456782019.
+ *
+ * Only a full 8-digit read counts: a partial read is worse than no read, since
+ * it looks authoritative in the field and gets submitted unchecked. Digits are
+ * returned unformatted — plates are stored and shown without separators.
  */
 export function normalizePlate(raw: string): string | null {
   // Repair digit-confusions only within tokens that are already mostly
@@ -160,12 +148,7 @@ export function normalizePlate(raw: string): string | null {
   const runs = joined.match(/\d+/g);
   if (!runs) return null;
 
-  // Prefer the longest legal plate length present; 8 and 7 are today's formats.
-  for (const len of PLATE_LENGTHS) {
-    const hit = runs.find((r) => r.length === len);
-    if (hit) return formatPlate(hit);
-  }
-  return null;
+  return runs.find((r) => r.length === PLATE_LENGTH) ?? null;
 }
 
 // I, O and Q are not valid VIN characters, so mapping them onto the digits

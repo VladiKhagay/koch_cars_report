@@ -96,11 +96,16 @@ export function guessBrandFromVin(vin: string): string | null {
   return WMI_PREFIXES[wmi] ?? null;
 }
 
-const DEFAULT_PLATE_REGEX = /^[A-Z0-9-]{5,10}$/;
+// Israeli plates are stored bare: 8 digits, no separators. They are *printed*
+// as 123-45-678, so anything typed, pasted or OCR'd is stripped down to the
+// digits first — the plate on the car and the value in the database are the
+// same plate, and validation must not reject the printed spelling.
+const PLATE_REGEX = /^\d{8}$/;
+
+export function stripPlate(plate: string): string {
+  return plate.replace(/\D/g, '');
+}
 
 export function isValidPlate(plate: string): boolean {
-  const pattern = import.meta.env.VITE_PLATE_REGEX
-    ? new RegExp(import.meta.env.VITE_PLATE_REGEX)
-    : DEFAULT_PLATE_REGEX;
-  return pattern.test(plate.toUpperCase());
+  return PLATE_REGEX.test(stripPlate(plate));
 }

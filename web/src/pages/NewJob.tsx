@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { Service } from '../lib/types';
-import { isValidPlate, isValidVinFormat, vinChecksumValid, guessBrandFromVin } from '../lib/vin';
+import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid, guessBrandFromVin } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { submitJob, findRecentDuplicate, MAX_EXTRA_PHOTOS } from '../lib/jobs';
 import { enqueueForRetry } from '../lib/offlineQueue';
@@ -351,13 +351,16 @@ export default function NewJob() {
               id="job-plate"
               ref={plateInputRef}
               value={form.plate}
-              inputMode="text"
-              autoCapitalize="characters"
+              inputMode="numeric"
+              maxLength={8}
+              autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
               onChange={(e) => {
                 beginNextCar();
-                setForm((f) => ({ ...f, plate: e.target.value.toUpperCase() }));
+                // The plate is printed 123-45-678 but stored bare, so the
+                // separators are dropped as they are typed or pasted.
+                setForm((f) => ({ ...f, plate: stripPlate(e.target.value).slice(0, 8) }));
                 setAutoFilled((a) => ({ ...a, plate: false }));
               }}
               className={`${fieldClass} font-mono tracking-wider uppercase ${
