@@ -309,7 +309,10 @@ export default function Services() {
           <Table minWidth={isAdmin ? 60 : 52}>
             <THead>
               <tr>
-                <Th>{t('services.catalog')}</Th>
+                {/* A catalog number is a fixed-length code, so its column is
+                    sized by the code and nothing else — the width it would
+                    otherwise take as an equal share is width the name needs. */}
+                <Th className="w-px whitespace-nowrap">{t('services.catalog')}</Th>
                 <Th>{t('services.nameEn')}</Th>
                 <Th hideBelow="md">{t('services.nameRu')}</Th>
                 {isAdmin && (
@@ -332,7 +335,7 @@ export default function Services() {
                 return (
                   <Fragment key={s.id}>
                   <Tr active={Boolean(open)}>
-                    <Td>
+                    <Td className="w-px whitespace-nowrap">
                       {/* The catalog number is the record the office matches on. */}
                       <CellTitle mono>{s.catalog_number}</CellTitle>
                     </Td>

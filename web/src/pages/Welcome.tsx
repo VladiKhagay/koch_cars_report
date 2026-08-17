@@ -92,7 +92,7 @@ export default function Welcome() {
           <Logo height={24} title={t('app.name')} />
         </div>
 
-        <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">
+        <h1 className="mt-8 text-2xl font-semibold tracking-tighter text-ink-900 sm:text-3xl">
           {t('welcome.invalidTitle')}
         </h1>
         <p className="mt-3 text-base leading-relaxed text-ink-600">{t('welcome.invalidLink')}</p>
@@ -110,7 +110,7 @@ export default function Welcome() {
         <Logo height={24} title={t('app.name')} />
       </div>
 
-      <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">{t('welcome.title')}</h1>
+      <h1 className="mt-8 text-2xl font-semibold tracking-tighter text-ink-900 sm:text-3xl">{t('welcome.title')}</h1>
       <p className="mt-2 text-base text-ink-600">{t('welcome.subtitle')}</p>
 
       <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">

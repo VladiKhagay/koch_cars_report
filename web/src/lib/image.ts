@@ -1,3 +1,14 @@
+/**
+ * Largest photo the Worker's /upload will accept.
+ *
+ * Must match MAX_UPLOAD_BYTES in worker/src/upload.ts. The two packages deploy
+ * separately and share no module, so the number is written down twice on
+ * purpose — but only the Worker's copy is a security control. This one exists
+ * so the downscale-failure path fails on the phone instead of uploading bytes
+ * that are certain to be rejected.
+ */
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
 /** Downscale a captured photo client-side before it ever leaves the phone. */
 export async function downscaleImage(file: File | Blob, maxDim = 1920, quality = 0.82): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
@@ -19,6 +30,12 @@ export async function downscaleImage(file: File | Blob, maxDim = 1920, quality =
       quality,
     );
   });
+}
+
+/** Pixel dimensions of an encoded image. */
+export async function imageSize(blob: Blob): Promise<{ width: number; height: number }> {
+  const bitmap = await createImageBitmap(blob);
+  return { width: bitmap.width, height: bitmap.height };
 }
 
 /** Corner box as returned by the Worker, in the model's own coordinate space. */
@@ -77,11 +94,23 @@ export function boxToCropRect(
 }
 
 /**
+ * Rewrites a box into 0..1 fractions of its own source image.
+ *
+ * Detection runs on a small copy of the photo (fast to upload) while the crop
+ * is taken from the full-resolution original. A normalised box survives that
+ * change of resolution; a pixel-space one would land somewhere else entirely.
+ */
+export function normalizeBox(box: DetectBox, srcW: number, srcH: number): DetectBox {
+  if (box.x1 <= 1.5 && box.y1 <= 1.5) return box;
+  return { x0: box.x0 / srcW, y0: box.y0 / srcH, x1: box.x1 / srcW, y1: box.y1 / srcH };
+}
+
+/**
  * Crops to the detected box and upscales, so the plate fills the frame the
  * model sees. A plate is only ~190px wide in a whole-car shot; cropping to it
  * is what makes OCR viable at all.
  */
-export async function cropToBox(file: File | Blob, box: DetectBox, outWidth = 768): Promise<Blob> {
+export async function cropToBox(file: File | Blob, box: DetectBox, outWidth = 1024): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const rect = boxToCropRect(box, bitmap.width, bitmap.height);
   if (!rect) throw new Error('Unusable crop box');
@@ -100,6 +129,89 @@ export async function cropToBox(file: File | Blob, box: DetectBox, outWidth = 76
   // exactly the artefact that costs character accuracy.
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Failed to encode crop'))), 'image/jpeg', 0.95);
+  });
+}
+
+/**
+ * Black/white points that put most of a histogram's mass across the full range.
+ *
+ * A VIN photographed through the windscreen comes back as dark characters in a
+ * bright reflected wash — the glyphs are still there, but squeezed into a
+ * narrow band of the range, which is exactly what a vision model loses. The
+ * percentiles are deliberately loose: a glare highlight is a real part of the
+ * image, and clipping it away is the point.
+ *
+ * `histogram` is 256 luminance bucket counts. Returns null when there is
+ * nothing to gain (already full-range, or a flat frame that stretching would
+ * only amplify noise in).
+ */
+export function levelRange(histogram: ArrayLike<number>, lowPct = 0.02, highPct = 0.98): [number, number] | null {
+  let total = 0;
+  for (let i = 0; i < 256; i++) total += histogram[i];
+  if (!total) return null;
+
+  const lowTarget = total * lowPct;
+  const highTarget = total * highPct;
+  let seen = 0;
+  let low = 0;
+  let high = 255;
+  for (let i = 0; i < 256; i++) {
+    seen += histogram[i];
+    if (seen <= lowTarget) low = i;
+    if (seen >= highTarget) {
+      high = i;
+      break;
+    }
+  }
+
+  // Below ~24 levels of spread the frame carries no usable structure, and the
+  // stretch would turn sensor noise into fake glyph edges.
+  if (high - low < 24) return null;
+  // And above ~222 there is nothing left to win: the gain is under 1.15x, not
+  // worth a second model call. Gated on the gain rather than on the exact
+  // endpoints, since loose percentiles never return a clean 0..255.
+  if (high - low > 222) return null;
+  return [low, high];
+}
+
+/**
+ * Grayscale + levels stretch, as a second chance for a read the model failed.
+ *
+ * Returns the input untouched when there is no headroom, so the caller can
+ * skip a pointless second model call by comparing identity.
+ */
+export async function enhanceForOcr(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return blob;
+  ctx.drawImage(bitmap, 0, 0);
+
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const px = image.data;
+  const histogram = new Uint32Array(256);
+  // Rec. 601 luma, integer-weighted — this is a preprocessing step, not colour
+  // management, and the exact coefficients do not change what the model reads.
+  for (let i = 0; i < px.length; i += 4) {
+    const luma = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+    px[i] = px[i + 1] = px[i + 2] = luma;
+    histogram[luma]++;
+  }
+
+  const range = levelRange(histogram);
+  if (!range) return blob;
+  const [low, high] = range;
+  const scale = 255 / (high - low);
+  for (let i = 0; i < px.length; i += 4) {
+    const v = Math.max(0, Math.min(255, (px[i] - low) * scale));
+    px[i] = px[i + 1] = px[i + 2] = v;
+  }
+  ctx.putImageData(image, 0, 0);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((b) => resolve(b ?? blob), 'image/jpeg', 0.95);
   });
 }
 

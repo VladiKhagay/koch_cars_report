@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { setUserActive } from '../lib/workerApi';
 import type { AppUser } from '../lib/types';
 import { Badge, Card, ConfirmAction, EmptyState, LoadingRegion, Page, PageHeading } from '../components/ui';
 
@@ -29,7 +30,9 @@ export default function Team() {
   }
 
   async function toggleActive(user: AppUser) {
-    await supabase.rpc('set_user_active', { p_user_id: user.id, p_active: !user.active });
+    // Through the Worker, not the RPC directly: deactivating must also revoke
+    // the Supabase auth account, or the user keeps a self-renewing token.
+    await setUserActive(user.id, !user.active);
     if (appUser?.site_id) void load(appUser.site_id);
   }
 

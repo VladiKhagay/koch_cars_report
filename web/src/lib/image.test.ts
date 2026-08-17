@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boxToCropRect } from './image';
+import { boxToCropRect, levelRange, normalizeBox } from './image';
 
 const W = 1920;
 const H = 1080;
@@ -61,5 +61,53 @@ describe('boxToCropRect — rejections', () => {
 
   it('rejects boxes too small to carry readable characters', () => {
     expect(boxToCropRect({ x0: 0.5, y0: 0.5, x1: 0.502, y1: 0.5005 }, W, H)).toBeNull();
+  });
+});
+
+describe('normalizeBox', () => {
+  it('leaves an already-normalised box alone', () => {
+    const box = { x0: 0.4, y0: 0.5, x1: 0.6, y1: 0.55 };
+    expect(normalizeBox(box, 1024, 576)).toEqual(box);
+  });
+
+  // The point of the helper: a box detected on the small copy must crop the
+  // same region out of the full-resolution original.
+  it('converts pixel coords into fractions of the detect image', () => {
+    const box = normalizeBox({ x0: 512, y0: 288, x1: 768, y1: 316 }, 1024, 576);
+    expect(box.x0).toBeCloseTo(0.5);
+    expect(box.y0).toBeCloseTo(0.5);
+    expect(box.x1).toBeCloseTo(0.75);
+
+    const rect = boxToCropRect(box, 4000, 2250, 0, 0)!;
+    expect(rect.sx).toBeCloseTo(2000);
+    expect(rect.sw).toBeCloseTo(1000);
+  });
+});
+
+describe('levelRange', () => {
+  function histogram(fill: (h: Uint32Array) => void): Uint32Array {
+    const h = new Uint32Array(256);
+    fill(h);
+    return h;
+  }
+
+  it('finds the black and white points of a washed-out frame', () => {
+    // Glare: everything squeezed into the bright end, 140..200.
+    const range = levelRange(histogram((h) => h.fill(100, 140, 201)))!;
+    expect(range[0]).toBeGreaterThanOrEqual(140);
+    expect(range[1]).toBeLessThanOrEqual(200);
+    expect(range[1] - range[0]).toBeGreaterThan(24);
+  });
+
+  it('declines when the frame already spans the range', () => {
+    expect(levelRange(histogram((h) => h.fill(10)))).toBeNull();
+  });
+
+  it('declines on a flat frame rather than amplifying noise', () => {
+    expect(levelRange(histogram((h) => h.fill(500, 120, 130)))).toBeNull();
+  });
+
+  it('declines on an empty histogram', () => {
+    expect(levelRange(new Uint32Array(256))).toBeNull();
   });
 });

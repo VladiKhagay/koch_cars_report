@@ -80,7 +80,10 @@ export function PageHeading({
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tighter text-ink-900">{children}</h1>
+        {/* Steps down on a phone. 28px is a page title on a laptop; on a 360px
+            screen it is two wrapped lines of "Моя статистика" before the first
+            row of content, and the title's job is orientation, not spectacle. */}
+        <h1 className="text-xl font-semibold tracking-tighter text-ink-900 sm:text-2xl">{children}</h1>
         {lead && <p className="mt-1.5 max-w-prose text-sm text-ink-600">{lead}</p>}
       </div>
       {action}
@@ -465,8 +468,19 @@ export function SearchField({
 
 /* ------------------------------------------------------------------ fields */
 
-export const fieldClass =
-  'h-control w-full rounded-lg border border-line-strong bg-surface px-3.5 text-base text-ink-900 transition-colors duration-150 focus:border-ink-900';
+/**
+ * Everything a field looks like except how tall it is. Split out because the
+ * select wants a different height on a phone and two competing `h-*` utilities
+ * in one class string resolve by stylesheet order, not by the order they were
+ * written — a coin flip, not a decision.
+ *
+ * Type stays at 1rem in every field, at every width. Anything smaller triggers
+ * iOS zoom-on-focus, which is a broken form on a phone.
+ */
+const fieldBase =
+  'w-full rounded-lg border border-line-strong bg-surface px-3.5 text-base text-ink-900 transition-colors duration-150 focus:border-ink-900';
+
+export const fieldClass = `h-control ${fieldBase}`;
 
 export const fieldErrorClass = 'border-danger-600 bg-danger-50';
 
@@ -481,6 +495,13 @@ export const fieldErrorClass = 'border-danger-600 bg-danger-50';
  *
  * The chevron is `pointer-events-none` so the whole control still opens the
  * native picker — which is what we want on a phone.
+ *
+ * Height is the one place a select parts company with the text fields. Filter
+ * screens stack four or five of these, and a select is a one-tap control that
+ * opens a native picker — nobody types into it — so it sits at the 44px tap
+ * floor on a phone and returns to the 48px control height from `sm` up, where
+ * the extra weight costs nothing. Text fields keep 48px everywhere: they are
+ * aimed at while the keyboard is open.
  */
 export function Select({
   className = '',
@@ -492,7 +513,9 @@ export function Select({
     <div className="relative">
       <select
         {...props}
-        className={`${fieldClass} ${invalid ? fieldErrorClass : ''} appearance-none pe-11 ${className}`}
+        className={`h-tap sm:h-control ${fieldBase} ${
+          invalid ? fieldErrorClass : ''
+        } appearance-none pe-11 ${className}`}
       >
         {children}
       </select>

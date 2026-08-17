@@ -52,7 +52,13 @@ export default function Layout() {
   useEffect(() => startQueueSync(), []);
 
   return (
-    <div className="flex min-h-full flex-col bg-sunken md:flex-row">
+    /* App shell, not a document: the frame is exactly one viewport tall
+       (`dvh`, so a phone's collapsing address bar is accounted for) and the
+       only thing that scrolls is <main>. That is what pins the tab bar — it is
+       a flex sibling of the scroller, so it cannot float up on a short page,
+       cannot be pushed down by a long one, and needs no content padding to
+       keep from covering what it sits over. */
+    <div className="flex h-dvh flex-col bg-sunken md:flex-row">
       {/* The nav is the same five-to-seven stops on every page. Without this a
           keyboard user tabs through all of them before reaching the form they
           came for — and on New Job that is the difference between one car and
@@ -71,14 +77,11 @@ export default function Layout() {
         Desktop sidebar. Managers and admins live here, so it is a persistent
         shell; phones keep the bottom tab bar.
 
-        `sticky` + `h-dvh` is what actually makes it persistent. As a plain flex
-        child it stretched to the height of the *page*, so on a long jobs table
-        the nav scrolled off the top and the shell stopped being a shell.
-        Scrolling inside it also covers the short-viewport case — a phone in
-        landscape is past `md`, so it gets this sidebar in ~390px of height,
-        which is less than the nav needs.
+        It fills the shell's height and scrolls on its own, which covers the
+        short-viewport case — a phone in landscape is past `md`, so it gets
+        this sidebar in ~390px of height, which is less than the nav needs.
       */}
-      <aside className="safe-top hidden w-60 shrink-0 flex-col border-e border-line bg-surface p-4 md:sticky md:top-0 md:flex md:h-dvh md:overflow-y-auto">
+      <aside className="safe-top hidden w-60 shrink-0 flex-col border-e border-line bg-surface p-4 md:flex md:h-full md:overflow-y-auto">
         <div className="mb-7 px-1 pt-1 text-ink-900">
           <Logo height={22} decorative />
         </div>
@@ -126,8 +129,9 @@ export default function Layout() {
         </NavLink>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="safe-top sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2.5 md:hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Sibling of the scroller, so it stays put without `sticky`. */}
+        <header className="safe-top flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 py-2.5 md:hidden">
           <span className="text-ink-900">
             <Logo height={20} decorative />
           </span>
@@ -143,7 +147,10 @@ export default function Layout() {
           </div>
         </header>
 
-        <main id="main" tabIndex={-1} className="flex-1 pb-24 md:pb-0">
+        {/* The app's one scroll container. `min-h-0` is load-bearing: a flex
+            child defaults to min-height:auto and would grow to its content
+            instead of scrolling, which is how the bar gets pushed off. */}
+        <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
 
@@ -152,7 +159,7 @@ export default function Layout() {
             tabs — the manager role has five of these at 375px. */}
         <nav
           aria-label={t('nav.mainNav')}
-          className="safe-bottom fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-surface shadow-bar md:hidden"
+          className="safe-bottom z-20 flex shrink-0 border-t border-line bg-surface shadow-bar md:hidden"
         >
           {tabBarItems.map((item) => (
             <NavLink

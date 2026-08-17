@@ -151,9 +151,12 @@ export default function JobDetail() {
           {t('jobDetail.back')}
         </Link>
 
-        <h1 className="font-mono text-2xl font-semibold tracking-wide text-ink-900">
+        {/* A plate is eight mono digits with wide tracking, and the brand rides
+            beside it on the same line. At 28px that pair is wider than a 360px
+            screen, so the brand wrapped alone under its plate. */}
+        <h1 className="font-mono text-xl font-semibold tracking-wide text-ink-900 sm:text-2xl">
           {job.plate}
-          <span className="ms-3 font-sans text-base font-normal tracking-normal text-ink-600">
+          <span className="ms-3 font-sans text-sm font-normal tracking-normal text-ink-600 sm:text-base">
             {job.brand ?? '—'}
           </span>
         </h1>

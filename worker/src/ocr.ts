@@ -1,5 +1,7 @@
 import type { Context } from 'hono';
 import type { Env } from './index';
+import { getActiveAppUser } from './appUser';
+import { rateLimited } from './rateLimit';
 
 // Kept as a fixed set so the frontend can translate the reason instead of
 // showing raw English model output. The VLM is no longer asked to classify
@@ -29,8 +31,12 @@ const PROMPTS: Record<'plate' | 'vin', string> = {
     'Return ONLY the 8 plate digits. ' +
     'Do not include spaces, hyphens, punctuation, explanations, or any other text. ' +
     'Always make your best guess.',
+  // The VIN plate sits under the windscreen, so nearly every real photo has
+  // reflections across it. Naming that in the prompt stops the model treating
+  // the glare as the subject and answering about it.
   vin:
     'Read the 17-character VIN in this image. ' +
+    'The VIN is photographed through glass, so ignore reflections and glare and read the characters underneath. ' +
     'Return ONLY the 17 VIN characters. ' +
     'No spaces, hyphens, punctuation, explanations, or any other text. ' +
     'A VIN never contains the letters I, O or Q. ' +
@@ -218,6 +224,21 @@ function unwrap<T>(result: unknown): T {
 }
 
 export async function handleOcr(c: Context<{ Bindings: Env }>) {
+  /*
+   * The only route that reads nothing from Postgres, and therefore the only
+   * one that inherits no authorization from RLS. Everything else here ends in
+   * a query whose policies run through current_app_user() and fail closed for
+   * a deactivated account; this one would otherwise run a 9B vision model on
+   * the strength of a valid signature alone — which a former employee's
+   * auto-refreshing token keeps producing indefinitely.
+   */
+  const limited = await rateLimited(c, c.env.OCR_LIMITER);
+  if (limited) return limited;
+
+  if (!(await getActiveAppUser(c))) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
   const body = await c.req.json<OcrRequestBody>().catch(() => null);
   if (!body || !body.image || (body.kind !== 'plate' && body.kind !== 'vin')) {
     return c.json({ error: 'Expected { image: base64, kind: "plate" | "vin" }' }, 400);

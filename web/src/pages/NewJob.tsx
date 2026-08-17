@@ -10,7 +10,17 @@ import { enqueueForRetry } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
 import ServiceChips from '../components/ServiceChips';
 import Icon from '../components/Icon';
-import { Button, Field, FieldNotice, Group, Page, Skeleton, fieldClass, fieldErrorClass } from '../components/ui';
+import {
+  Button,
+  Field,
+  FieldNotice,
+  Group,
+  Page,
+  PageHeading,
+  Skeleton,
+  fieldClass,
+  fieldErrorClass,
+} from '../components/ui';
 import { PAGE_WIDTH } from '../lib/pageWidth';
 
 const emptyForm = {
@@ -86,13 +96,15 @@ export default function NewJob() {
     setStatus((s) => (s === 'idle' ? s : 'idle'));
   }
 
-  async function handlePlateCapture(blob: Blob) {
+  // `original` is the un-downscaled capture: only the stored/uploaded photo is
+  // shrunk, OCR reads the full-resolution pixels.
+  async function handlePlateCapture(blob: Blob, original: Blob) {
     beginNextCar();
     setForm((f) => ({ ...f, platePhoto: blob }));
     setOcrBusy((b) => ({ ...b, plate: true }));
     setOcrIssue((i) => ({ ...i, plate: null }));
     setAutoFilled((a) => ({ ...a, plate: false }));
-    const { text, reason } = await ocrPhoto(blob, 'plate');
+    const { text, reason } = await ocrPhoto(original, 'plate');
     setOcrBusy((b) => ({ ...b, plate: false }));
     if (text) {
       setForm((f) => ({ ...f, plate: text }));
@@ -102,13 +114,13 @@ export default function NewJob() {
     }
   }
 
-  async function handleVinCapture(blob: Blob) {
+  async function handleVinCapture(blob: Blob, original: Blob) {
     beginNextCar();
     setForm((f) => ({ ...f, vinPhoto: blob }));
     setOcrBusy((b) => ({ ...b, vin: true }));
     setOcrIssue((i) => ({ ...i, vin: null }));
     setAutoFilled((a) => ({ ...a, vin: false }));
-    const { text, reason } = await ocrPhoto(blob, 'vin');
+    const { text, reason } = await ocrPhoto(original, 'vin');
     setOcrBusy((b) => ({ ...b, vin: false }));
     if (text) {
       const brand = guessBrandFromVin(text);
@@ -239,7 +251,11 @@ export default function NewJob() {
       <Page width="form">
         <div ref={topRef} />
 
-        <h1 className="text-xl font-semibold tracking-tight text-ink-900">{t('newJob.title')}</h1>
+        {/* This screen used to hand-roll its title one step below every other
+            page's, to buy back vertical space on the highest-volume form. The
+            page title now steps down on a phone everywhere, so the exception
+            has nothing left to do and the shared heading can own it. */}
+        <PageHeading>{t('newJob.title')}</PageHeading>
 
         {/* Outcome of the PREVIOUS car. Full-width, named by plate, and gone
             the moment this car's entry starts. */}
@@ -282,7 +298,7 @@ export default function NewJob() {
                 photo={form.platePhoto}
                 busy={ocrBusy.plate}
                 error={ocrIssue.plate ? t(`newJob.ocrReasons.${ocrIssue.plate}`) : null}
-                onCapture={(b) => void handlePlateCapture(b)}
+                onCapture={(b, original) => void handlePlateCapture(b, original)}
                 onTypeItIn={() => plateInputRef.current?.focus()}
               />
             </div>
@@ -292,7 +308,7 @@ export default function NewJob() {
                 photo={form.vinPhoto}
                 busy={ocrBusy.vin}
                 error={ocrIssue.vin ? t(`newJob.ocrReasons.${ocrIssue.vin}`) : null}
-                onCapture={(b) => void handleVinCapture(b)}
+                onCapture={(b, original) => void handleVinCapture(b, original)}
                 onTypeItIn={() => vinInputRef.current?.focus()}
               />
             </div>
@@ -470,7 +486,7 @@ export default function NewJob() {
         No extra tap is introduced: the button is in the same place, only
         always reachable.
       */}
-      <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-10 border-t border-line bg-surface px-4 py-3 shadow-bar md:bottom-0">
+      <div className="sticky bottom-0 z-10 border-t border-line bg-surface px-4 py-3 shadow-bar">
         {/* Same source as the page column, so the bar can never drift from it. */}
         <div className={`mx-auto w-full ${PAGE_WIDTH.form}`}>
           {showProblems && (

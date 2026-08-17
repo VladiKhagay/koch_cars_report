@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { downscaleImage } from '../lib/image';
+import { MAX_UPLOAD_BYTES, downscaleImage } from '../lib/image';
 import Icon from './Icon';
 import { Spinner } from './ui';
 
@@ -24,7 +24,13 @@ interface Props {
   busy?: boolean;
   /** Set when OCR could not read the value; shows a hint, never blocks. */
   error?: string | null;
-  onCapture: (blob: Blob) => void;
+  /**
+   * `blob` is the downscaled copy to store and upload. `original` is the
+   * untouched capture, passed on so OCR can read from the full-resolution
+   * pixels — a plate is small enough in a whole-car shot that the downscale
+   * alone can cost the read.
+   */
+  onCapture: (blob: Blob, original: Blob) => void;
   /** "Type it in" pressed — parent should focus the manual input. */
   onTypeItIn?: () => void;
   /** Offered only where a photo is optional, so a required slot can't be emptied. */
@@ -44,6 +50,7 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
   const galleryRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [errorDismissed, setErrorDismissed] = useState(false);
+  const [tooLarge, setTooLarge] = useState(false);
 
   useEffect(() => {
     if (!photo) {
@@ -63,15 +70,26 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    setTooLarge(false);
     try {
       const downscaled = await downscaleImage(file);
-      onCapture(downscaled);
+      onCapture(downscaled, file);
     } catch (err) {
       // createImageBitmap/canvas encoding has known WebKit quirks on some
       // camera-captured photos. Rather than silently drop the capture,
       // fall back to the un-downscaled original so the flow keeps working.
       console.error('Photo downscale failed, using original', err);
-      onCapture(file);
+      // ...but only if the Worker would actually accept it. An oversized
+      // original is not a slow upload, it is a permanent one: /upload answers
+      // 413, submitJob throws, and the payload goes into the offline queue,
+      // which retries it on every reconnect forever without ever succeeding.
+      // Refusing here keeps that out of the queue and tells the worker to
+      // retake, which is the only thing that actually resolves it.
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setTooLarge(true);
+        return;
+      }
+      onCapture(file, file);
     }
   }
 
@@ -184,6 +202,16 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
             )}
           </div>
         </div>
+      )}
+
+      {/* Sits outside the state blocks because a rejected file leaves the tile
+          in whatever state it was already in — empty for a first capture,
+          still-successful for a retake that was too big. */}
+      {tooLarge && (
+        <p role="alert" className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-danger-700">
+          <Icon name="alertTriangle" size={14} className="mt-px shrink-0" />
+          {t('newJob.photoTooLarge')}
+        </p>
       )}
     </div>
   );

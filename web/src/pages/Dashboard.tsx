@@ -84,7 +84,7 @@ export default function Dashboard() {
               aria-label={t('dashboard.site')}
               value={siteId ?? ''}
               onChange={(e) => setSiteId(e.target.value)}
-              className="w-auto text-sm"
+              className="w-auto max-w-44 sm:max-w-none"
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>

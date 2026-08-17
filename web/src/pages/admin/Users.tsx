@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
-import { inviteUser } from '../../lib/workerApi';
+import { inviteUser, setUserActive } from '../../lib/workerApi';
 import type { AppUser, Site, UserRole } from '../../lib/types';
 import AdminTabs from '../../components/AdminTabs';
 import StatusBanner from '../../components/StatusBanner';
@@ -57,6 +57,8 @@ export default function AdminUsers() {
   const [siteId, setSiteId] = useState('');
   const [inviteError, setInviteError] = useState('');
   const [inviteSent, setInviteSent] = useState(false);
+  /** Errors from row actions, shown by the table rather than by the invite form. */
+  const [actionError, setActionError] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Inline edit
@@ -116,7 +118,15 @@ export default function AdminUsers() {
   }
 
   async function toggleActive(user: AppUser) {
-    await supabase.rpc('set_user_active', { p_user_id: user.id, p_active: !user.active });
+    // Through the Worker, not the RPC directly: deactivating must also revoke
+    // the Supabase auth account, or the user keeps a self-renewing token.
+    setActionError('');
+    const result = await setUserActive(user.id, !user.active);
+    if (!result.ok) setActionError(result.error);
+    // The profile change can land while the auth account survives — the person
+    // is locked out of the data but can still sign in. Silence would read as
+    // full success on the one action where that gap is the whole point.
+    else if (!result.sessionRevoked) setActionError(t('admin.sessionNotRevoked'));
     setExpanded(null);
     void load();
   }
@@ -232,6 +242,12 @@ export default function AdminUsers() {
 
       {!loading && users.length === 0 && (
         <EmptyState icon="users" title={t('admin.usersEmptyTitle')} body={t('admin.usersEmptyBody')} />
+      )}
+
+      {actionError && (
+        <StatusBanner tone="error" live>
+          {actionError}
+        </StatusBanner>
       )}
 
       {!loading && users.length > 0 && (

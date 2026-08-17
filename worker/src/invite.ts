@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { Env } from './index';
+import { getActiveAppUser } from './appUser';
 
 interface InviteBody {
   email: string;
@@ -22,7 +23,6 @@ interface InviteBody {
  * signature-verified by the jwk middleware in index.ts.
  */
 export async function handleInvite(c: Context<{ Bindings: Env }>) {
-  const authHeader = c.req.header('Authorization') ?? '';
   const body = await c.req.json<InviteBody>().catch(() => null);
   if (
     !body ||
@@ -36,11 +36,8 @@ export async function handleInvite(c: Context<{ Bindings: Env }>) {
   }
 
   // Caller must be an active admin (checked through their own JWT + RLS).
-  const callerRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/users?auth_id=eq.${await callerAuthId(c)}&select=role,active`, {
-    headers: { apikey: c.env.SUPABASE_ANON_KEY, Authorization: authHeader },
-  });
-  const callerRows = callerRes.ok ? ((await callerRes.json()) as { role: string; active: boolean }[]) : [];
-  if (callerRows.length === 0 || callerRows[0].role !== 'admin' || !callerRows[0].active) {
+  const caller = await getActiveAppUser(c);
+  if (caller?.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -85,10 +82,4 @@ export async function handleInvite(c: Context<{ Bindings: Env }>) {
   }
 
   return c.json({ ok: true });
-}
-
-/** auth_id (sub) from the already-verified JWT payload set by hono/jwk. */
-async function callerAuthId(c: Context<{ Bindings: Env }>): Promise<string> {
-  const payload = c.get('jwtPayload' as never) as { sub?: string } | undefined;
-  return payload?.sub ?? '';
 }

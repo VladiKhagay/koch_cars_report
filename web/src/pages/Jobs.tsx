@@ -64,6 +64,17 @@ interface JobRow extends Job {
 const NO_ROWS: JobRow[] = [];
 
 /**
+ * The filter labels above the toolbar's controls.
+ *
+ * These are `<label>`-wrapped rather than `Field`-wrapped — the toolbar wants
+ * the controls in one wrapping flex row, not in Field's block — but they are
+ * the same role, so they carry the same type as every other field label in the
+ * app. They used to sit a step smaller and a shade lighter, which is how a
+ * system ends up with two label sizes and no rule that says which is which.
+ */
+const filterLabelClass = 'mb-2 block text-sm font-medium text-ink-700';
+
+/**
  * No row models are registered. Sorting, filtering and pagination are all
  * server-side, so asking the table for client-side versions of them would
  * quietly re-derive the wrong answer from the 50 rows currently in memory.
@@ -245,7 +256,8 @@ export default function Jobs() {
   const goToPage = useCallback((next: (p: number) => number) => {
     setPage(next);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+    // The shell scrolls <main>, not the window.
+    document.getElementById('main')?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
   }, []);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -435,9 +447,14 @@ export default function Jobs() {
               <SearchField value={search} onChange={setSearch} label={t('jobs.search')} />
 
               <div className="flex flex-wrap items-end gap-2">
+                {/* The two name-carrying filters take the full width on a
+                    phone. Sharing a 360px row gave each about 160px, which
+                    truncates a site or worker name — and a dropdown you have
+                    to open to find out what it says is not a filter. The dates
+                    are fixed-width by nature and stay paired. */}
                 {canSwitch && (
-                  <label className="min-w-40 flex-1">
-                    <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.site')}</span>
+                  <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
+                    <span className={filterLabelClass}>{t('jobs.site')}</span>
                     <Select value={siteFilter ?? ''} onChange={(e) => setSiteFilter(e.target.value)}>
                       <option value="">{t('jobs.allSites')}</option>
                       {sites.map((s) => (
@@ -449,8 +466,8 @@ export default function Jobs() {
                   </label>
                 )}
 
-                <label className="min-w-40 flex-1">
-                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.worker')}</span>
+                <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
+                  <span className={filterLabelClass}>{t('jobs.worker')}</span>
                   <Select value={workerFilter} onChange={(e) => setWorkerFilter(e.target.value)}>
                     <option value="">{t('jobs.allWorkers')}</option>
                     {workers.map((w) => (
@@ -462,12 +479,12 @@ export default function Jobs() {
                 </label>
 
                 <label className="min-w-32 flex-1">
-                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.from')}</span>
+                  <span className={filterLabelClass}>{t('jobs.from')}</span>
                   <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
                 </label>
 
                 <label className="min-w-32 flex-1">
-                  <span className="mb-1 block text-xs font-medium text-ink-600">{t('jobs.to')}</span>
+                  <span className={filterLabelClass}>{t('jobs.to')}</span>
                   <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
                 </label>
 

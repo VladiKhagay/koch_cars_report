@@ -34,7 +34,7 @@ export default function Login() {
         <Logo height={24} title={t('app.name')} />
       </div>
 
-      <h1 className="mt-8 text-3xl font-semibold tracking-tighter text-ink-900">{t('auth.signIn')}</h1>
+      <h1 className="mt-8 text-2xl font-semibold tracking-tighter text-ink-900 sm:text-3xl">{t('auth.signIn')}</h1>
       <p className="mt-2 text-base text-ink-600">{t('app.signInLead')}</p>
 
       <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">

@@ -32,8 +32,22 @@ export async function handleGetPhoto(c: Context<{ Bindings: Env }>) {
 
   return new Response(object.body, {
     headers: {
+      // Whatever /upload sniffed from the bytes at write time. Objects stored
+      // before that check existed carry image/jpeg, which is what they were
+      // pinned to.
       'Content-Type': object.httpMetadata?.contentType ?? 'image/jpeg',
       'Cache-Control': 'private, max-age=300',
+      // The content type is derived from the file's own magic bytes and can
+      // only be one of four image types, so there is nothing here for a
+      // sniffing browser to usefully reinterpret — but this is the response
+      // that serves user-supplied bytes from the Worker's own origin, so it
+      // says so explicitly rather than relying on that argument holding.
+      'X-Content-Type-Options': 'nosniff',
+      // Renders inline in the viewer as before; the filename is fixed so a
+      // download never inherits a name from anything user-controlled.
+      'Content-Disposition': 'inline; filename="photo.jpg"',
+      // A photo is only ever fetched by the app itself via fetch().
+      'Content-Security-Policy': "default-src 'none'; sandbox",
     },
   });
 }

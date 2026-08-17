@@ -254,7 +254,7 @@ Every status colour ships as a wash, an edge, and a text/fill value so a state c
 
 ### Hierarchy
 
-- **Display** (600, 2.25rem / 2.5rem, tracking -0.022em): Reserved for the largest stat readouts. Rare.
+- **Display** (600, 2.25rem / 2.5rem, tracking -0.022em): Reserved for the largest stat readouts and the signed-out headings. Rare.
 - **Headline** (600, 1.75rem / 2.125rem, tracking -0.022em): The page title. One per screen.
 - **Title** (600, 1rem / 1.5rem, tracking -0.014em): Card-level section headings, empty-state titles. Sentence case, optionally preceded by an 18px icon.
 - **Body** (400, 1rem / 1.5rem): Field input text and reading copy. Field text stays at 1rem specifically — anything smaller triggers iOS zoom-on-focus, which is a broken form on a phone.
@@ -268,13 +268,29 @@ Every status colour ships as a wash, an edge, and a text/fill value so a state c
 
 **The Identifier Isolation Rule.** `font-mono` in this app marks exactly one thing: a Latin-script identifier. Those runs are pinned `direction: ltr` with `unicode-bidi: isolate` at the base layer, because inside a Hebrew paragraph the bidi algorithm treats a VIN's letters, digits, and separators as one mixed run and can reorder it. A VIN is not a sentence and must never be re-sequenced by the text around it. This also gives the correct caret direction when a worker types one.
 
-**The 16px Field Rule.** Never set an input below 1rem.
+**The 16px Field Rule.** Never set an input below 1rem. This is why the phone
+never gets a smaller field: type is not the axis available for compacting a
+form. Height is.
+
+**The One-Step-Down Rule.** Exactly one role changes with the viewport, and it
+changes by exactly one step of the scale: the largest heading on a screen sits
+one step lower below `sm` and reaches its stated size from `sm` up. Page title
+1.375 → 1.75rem; the signed-out heading and the job's plate 1.75 → 2.25rem.
+Nothing else moves — labels, body, badges and table text are the same size on a
+phone as on a laptop, because they are already at the legibility floor for a
+sunlit screen and because a role that resizes twice is two roles.
+
+The step exists because these headings are set in the largest sizes the system
+has, and Russian runs 2–2.7× longer in short strings: at 28px "Моя статистика"
+takes two lines above the first row of content on a 360px screen. The breakpoint
+is `sm`, not `md` — this responds to the phone, not to the sidebar, so the
+md-Not-lg Rule does not apply.
 
 ## Layout
 
 Fixed rem scale at roughly a 1.2 ratio, no fluid clamps — product UI should not resize under the reader.
 
-The shell is a single responsive frame: below `md` a sticky header plus a fixed bottom tab bar; at `md` and above a persistent 240px sidebar and no tab bar. Because the sidebar arrives at `md`, page columns must widen at `md` too — widening at `lg` instead leaves a dead zone between 768 and 1023px where the content column is squeezed by a sidebar it hasn't made room for. All page widths therefore route through one container with three settings: `form` (28rem → 36rem), `list` (42rem → 48rem → 64rem), `wide` (42rem → 56rem → 72rem). No screen declares its own max-width.
+The shell is a single responsive frame one viewport tall (`dvh`), inside which only the content pane scrolls: below `md` a header plus a bottom tab bar; at `md` and above a persistent 240px sidebar and no tab bar. The bars are flex siblings of the scroller rather than `position: fixed` — that is what keeps the tab bar on the bottom edge whether a screen has three rows or three hundred, with no content padding to reserve space and nothing to re-measure when a label wraps to two lines. Because the sidebar arrives at `md`, page columns must widen at `md` too — widening at `lg` instead leaves a dead zone between 768 and 1023px where the content column is squeezed by a sidebar it hasn't made room for. All page widths therefore route through one container with three settings: `form` (28rem → 36rem), `list` (42rem → 48rem → 64rem), `wide` (42rem → 56rem → 72rem). No screen declares its own max-width.
 
 Page padding steps 16 / 24 / 32px across the same breakpoints. Vertical rhythm gives a section heading more space above than below. iOS safe-area insets are applied as their own utility classes on their own elements, never combined with page padding on the same node — `padding-top: env(...)` would otherwise zero out the page's own top padding on every device without a notch.
 
@@ -296,7 +312,7 @@ Layered, not flat, and deliberately not heavy. The system's hairlines are light 
 
 - **Card** (`0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)`): every resting card, list row, skeleton, and empty state. Barely there by design.
 - **Raised** (`0 4px 8px -2px rgb(16 24 40 / 0.06), 0 12px 24px -6px rgb(16 24 40 / 0.1)`): surfaces that float above the canvas — the sign-in panel at ≥640px, sheets, large panels.
-- **Bar** (`0 -1px 2px 0 rgb(16 24 40 / 0.04), 0 -8px 24px -8px rgb(16 24 40 / 0.1)`): upward-cast, exclusively for the fixed bottom tab bar.
+- **Bar** (`0 -1px 2px 0 rgb(16 24 40 / 0.04), 0 -8px 24px -8px rgb(16 24 40 / 0.1)`): upward-cast, exclusively for the bottom tab bar.
 
 ### Named Rules
 
@@ -350,14 +366,14 @@ The service selector — the most-tapped control in the product, one tap per car
 - **Error:** Alarm border and Alarm Wash fill, with the message below the field in Alarm Deep, led by an `alertCircle` glyph.
 - **Advisory:** a separate non-blocking notice in Caution with an `alertTriangle` glyph — used for checksum warnings and duplicate flags, which inform without stopping the submission.
 - **Label:** sentence case, label type, Slate Strong, 8px above the field; an optional marker and hint sit inline beside it in Slate Quiet.
-- **Select:** the native arrow is switched off and one chevron is drawn at a known inline-end offset with reserved padding, so long option text cannot slide under it and the arrow lands on the correct side in Hebrew. The chevron is pointer-transparent so the whole control still opens the native picker.
+- **Select:** the native arrow is switched off and one chevron is drawn at a known inline-end offset with reserved padding, so long option text cannot slide under it and the arrow lands on the correct side in Hebrew. The chevron is pointer-transparent so the whole control still opens the native picker. The one control that is shorter on a phone: 44px below `sm`, 48px from `sm` up. A select is tapped once and hands off to the platform picker — nothing is typed into it and no keyboard is open while it is aimed at — so it can sit on the tap floor where a text field cannot, and a filter panel stacking four of them gets its height back. A select that carries a free-text name (a site, a worker) takes the full row width on a phone rather than sharing it; a dropdown you have to open to find out what it says is not a filter.
 - **Search:** the magnifier sits inside the field at the inline start with matching padding. One search control for every filtered list in the app.
 
 ### Navigation
 
 - **Sidebar (≥md):** 240px, Paper, inline-end hairline, wordmark at the top. Items are 44px minimum, label type, 12px radius; active is a Brand Graphite fill with Paper text, resting is Slate Strong with a Slate Quiet glyph and a Canvas Deep hover.
-- **Tab bar (<md):** fixed, Paper, top hairline, Bar shadow, 56px minimum per tab, icon above an 11px label. The active tab is marked by a 2px Brand Graphite rule across the top of the slot *plus* a heavier icon stroke *plus* colour — position and weight, not colour alone. A fifth slot is spent on a single "More" entry rather than crowding in two more tabs.
-- **Header (<md):** sticky, Paper, bottom hairline, wordmark at the inline start, account and sync indicator at the end.
+- **Tab bar (<md):** pinned to the bottom edge of the shell, Paper, top hairline, Bar shadow, 56px minimum per tab, icon above an 11px label. The active tab is marked by a 2px Brand Graphite rule across the top of the slot *plus* a heavier icon stroke *plus* colour — position and weight, not colour alone. A fifth slot is spent on a single "More" entry rather than crowding in two more tabs.
+- **Header (<md):** pinned to the top edge of the shell, Paper, bottom hairline, wordmark at the inline start, account and sync indicator at the end.
 
 ### Badges
 

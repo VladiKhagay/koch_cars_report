@@ -16,7 +16,7 @@
  * coarse pointer `.table-dense` (in index.css) puts every inline control back
  * to full size, since these screens are used on a phone too.
  */
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 export function TableCard({
   toolbar,
@@ -38,9 +38,18 @@ export function TableCard({
   );
 }
 
+/**
+ * `minWidth` is the width the *full* column set needs, so it only applies from
+ * `sm` up — the first breakpoint at which `hideBelow` columns come back. Below
+ * it the table is whatever its two or three visible columns actually need, and
+ * a phone gets no sideways scroll for columns it isn't being shown.
+ */
 export function Table({ children, minWidth = 44 }: { children: ReactNode; minWidth?: number }) {
   return (
-    <table className="w-full border-collapse text-start text-sm" style={{ minWidth: `${minWidth}rem` }}>
+    <table
+      className="w-full border-collapse text-start text-sm sm:min-w-[var(--table-min)]"
+      style={{ '--table-min': `${minWidth}rem` } as CSSProperties}
+    >
       {children}
     </table>
   );

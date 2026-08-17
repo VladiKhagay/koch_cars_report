@@ -7,9 +7,23 @@ import { handleOcr } from './ocr';
 import { handleUpload } from './upload';
 import { handleGetPhoto } from './photo';
 import { handleInvite } from './invite';
+import { handleUserActive } from './userActive';
+
+/**
+ * The rate-limit binding, typed here rather than pulled from
+ * @cloudflare/workers-types for the same reason `AI` is below: a minimal
+ * structural type cannot be broken by a types-package bump.
+ */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
 
 export interface Env {
   PHOTOS: R2Bucket;
+  // Per-user rate limits keyed on the JWT `sub`. See wrangler.toml for how the
+  // two limits were sized and what they can and cannot be trusted to do.
+  OCR_LIMITER: RateLimiter;
+  UPLOAD_LIMITER: RateLimiter;
   // Workers AI binding (OCR). Typed minimally rather than with the versioned
   // AiModels map so bumping @cloudflare/workers-types is never forced by a
   // model change.
@@ -35,7 +49,11 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   return cors({
-    origin: allowed.length > 0 ? allowed : '*',
+    // Unset ALLOWED_ORIGINS denies every cross-origin caller rather than
+    // allowing all of them. The old '*' fallback was inert in production —
+    // the var is set in wrangler.toml — but it meant a typo or a fresh
+    // environment failed open, silently, in the direction nobody checks.
+    origin: allowed.length > 0 ? allowed : () => null,
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Authorization', 'Content-Type'],
   })(c, next);
@@ -57,11 +75,13 @@ app.use('/ocr', requireAuth);
 app.use('/upload', requireAuth);
 app.use('/photo/*', requireAuth);
 app.use('/invite', requireAuth);
+app.use('/user-active', requireAuth);
 
 app.post('/ocr', handleOcr);
 app.post('/upload', handleUpload);
 app.get('/photo/:jobId/:kind', handleGetPhoto);
 app.post('/invite', handleInvite);
+app.post('/user-active', handleUserActive);
 
 app.onError((err, c) => {
   /*

@@ -1,5 +1,13 @@
 import { supabase } from './supabase';
-import { blobToBase64, cropToBox, type DetectBox } from './image';
+import {
+  blobToBase64,
+  cropToBox,
+  downscaleImage,
+  enhanceForOcr,
+  imageSize,
+  normalizeBox,
+  type DetectBox,
+} from './image';
 import type { PhotoKind } from './types';
 
 const BASE_URL = import.meta.env.VITE_WORKER_URL;
@@ -37,24 +45,47 @@ async function postOcr(image: Blob, kind: 'plate' | 'vin', task: 'query' | 'dete
   return res.json();
 }
 
+async function readOcr(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
+  const data = (await postOcr(image, kind, 'query')) as { text: string | null; reason: OcrReason | null };
+  return { text: data.text, reason: data.reason };
+}
+
+/**
+ * Reads a plate or VIN out of a captured photo.
+ *
+ * `image` should be the highest-resolution copy available — the camera original,
+ * not the downscaled upload. A plate is ~190px wide in a whole-car shot at
+ * 4000px, and half that once the photo has been shrunk for upload; those are the
+ * pixels the whole crop-and-read detour exists to keep. Detection itself runs on
+ * a small copy, since locating a plate needs far less resolution than reading
+ * one, and uploading the original twice over mobile data is what the field
+ * actually feels.
+ */
 export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
   try {
-    // Workers photograph the whole car, so the plate is a small patch of the
-    // frame. Locate it first and read a tight crop; if detection fails we just
-    // read the full frame as before.
     let target = image;
     try {
-      const { box } = (await postOcr(image, kind, 'detect')) as { box: DetectBox | null };
-      if (box) target = await cropToBox(image, box);
+      const small = await downscaleImage(image, 1024, 0.9);
+      const { box } = (await postOcr(small, kind, 'detect')) as { box: DetectBox | null };
+      if (box) {
+        const { width, height } = await imageSize(small);
+        target = await cropToBox(image, normalizeBox(box, width, height));
+      }
     } catch {
       /* detection is best-effort */
     }
 
-    const data = (await postOcr(target, kind, 'query')) as {
-      text: string | null;
-      reason: OcrReason | null;
-    };
-    return { text: data.text, reason: data.reason };
+    const first = await readOcr(target, kind);
+    if (first.text) return first;
+
+    // Nothing came back. A VIN under the windscreen is usually dark glyphs in a
+    // reflected wash, and a plate in direct sun is the same problem inverted —
+    // both survive a levels stretch. Only worth a second call when the stretch
+    // actually changed something.
+    const enhanced = await enhanceForOcr(target);
+    if (enhanced === target) return first;
+    const second = await readOcr(enhanced, kind);
+    return second.text ? second : first;
   } catch {
     return { text: null, reason: null };
   }
@@ -114,6 +145,37 @@ export async function inviteUser(input: {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) return { ok: false, error: data.error ?? `invite failed (${res.status})` };
     return { ok: true };
+  } catch {
+    return { ok: false, error: 'network error' };
+  }
+}
+
+/**
+ * Activates or deactivates a user.
+ *
+ * Goes through the Worker rather than calling set_user_active directly,
+ * because deactivating has to reach two places: the `active` column that RLS
+ * reads, and the Supabase auth account itself. Without the second, a former
+ * employee keeps a refresh token that renews forever — locked out of the data,
+ * but still holding a valid token. The Worker calls the same RPC with this
+ * caller's JWT, so who may deactivate whom is still decided in Postgres.
+ *
+ * `sessionRevoked: false` means the profile change landed but the auth account
+ * was not banned — worth surfacing, since the user can still authenticate.
+ */
+export async function setUserActive(
+  userId: string,
+  active: boolean,
+): Promise<{ ok: true; sessionRevoked: boolean } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/user-active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: await authHeader() },
+      body: JSON.stringify({ userId, active }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; sessionRevoked?: boolean };
+    if (!res.ok) return { ok: false, error: data.error ?? `failed (${res.status})` };
+    return { ok: true, sessionRevoked: data.sessionRevoked ?? false };
   } catch {
     return { ok: false, error: 'network error' };
   }

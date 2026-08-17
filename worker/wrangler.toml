@@ -2,6 +2,53 @@ name = "car-prep-tracker-worker"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 
+# Workers Logs. Without this there is no record of a 403 from /ocr or a 413
+# from /upload, which means no way to notice either being hammered — the abuse
+# these endpoints are exposed to is invisible rather than absent.
+[observability]
+enabled = true
+
+# Per-user rate limits, keyed on the JWT `sub`.
+#
+# This app has no custom domain and will not be getting one, so Cloudflare's
+# WAF Rate Limiting Rules — which only run on a zone — are unavailable. These
+# bindings run inside the Worker instead and need no zone.
+#
+# Know what they are and are not: counters are local to each Cloudflare
+# location and the service is documented as permissive and eventually
+# consistent. This is a cost guardrail against one runaway client or one
+# abusive account, not an accurate quota and not a defence against distributed
+# abuse. Every route behind these already requires an active, admin-invited
+# employee, so that is the population being bounded.
+#
+# /invite and /user-active are deliberately unlimited: both are admin-gated,
+# and rate-limiting an admin out of user management during an incident is the
+# worse failure.
+
+# One job's capture flow costs 4 model runs (plate and VIN, each a detect then
+# a read), so a busy worker sits well under 20/min even while retaking photos.
+# 60 leaves ~3x headroom for humans while cutting a runaway retry loop — which
+# would otherwise issue thousands — down to a bounded, affordable trickle.
+[[ratelimits]]
+name = "OCR_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+# Sized for the offline queue rather than for steady use. A phone that has been
+# out of signal can flush a large backlog at once, and each queued job uploads
+# up to 5 photos in parallel — so a 20-job backlog is a legitimate ~100-request
+# burst. Anything above this is not a yard catching up.
+[[ratelimits]]
+name = "UPLOAD_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
 # R2 bucket used for job photos. Create with:
 #   wrangler r2 bucket create car-prep-photos
 [[r2_buckets]]

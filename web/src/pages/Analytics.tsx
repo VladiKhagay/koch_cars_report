@@ -219,7 +219,12 @@ export default function Analytics() {
               aria-label={t('dashboard.site')}
               value={siteId ?? ''}
               onChange={(e) => setSiteId(e.target.value)}
-              className="w-auto text-sm"
+              /* Sized to its own content so it doesn't eat the heading row, but
+                 capped on a phone — a site name is free-text and long enough
+                 ones pushed the control past the viewport. The type stays at
+                 the field size; this used to override to 14px and was the only
+                 dropdown in the app at a different size from the rest. */
+              className="w-auto max-w-44 sm:max-w-none"
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
