@@ -12,7 +12,8 @@ import { SHEET_HEADERS, type ColumnConfig } from './reportConfig';
 export interface ExportJob {
   created_at: string;
   plate: string;
-  vin: string;
+  /** Absent on jobs whose VIN could not be read. Prints as a blank cell. */
+  vin: string | null;
   brand: string | null;
   billing_code: string | null;
   worker_price: number;
@@ -34,7 +35,7 @@ function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string)
     case 'plate':
       return job.plate;
     case 'vin':
-      return job.vin;
+      return job.vin ?? '';
     case 'service':
       return job.service?.name_en ?? '';
     case 'catalog_number':
@@ -67,60 +68,92 @@ export function buildCustomerReport(
 
 export const PAYMENT_HEADERS = ['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount'];
 
+/** The labels the summary block at the foot of the payment sheet uses. */
+export const PAYMENT_SUMMARY_HEADERS = ['Summary', 'Work performed', 'Jobs', 'Amount'];
+
+/** Shown in place of a name when a job carries no service, or none is readable. */
+const NO_SERVICE = '—';
+
 /**
- * The internal payroll sheet: one block per worker, that worker's total under
- * their rows, and a grand total at the foot.
+ * The internal payroll sheet for ONE worker over one date range: their jobs
+ * oldest first, then a summary of what that adds up to per service.
+ *
+ * It used to be every worker at the site in one file, one block each. That is
+ * the wrong shape for what it is used for — payroll is settled with one person
+ * at a time, and a sheet you have to scroll past four colleagues' pay to reach
+ * yours is not one you can hand over. The caller now picks the worker, and the
+ * query is filtered to them, so this builder never sees anybody else's rows.
  *
  * Laid out as a cell grid rather than a list of objects because the totals are
  * not records — a row of objects cannot express "subtotal under this group",
- * and a payroll sheet without visible subtotals is one somebody re-adds by
- * hand.
+ * and a payroll sheet without visible subtotals is one somebody re-adds by hand.
  *
- * Amounts are summed from the rows shown, so the sheet always adds up to what
- * is printed on it.
+ * Every figure is summed from the rows printed above it, so the sheet always
+ * adds up to what is on it. Nothing is priced here: `worker_price` is the
+ * catalog price snapshotted onto the job when it was logged (migration 0005),
+ * which is why re-pricing a service next month cannot rewrite this month's pay.
  */
-export function buildWorkerPaymentReport(jobs: ExportJob[], locale: string): Cell[][] {
-  const byWorker = new Map<string, ExportJob[]>();
-  for (const job of jobs) {
-    // A job whose worker was deleted still cost money, so it is grouped rather
-    // than dropped.
-    const name = job.worker?.name ?? '—';
-    const bucket = byWorker.get(name);
-    if (bucket) bucket.push(job);
-    else byWorker.set(name, [job]);
-  }
+export function buildWorkerPaymentReport(
+  jobs: ExportJob[],
+  workerName: string,
+  locale: string,
+): Cell[][] {
+  const ordered = jobs.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
 
   const rows: Cell[][] = [PAYMENT_HEADERS];
-  let grandTotal = 0;
+  /** service name → its own running count and subtotal, in whole cents. */
+  const perService = new Map<string, { count: number; cents: number }>();
+  let totalCents = 0;
 
-  for (const name of [...byWorker.keys()].sort((a, b) => a.localeCompare(b, locale))) {
-    const jobsForWorker = byWorker
-      .get(name)!
-      .slice()
-      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const job of ordered) {
+    const service = job.service?.name_en || NO_SERVICE;
+    const cents = toCents(job.worker_price);
 
-    let total = 0;
-    for (const job of jobsForWorker) {
-      total += job.worker_price;
-      rows.push([
-        new Date(job.created_at).toLocaleDateString(locale),
-        name,
-        job.service?.name_en ?? '',
-        job.plate,
-        job.worker_price,
-      ]);
-    }
+    rows.push([
+      new Date(job.created_at).toLocaleDateString(locale),
+      job.worker?.name ?? workerName,
+      job.service?.name_en ?? '',
+      job.plate,
+      fromCents(cents),
+    ]);
 
-    grandTotal += total;
-    rows.push(['', `${name} — total`, '', `${jobsForWorker.length}`, round2(total)]);
-    rows.push([]);
+    const bucket = perService.get(service) ?? { count: 0, cents: 0 };
+    bucket.count += 1;
+    bucket.cents += cents;
+    perService.set(service, bucket);
+    totalCents += cents;
   }
 
-  rows.push(['', 'Total', '', '', round2(grandTotal)]);
+  const [summaryLabel, serviceLabel, jobsLabel, amountLabel] = PAYMENT_SUMMARY_HEADERS;
+
+  rows.push([]);
+  rows.push([summaryLabel]);
+  rows.push(['', serviceLabel, '', jobsLabel, amountLabel]);
+
+  // Alphabetical, so the same catalog produces the same sheet order every month
+  // regardless of which service happened to be logged first.
+  for (const name of [...perService.keys()].sort((a, b) => a.localeCompare(b, locale))) {
+    const { count, cents } = perService.get(name)!;
+    rows.push(['', name, '', count, fromCents(cents)]);
+  }
+
+  rows.push(['', 'Total', '', ordered.length, fromCents(totalCents)]);
   return rows;
 }
 
-/** Money, not floating point noise: 0.1 + 0.2 must not print as 0.30000000000000004. */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+/**
+ * Money as whole cents.
+ *
+ * Prices are `numeric` in Postgres and arrive here as JS numbers, so adding
+ * them up directly reintroduces the binary-fraction error the column type
+ * exists to avoid: 0.1 + 0.2 is 0.30000000000000004, and a payroll sheet whose
+ * subtotals do not add to its total is one nobody signs. Every amount is
+ * converted once at the edge, summed as integers, and converted back once.
+ */
+function toCents(amount: number | null | undefined): number {
+  return Math.round((amount ?? 0) * 100);
+}
+
+function fromCents(cents: number): number {
+  return cents / 100;
 }

@@ -8,7 +8,9 @@ export interface Site {
 export interface Service {
   id: string;
   name_en: string;
+  /** Optional translations. NULL falls back to `name_en` — see serviceName(). */
   name_ru: string | null;
+  name_he: string | null;
   catalog_number: string;
   /** What the worker is paid for this service. Snapshotted onto each job. */
   worker_price: number;
@@ -33,8 +35,14 @@ export interface Job {
   created_at: string;
   updated_at: string;
   plate: string;
-  vin: string;
+  /**
+   * NULL when the VIN was not readable — a car is logged without one rather
+   * than with a placeholder, so readers can tell "not known" from a value.
+   */
+  vin: string | null;
+  /** NULL when there is no VIN to check, as well as when the check was skipped. */
   vin_valid_checksum: boolean | null;
+  /** Typed by a person. Never derived from the VIN — see lib/vin.ts. */
   brand: string | null;
   /**
    * One service per job (migration 0005). Nullable only because jobs logged

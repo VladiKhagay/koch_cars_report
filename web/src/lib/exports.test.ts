@@ -75,51 +75,95 @@ describe('buildCustomerReport', () => {
 });
 
 describe('buildWorkerPaymentReport', () => {
-  const jobs = [
-    job({ worker: { name: 'Dana' }, worker_price: 25, created_at: '2026-03-02T08:00:00.000Z' }),
-    job({ worker: { name: 'Boris' }, worker_price: 10.1, created_at: '2026-03-01T08:00:00.000Z' }),
-    job({ worker: { name: 'Dana' }, worker_price: 15.5, created_at: '2026-03-01T08:00:00.000Z' }),
+  const wash = { name_en: 'Wash', catalog_number: 'SVC-001' };
+  const polish = { name_en: 'Polish', catalog_number: 'SVC-002' };
+
+  /** Dana's month: two washes at 25, one polish at 15.5. */
+  const dana = [
+    job({ worker: { name: 'Dana' }, service: wash, worker_price: 25, created_at: '2026-03-02T08:00:00.000Z' }),
+    job({ worker: { name: 'Dana' }, service: polish, worker_price: 15.5, created_at: '2026-03-01T08:00:00.000Z' }),
+    job({ worker: { name: 'Dana' }, service: wash, worker_price: 25, created_at: '2026-03-03T08:00:00.000Z' }),
   ];
 
-  it('groups by worker with a subtotal under each block', () => {
-    const rows = buildWorkerPaymentReport(jobs, 'en-GB');
-    const labels = rows.map((r) => String(r[1] ?? ''));
-    expect(labels).toContain('Boris — total');
-    expect(labels).toContain('Dana — total');
-    // Boris sorts first, so his block and subtotal precede Dana's rows.
-    expect(labels.indexOf('Boris — total')).toBeLessThan(labels.lastIndexOf('Dana'));
+  const build = (jobs: ExportJob[] = dana) => buildWorkerPaymentReport(jobs, 'Dana', 'en-GB');
+  /** The summary row for a service (or the totals), by its label in column B. */
+  const summaryFor = (rows: (string | number)[][], label: string) =>
+    rows.find((r) => r[1] === label);
+
+  it('lists the jobs oldest first, one row each', () => {
+    const rows = build();
+    const dates = rows.slice(1, 4).map((r) => r[0]);
+    expect(dates).toEqual(['01/03/2026', '02/03/2026', '03/03/2026']);
   });
 
-  it('sums each worker and the sheet as a whole', () => {
-    const rows = buildWorkerPaymentReport(jobs, 'en-GB');
-    const amountFor = (label: string) => rows.find((r) => r[1] === label)?.[4];
-    expect(amountFor('Dana — total')).toBe(40.5);
-    expect(amountFor('Boris — total')).toBe(10.1);
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 50.6]);
+  it('keeps the columns that show how the pay was arrived at', () => {
+    const rows = build();
+    expect(rows[0]).toEqual(['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
+    expect(rows[1]).toEqual(['01/03/2026', 'Dana', 'Polish', '12-345-67', 15.5]);
   });
 
-  it('keeps amounts numeric so the sheet can be summed and formatted', () => {
-    const rows = buildWorkerPaymentReport([job({ worker_price: 25 })], 'en-GB');
-    expect(typeof rows[1][4]).toBe('number');
+  it('counts the jobs done for each service', () => {
+    const rows = build();
+    expect(summaryFor(rows, 'Wash')?.[3]).toBe(2);
+    expect(summaryFor(rows, 'Polish')?.[3]).toBe(1);
   });
 
-  it('orders each worker\'s own rows oldest first', () => {
-    const rows = buildWorkerPaymentReport(jobs, 'en-GB');
-    const dana = rows.filter((r) => r[1] === 'Dana');
-    expect(dana.map((r) => r[0])).toEqual(['01/03/2026', '02/03/2026']);
+  it('subtotals each service from the jobs actually listed', () => {
+    const rows = build();
+    expect(summaryFor(rows, 'Wash')?.[4]).toBe(50);
+    expect(summaryFor(rows, 'Polish')?.[4]).toBe(15.5);
   });
 
-  it('keeps a job whose worker record is gone rather than losing the cost', () => {
-    const rows = buildWorkerPaymentReport([job({ worker: null, worker_price: 12 })], 'en-GB');
+  it('totals the job count and the amount owed', () => {
+    const rows = build();
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 3, 65.5]);
+  });
+
+  /* The subtotals and the total are three separate sums over the same rows.
+     If they are computed in floating point they stop agreeing at the cent, and
+     a payroll sheet that does not add up is one nobody signs. */
+  it('adds up in whole cents, so the parts equal the whole', () => {
+    const rows = build([
+      job({ service: wash, worker_price: 0.1 }),
+      job({ service: wash, worker_price: 0.2 }),
+      job({ service: polish, worker_price: 0.1 }),
+    ]);
+    expect(summaryFor(rows, 'Wash')?.[4]).toBe(0.3);
+    expect(rows[rows.length - 1][4]).toBe(0.4);
+  });
+
+  it('counts a job exactly once, in one service bucket', () => {
+    const rows = build();
+    const counts = ['Wash', 'Polish'].map((s) => Number(summaryFor(rows, s)![3]));
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(rows[rows.length - 1][3]);
+  });
+
+  it('keeps a job with no service rather than dropping its cost', () => {
+    const rows = build([job({ service: null, worker_price: 12 })]);
+    expect(summaryFor(rows, '—')).toEqual(['', '—', '', 1, 12]);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 1, 12]);
+  });
+
+  it('survives a job with no VIN — the sheet does not read it at all', () => {
+    const rows = build([job({ vin: null, worker_price: 20 })]);
+    expect(rows[rows.length - 1][4]).toBe(20);
+    expect(flat(rows)).not.toContain('null');
+  });
+
+  it('produces a header and an empty summary when the worker did nothing', () => {
+    const rows = build([]);
+    expect(rows[0]).toEqual(['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 0, 0]);
+  });
+
+  it('falls back to the selected worker when the job carries no worker record', () => {
+    const rows = build([job({ worker: null, worker_price: 12 })]);
+    expect(rows[1][1]).toBe('Dana');
     expect(rows[rows.length - 1][4]).toBe(12);
   });
 
-  it('rounds float drift out of the totals', () => {
-    const rows = buildWorkerPaymentReport(
-      [job({ worker_price: 0.1 }), job({ worker_price: 0.2 })],
-      'en-GB',
-    );
-    expect(rows[rows.length - 1][4]).toBe(0.3);
+  it('keeps amounts numeric so the sheet can be summed and formatted', () => {
+    expect(typeof build([job({ worker_price: 25 })])[1][4]).toBe('number');
   });
 });
 
@@ -132,7 +176,11 @@ describe('buildWorkerPaymentReport', () => {
 describe('through SheetJS', () => {
   it('writes payment amounts as numeric cells, not text', async () => {
     const XLSX = await import('xlsx');
-    const rows = buildWorkerPaymentReport([job({ worker_price: 25 }), job({ worker_price: 15.5 })], 'en-GB');
+    const rows = buildWorkerPaymentReport(
+      [job({ worker_price: 25 }), job({ worker_price: 15.5 })],
+      'Dana',
+      'en-GB',
+    );
     const sheet = XLSX.utils.aoa_to_sheet(rows);
 
     // Column E is Amount; row 2 is the first data row.

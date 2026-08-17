@@ -91,7 +91,7 @@ export default function MyJobs() {
                 <div className="min-w-0">
                   <p className="font-mono text-base font-semibold tracking-wide text-ink-900">{job.plate}</p>
                   <p className="truncate font-mono text-xs text-ink-600">
-                    {job.vin} · {job.brand ?? '—'}
+                    {job.vin ?? '—'} · {job.brand ?? '—'}
                   </p>
                   <p className="mt-1 text-xs text-ink-600">{t('myJobs.queuedHint')}</p>
                 </div>

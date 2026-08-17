@@ -179,9 +179,20 @@ export function CellTitle({ children, mono }: { children: ReactNode; mono?: bool
  * always had it; CellMuted did not, so the VIN column was the one identifier in
  * the app that a Hebrew page could re-sequence.
  */
-export function CellMuted({ children, lang, mono }: { children: ReactNode; lang?: string; mono?: boolean }) {
+export function CellMuted({
+  children,
+  lang,
+  dir,
+  mono,
+}: {
+  children: ReactNode;
+  lang?: string;
+  /** For RTL content sitting in an LTR table — a Hebrew name on an English page. */
+  dir?: 'ltr' | 'rtl';
+  mono?: boolean;
+}) {
   return (
-    <span lang={lang} className={`text-ink-600 ${mono ? 'font-mono' : ''}`}>
+    <span lang={lang} dir={dir} className={`text-ink-600 ${mono ? 'font-mono' : ''}`}>
       {children}
     </span>
   );

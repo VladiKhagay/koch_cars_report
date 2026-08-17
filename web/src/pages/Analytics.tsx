@@ -65,7 +65,7 @@ export default function Analytics() {
   useEffect(() => {
     supabase
       .from('services')
-      .select('id, catalog_number, name_en, name_ru')
+      .select('id, catalog_number, name_en, name_ru, name_he')
       .is('deleted_at', null)
       .order('sort_order')
       .then(({ data }) =>
@@ -109,7 +109,7 @@ export default function Analytics() {
         ? supabase.from('users').select('id, name').in('id', unknownWorkers)
         : Promise.resolve({ data: [] as { id: string; name: string }[] }),
       unknownServices.length > 0
-        ? supabase.from('services').select('id, catalog_number, name_en, name_ru').in('id', unknownServices)
+        ? supabase.from('services').select('id, catalog_number, name_en, name_ru, name_he').in('id', unknownServices)
         : Promise.resolve({ data: [] as any[] }),
     ]);
     setExtraLabels({

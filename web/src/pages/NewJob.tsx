@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { Service } from '../lib/types';
-import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid, guessBrandFromVin } from '../lib/vin';
+import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { submitJob, findRecentDuplicate, MAX_EXTRA_PHOTOS } from '../lib/jobs';
 import { enqueueForRetry } from '../lib/offlineQueue';
@@ -123,8 +123,11 @@ export default function NewJob() {
     const { text, reason } = await ocrPhoto(original, 'vin');
     setOcrBusy((b) => ({ ...b, vin: false }));
     if (text) {
-      const brand = guessBrandFromVin(text);
-      setForm((f) => ({ ...f, vin: text, brand: f.brand || brand || '' }));
+      /* Only the VIN is filled in: it is what the photo shows. The brand is
+         NOT derived from it — a WMI prefix names a manufacturer, not the car,
+         and a guessed value in a filled field is indistinguishable from one
+         somebody read off the vehicle. Brand stays whatever a person typed. */
+      setForm((f) => ({ ...f, vin: text }));
       setAutoFilled((a) => ({ ...a, vin: true }));
       if (appUser?.site_id && isValidVinFormat(text)) {
         const dup = await findRecentDuplicate(appUser.site_id, text);
@@ -161,7 +164,10 @@ export default function NewJob() {
   }
 
   const plateValid = form.plate.length > 0 && isValidPlate(form.plate);
-  const vinFormatValid = isValidVinFormat(form.vin);
+  /* The VIN is optional, so "no VIN" is valid and only a VIN that has been
+     STARTED has to be a well-formed one. Half a VIN is a typo, not a decision;
+     leaving the field alone is the decision. */
+  const vinFormatValid = form.vin.length === 0 || isValidVinFormat(form.vin);
   const vinChecksumOk = form.vin ? vinChecksumValid(form.vin) : true;
 
   /**
@@ -187,7 +193,9 @@ export default function NewJob() {
   if (!vinFormatValid)
     problems.push({
       id: 'vin',
-      label: t('newJob.needVin'),
+      // Not "enter the VIN" any more — the field can be left empty. This only
+      // fires on a VIN that was typed and came out malformed.
+      label: t('newJob.vinInvalid'),
       focus: () => {
         scrollTo(vinInputRef.current);
         vinInputRef.current?.focus();
@@ -214,7 +222,8 @@ export default function NewJob() {
       siteId: appUser.site_id,
       workerId: appUser.id,
       plate: form.plate,
-      vin: form.vin,
+      // Empty means "not readable", and that is stored as NULL — never as ''.
+      vin: form.vin || null,
       brand: form.brand || null,
       workerNote: form.note || null,
       serviceId: form.serviceId!,
@@ -388,6 +397,11 @@ export default function NewJob() {
           <Field
             htmlFor="job-vin"
             label={t('newJob.vin')}
+            /* Marked optional rather than silently accepting a blank: a VIN
+               plate is regularly unreadable, and a worker who believes the
+               field is required either stalls on it or types something to get
+               past it. Both are worse than a recorded gap. */
+            optional
             hint={
               autoFilled.vin && (
                 <span className="inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ok-700">
@@ -396,7 +410,7 @@ export default function NewJob() {
                 </span>
               )
             }
-            error={attempted && !vinFormatValid && form.vin ? t('newJob.vinInvalid') : undefined}
+            error={attempted && !vinFormatValid ? t('newJob.vinInvalid') : undefined}
           >
             <input
               id="job-vin"

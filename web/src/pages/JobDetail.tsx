@@ -189,7 +189,7 @@ export default function JobDetail() {
             <dl className="space-y-3">
               <Row label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
               <Row label={t('jobDetail.worker')} value={workerName || '—'} />
-              <Row label={t('newJob.vin')} value={job.vin} mono />
+              <Row label={t('newJob.vin')} value={job.vin ?? '—'} mono />
               <Row label={t('jobDetail.service')} value={serviceName || '—'} />
               {job.worker_note && <Row label={t('jobDetail.workerNote')} value={job.worker_note} />}
             </dl>

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { uploadPhoto } from './workerApi';
+import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
 import type { PhotoKind } from './types';
 
@@ -11,7 +12,8 @@ export interface NewJobPayload {
   siteId: string;
   workerId: string;
   plate: string;
-  vin: string;
+  /** Optional: `null` (or empty) when the VIN could not be read off the car. */
+  vin: string | null;
   brand: string | null;
   workerNote: string | null;
   serviceId: string;
@@ -49,15 +51,19 @@ export interface NewJobPayload {
  */
 export async function submitJob(payload: NewJobPayload): Promise<string> {
   const plate = payload.plate.toUpperCase().trim();
-  const vin = payload.vin.toUpperCase().trim();
+  /* An absent VIN is stored as NULL, never as '' — an empty string is a value,
+     and it would collide with every other blank one in the duplicate check and
+     sort into the middle of the VIN index as if it were a real VIN. */
+  const vin = payload.vin?.toUpperCase().trim() || null;
 
   let jobId = payload.jobId;
 
   if (!jobId) {
     // Computed here (not just as a UI hint) so it's also correct for jobs that
     // were queued offline and submitted later by the retry queue, which never
-    // ran the interactive duplicate check at capture time.
-    const duplicateOfJobId = await findRecentDuplicate(payload.siteId, vin);
+    // ran the interactive duplicate check at capture time. With no VIN there is
+    // nothing to match on, so no duplicate is claimed.
+    const duplicateOfJobId = vin ? await findRecentDuplicate(payload.siteId, vin) : null;
 
     // worker_price is deliberately absent: a database trigger stamps it from the
     // service catalog (migration 0005). Sending it from here would be ignored for
@@ -69,7 +75,7 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
         worker_id: payload.workerId,
         plate,
         vin,
-        vin_valid_checksum: vinChecksumValid(vin),
+        vin_valid_checksum: vin ? vinChecksumValid(vin) : null,
         brand: payload.brand,
         service_id: payload.serviceId ?? payload.serviceIds?.[0] ?? null,
         worker_note: payload.workerNote,
@@ -117,4 +123,58 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
 export async function findRecentDuplicate(siteId: string, vin: string): Promise<string | null> {
   const { data } = await supabase.rpc('find_recent_duplicate', { p_site_id: siteId, p_vin: vin });
   return (data as string | null) ?? null;
+}
+
+/* ------------------------------------------------------------ grid filters */
+
+/** What the jobs grid narrows by. Every field is optional; absent means "any". */
+export interface JobFilters {
+  siteId?: string | null;
+  workerId?: string;
+  serviceId?: string;
+  /** Local calendar days, `yyyy-mm-dd`, inclusive at both ends. */
+  from?: string;
+  to?: string;
+  /** Raw box contents — sanitised here, never interpolated as typed. */
+  search?: string;
+}
+
+/**
+ * The chain of `PostgrestFilterBuilder` methods this narrowing uses. Declared
+ * structurally so the composition can be exercised against a recorder in a
+ * test — the alternative is discovering a dropped `.eq` when a payroll figure
+ * comes out wrong.
+ */
+interface JobQuery<Q> {
+  eq(column: string, value: string): Q;
+  gte(column: string, value: string): Q;
+  lte(column: string, value: string): Q;
+  or(filter: string): Q;
+}
+
+/**
+ * Applies the grid's filters to a jobs query, in Postgres.
+ *
+ * All of it is server-side on purpose: at ~3,000 jobs a month, narrowing a
+ * page of 50 rows that the database already chose would be filtering the
+ * wrong set — the row you are looking for is usually not on it.
+ */
+export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFilters): Q {
+  let q = query;
+  if (filters.siteId) q = q.eq('site_id', filters.siteId);
+  if (filters.workerId) q = q.eq('worker_id', filters.workerId);
+  if (filters.serviceId) q = q.eq('service_id', filters.serviceId);
+
+  // Dates are local calendar days; the column is a timestamptz, so each day is
+  // widened to its full local span rather than compared against midnight UTC.
+  if (filters.from) q = q.gte('created_at', new Date(`${filters.from}T00:00:00`).toISOString());
+  if (filters.to) q = q.lte('created_at', new Date(`${filters.to}T23:59:59.999`).toISOString());
+
+  /* A job with no VIN simply doesn't match a VIN search: `ilike` against NULL
+     is NULL, not a match, which is the right answer — a blank field is not a
+     hit for every query. */
+  const term = searchTerm(filters.search ?? '');
+  if (term) q = q.or(`plate.ilike.%${term}%,vin.ilike.%${term}%,billing_code.ilike.%${term}%`);
+
+  return q;
 }

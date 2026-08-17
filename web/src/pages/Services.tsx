@@ -35,8 +35,8 @@ import {
   fieldClass,
 } from '../components/ui';
 
-/** Catalog, name, translation, status, order, actions — plus price for admins. */
-const BASE_COLUMNS = 6;
+/** Catalog, name, two translations, status, order, actions — plus price for admins. */
+const BASE_COLUMNS = 7;
 
 /**
  * What a worker is paid for one job of this service. Admin-only, and not just
@@ -67,6 +67,7 @@ export default function Services() {
   const [catalogNumber, setCatalogNumber] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameRu, setNameRu] = useState('');
+  const [nameHe, setNameHe] = useState('');
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<Expanded>(null);
   const [workerPrice, setWorkerPrice] = useState('');
@@ -74,6 +75,7 @@ export default function Services() {
     catalog_number: '',
     name_en: '',
     name_ru: '',
+    name_he: '',
     worker_price: '',
   });
 
@@ -115,6 +117,7 @@ export default function Services() {
       catalog_number: catalogNumber,
       name_en: nameEn,
       name_ru: nameRu || null,
+      name_he: nameHe || null,
       sort_order: maxSort + 1,
       ...(price === undefined ? {} : { worker_price: price }),
     });
@@ -125,6 +128,7 @@ export default function Services() {
     setCatalogNumber('');
     setNameEn('');
     setNameRu('');
+    setNameHe('');
     setWorkerPrice('');
     setAdding(false);
     void load();
@@ -137,6 +141,7 @@ export default function Services() {
       catalog_number: service.catalog_number,
       name_en: service.name_en,
       name_ru: service.name_ru ?? '',
+      name_he: service.name_he ?? '',
       worker_price: String(service.worker_price ?? 0),
     });
   }
@@ -164,6 +169,7 @@ export default function Services() {
         catalog_number: editDraft.catalog_number.trim(),
         name_en: editDraft.name_en.trim(),
         name_ru: editDraft.name_ru.trim() || null,
+        name_he: editDraft.name_he.trim() || null,
         ...(price === undefined ? {} : { worker_price: price }),
       })
       .eq('id', serviceId);
@@ -209,7 +215,9 @@ export default function Services() {
     const q = search.trim().toLowerCase();
     if (!q) return services;
     return services.filter((s) =>
-      [s.catalog_number, s.name_en, s.name_ru ?? ''].some((v) => v.toLowerCase().includes(q)),
+      [s.catalog_number, s.name_en, s.name_ru ?? '', s.name_he ?? ''].some((v) =>
+        v.toLowerCase().includes(q),
+      ),
     );
   }, [services, search]);
 
@@ -267,6 +275,20 @@ export default function Services() {
                 className={fieldClass}
               />
             </Field>
+            {/* `dir="rtl"` on the input itself, not inherited from the page:
+                this field is filled in while the rest of the form is in
+                whatever language the manager runs the app in, so the Hebrew
+                has to lay itself out regardless of what surrounds it. */}
+            <Field htmlFor="service-name-he" label={t('services.nameHePlaceholder')}>
+              <input
+                id="service-name-he"
+                lang="he"
+                dir="rtl"
+                value={nameHe}
+                onChange={(e) => setNameHe(e.target.value)}
+                className={fieldClass}
+              />
+            </Field>
 
             {isAdmin && (
               <Field htmlFor="service-price" label={t('services.workerPrice')} hint={<span className="text-ink-500">{t('services.workerPriceHint')}</span>}>
@@ -306,7 +328,7 @@ export default function Services() {
         <TableCard
           toolbar={<SearchField value={search} onChange={setSearch} label={t('services.search')} />}
         >
-          <Table minWidth={isAdmin ? 60 : 52}>
+          <Table minWidth={isAdmin ? 68 : 60}>
             <THead>
               <tr>
                 {/* A catalog number is a fixed-length code, so its column is
@@ -315,6 +337,7 @@ export default function Services() {
                 <Th className="w-px whitespace-nowrap">{t('services.catalog')}</Th>
                 <Th>{t('services.nameEn')}</Th>
                 <Th hideBelow="md">{t('services.nameRu')}</Th>
+                <Th hideBelow="lg">{t('services.nameHe')}</Th>
                 {isAdmin && (
                   <Th align="end" hideBelow="sm">
                     {t('services.workerPrice')}
@@ -344,6 +367,15 @@ export default function Services() {
                     </Td>
                     <Td hideBelow="md">
                       {s.name_ru ? <CellMuted lang="ru">{s.name_ru}</CellMuted> : <CellMuted>—</CellMuted>}
+                    </Td>
+                    <Td hideBelow="lg">
+                      {s.name_he ? (
+                        <CellMuted lang="he" dir="rtl">
+                          {s.name_he}
+                        </CellMuted>
+                      ) : (
+                        <CellMuted>—</CellMuted>
+                      )}
                     </Td>
                     {isAdmin && (
                       <Td align="end" hideBelow="sm">
@@ -427,6 +459,16 @@ export default function Services() {
                               lang="ru"
                               value={editDraft.name_ru}
                               onChange={(e) => setEditDraft((d) => ({ ...d, name_ru: e.target.value }))}
+                              className={fieldClass}
+                            />
+                          </Field>
+                          <Field htmlFor={`edit-name-he-${s.id}`} label={t('services.nameHe')}>
+                            <input
+                              id={`edit-name-he-${s.id}`}
+                              lang="he"
+                              dir="rtl"
+                              value={editDraft.name_he}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, name_he: e.target.value }))}
                               className={fieldClass}
                             />
                           </Field>

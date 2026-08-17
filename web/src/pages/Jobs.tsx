@@ -21,9 +21,9 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
-import { searchTerm } from '../lib/search';
+import { applyJobFilters } from '../lib/jobs';
 import { useSiteScope } from '../lib/useSiteScope';
-import type { AppUser, Job } from '../lib/types';
+import type { AppUser, Job, Service } from '../lib/types';
 import Icon from '../components/Icon';
 import {
   CellMuted,
@@ -57,7 +57,7 @@ const PAGE_SIZE = 50;
 /** A job row with the two names the grid shows instead of foreign keys. */
 interface JobRow extends Job {
   worker: { id: string; name: string } | null;
-  service: { name_en: string; name_ru: string | null } | null;
+  service: { name_en: string; name_ru: string | null; name_he: string | null } | null;
 }
 
 /** Stable identity: a fresh `[]` fallback would invalidate the table's models. */
@@ -207,7 +207,9 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
     helper.accessor('vin', {
       id: 'vin',
       header: () => t('jobs.vin'),
-      cell: ({ getValue }) => <CellMuted mono>{getValue()}</CellMuted>,
+      // A job may have no VIN at all. An em dash says "not recorded"; an empty
+      // cell reads as a rendering fault.
+      cell: ({ getValue }) => <CellMuted mono>{getValue() ?? '—'}</CellMuted>,
     }),
     helper.accessor((row) => handlers.current.serviceName(row), {
       id: 'service',
@@ -262,11 +264,13 @@ export default function Jobs() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [workers, setWorkers] = useState<Pick<AppUser, 'id' | 'name'>[]>([]);
+  const [services, setServices] = useState<Pick<Service, 'id' | 'name_en' | 'name_ru' | 'name_he'>[]>([]);
 
   // Filters. `site` is '' for "every site", which only an admin can choose.
   const [search, setSearch] = useState('');
   const [siteFilter, setSiteFilter] = useState<string | null>(null);
   const [workerFilter, setWorkerFilter] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
@@ -295,24 +299,17 @@ export default function Jobs() {
     setLoading(true);
     setFailed(false);
 
-    let q = supabase
-      .from('jobs')
-      .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru)', {
-        count: 'exact',
-      })
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-
-    if (effectiveSite) q = q.eq('site_id', effectiveSite);
-    if (workerFilter) q = q.eq('worker_id', workerFilter);
-    // Dates are local calendar days; the column is a timestamptz, so the day
-    // is widened to its full span rather than compared against midnight UTC.
-    if (from) q = q.gte('created_at', new Date(`${from}T00:00:00`).toISOString());
-    if (to) q = q.lte('created_at', new Date(`${to}T23:59:59.999`).toISOString());
-
-    const term = searchTerm(search);
-    if (term) q = q.or(`plate.ilike.%${term}%,vin.ilike.%${term}%,billing_code.ilike.%${term}%`);
+    const q = applyJobFilters(
+      supabase
+        .from('jobs')
+        .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)', {
+          count: 'exact',
+        })
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+      { siteId: effectiveSite, workerId: workerFilter, serviceId: serviceFilter, from, to, search },
+    );
 
     const { data, count, error } = await q;
     if (error) {
@@ -323,7 +320,7 @@ export default function Jobs() {
       setTotal(count ?? 0);
     }
     setLoading(false);
-  }, [page, effectiveSite, workerFilter, from, to, search]);
+  }, [page, effectiveSite, workerFilter, serviceFilter, from, to, search]);
 
   // Debounced so typing a plate doesn't fire a query per keystroke.
   useEffect(() => {
@@ -334,7 +331,7 @@ export default function Jobs() {
   // Any change to the filters invalidates the page number.
   useEffect(() => {
     setPage(0);
-  }, [effectiveSite, workerFilter, from, to, search]);
+  }, [effectiveSite, workerFilter, serviceFilter, from, to, search]);
 
   // The worker filter lists the people who can appear in the current scope.
   useEffect(() => {
@@ -342,6 +339,24 @@ export default function Jobs() {
     if (effectiveSite) q = q.eq('site_id', effectiveSite);
     void q.then(({ data }) => setWorkers(data ?? []));
   }, [effectiveSite]);
+
+  /*
+   * The service filter reads the same catalog the job form writes from — there
+   * is no second list of service names anywhere in this app.
+   *
+   * Retired services are included (only soft-deleted ones are dropped): this
+   * grid is mostly read backwards through history, and a service switched off
+   * last month is exactly the one a manager needs to filter by when they are
+   * reconciling last month.
+   */
+  useEffect(() => {
+    void supabase
+      .from('services')
+      .select('id,name_en,name_ru,name_he')
+      .is('deleted_at', null)
+      .order('sort_order')
+      .then(({ data }) => setServices(data ?? []));
+  }, []);
 
   /* --------------------------------------------------------------- actions */
 
@@ -389,7 +404,7 @@ export default function Jobs() {
     let cancelled = false;
     void supabase
       .from('jobs')
-      .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru)')
+      .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)')
       .eq('id', copy.duplicate_of_job_id)
       .maybeSingle()
       .then(({ data }) => {
@@ -433,7 +448,9 @@ export default function Jobs() {
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
   const firstShown = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const lastShown = Math.min(total, page * PAGE_SIZE + rows.length);
-  const filtered = Boolean(search || workerFilter || from || to || (canSwitch && siteFilter));
+  const filtered = Boolean(
+    search || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter),
+  );
 
   return (
     <Page width="wide">
@@ -478,6 +495,21 @@ export default function Jobs() {
                   </Select>
                 </label>
 
+                {/* Service names run as long as site and worker names do, so
+                    this filter gets the same full-width-on-a-phone treatment
+                    rather than being squeezed in beside the dates. */}
+                <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
+                  <span className={filterLabelClass}>{t('jobs.service')}</span>
+                  <Select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
+                    <option value="">{t('jobs.allServices')}</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {localizedServiceName(s, i18n.language)}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+
                 <label className="min-w-32 flex-1">
                   <span className={filterLabelClass}>{t('jobs.from')}</span>
                   <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
@@ -495,6 +527,7 @@ export default function Jobs() {
                     onClick={() => {
                       setSearch('');
                       setWorkerFilter('');
+                      setServiceFilter('');
                       setFrom('');
                       setTo('');
                       if (canSwitch) setSiteFilter(siteId);

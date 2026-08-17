@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isValidVinFormat, vinChecksumValid, guessBrandFromVin, isValidPlate, stripPlate } from './vin';
+import * as vin from './vin';
+import { isValidVinFormat, vinChecksumValid, isValidPlate, stripPlate } from './vin';
 
 describe('isValidVinFormat', () => {
   it('accepts a 17-char VIN without I/O/Q', () => {
@@ -40,19 +41,21 @@ describe('vinChecksumValid', () => {
   });
 });
 
-describe('guessBrandFromVin', () => {
-  it('decodes common WMI prefixes', () => {
-    expect(guessBrandFromVin('1HGCM82633A004352')).toBe('Honda');
-    expect(guessBrandFromVin('WVWZZZ1JZXW000001')).toBe('Volkswagen');
-    expect(guessBrandFromVin('JTDKB20U887654321')).toBe('Toyota');
-  });
-
-  it('returns null for unknown prefixes instead of guessing', () => {
-    expect(guessBrandFromVin('XXX12345678901234')).toBeNull();
-  });
-
-  it('is case-insensitive', () => {
-    expect(guessBrandFromVin('wvwzzz1jzxw000001')).toBe('Volkswagen');
+/*
+ * The VIN is user-provided data and nothing else. This module used to export
+ * `guessBrandFromVin`, which filled the brand field from the WMI prefix — a
+ * guess that arrived in the form looking exactly like something the worker had
+ * read off the car. It is gone, and this is what keeps it gone: a helpful
+ * reinstatement would otherwise pass every other test in the suite.
+ */
+describe('no vehicle inference from the VIN', () => {
+  it('exports validation only — nothing that decodes a VIN into vehicle data', () => {
+    expect(Object.keys(vin).sort()).toEqual([
+      'isValidPlate',
+      'isValidVinFormat',
+      'stripPlate',
+      'vinChecksumValid',
+    ]);
   });
 });
 

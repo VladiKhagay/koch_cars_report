@@ -10,18 +10,15 @@
  *  - Adding a locale meant finding all six. One of them (Job Detail) had
  *    already been missed once and rendered name_en to everybody.
  *
- * The catalog has no `name_he` column yet; that needs a migration, which is a
- * product decision, not a design one. Until it lands Hebrew falls back to
- * English — the same result as before, but now it is one deliberate line
- * instead of six accidents, and adding the column is a two-line change here
- * plus the column in the `select`.
+ * `name_he` landed in migration 0012. It stays optional in both senses: the
+ * column is nullable, and a service with no Hebrew name falls back to English
+ * rather than rendering blank.
  */
 
 /** Any row carrying the catalog's localized names — the full Service, or a join. */
 export interface ServiceNames {
   name_en: string;
   name_ru?: string | null;
-  /** Not in the schema yet. Reads as undefined until the migration lands. */
   name_he?: string | null;
 }
 

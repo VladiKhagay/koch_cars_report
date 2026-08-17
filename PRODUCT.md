@@ -92,10 +92,17 @@ the same query under three different identities.
   returns either the characters or a fixed failure reason from the enum
   `blurry | glare | dark | angle | obstructed | not_in_frame`, which the UI
   translates. Every OCR result stays editable — OCR is a shortcut, never a gate.
-- Client-side validation: plate format, VIN 17-character format (no I, O, Q),
-  VIN checksum as a *soft warning* (imported vehicles legitimately fail it),
-  and a same-VIN-same-site-within-7-days duplicate flag.
-- Brand guessed from the VIN's WMI, editable.
+- Client-side validation: plate format, VIN 17-character format (no I, O, Q)
+  *when a VIN is given*, VIN checksum as a *soft warning* (imported vehicles
+  legitimately fail it), and a same-VIN-same-site-within-7-days duplicate flag.
+- The VIN is **optional**. A VIN plate is regularly unreadable, and a required
+  field there produces invented values rather than accurate ones. A job with no
+  VIN stores `NULL` — never a placeholder — and duplicate detection, search and
+  both reports treat that as "not known" rather than as a value.
+- Brand is typed by a person. It is **not** inferred from the VIN: a WMI prefix
+  names a manufacturer, not the car, and a guess that lands in a form field is
+  indistinguishable from something the worker actually checked. Do not
+  reintroduce this, from a table or from a VIN-decoding service.
 - Offline submission queue with automatic retry.
 - 15-minute edit window: a worker may amend their own job's services and note
   for 15 minutes after submit, then the row locks (`jobs.locked_at`, enforced
