@@ -270,10 +270,19 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
        * model detected nothing" and "it detected something we rejected" are
        * different problems with different fixes.
        */
+      /*
+       * When nothing survives, the RAW response is what matters — not the
+       * `objects` field we failed to find in it. Logging only that field
+       * cannot tell "the model found no plate" (objects: []) from "the boxes
+       * are not under that key at all", and those want opposite fixes: a
+       * different target or detector, versus a field-name correction. Three
+       * attempts in production logged `none null`, meaning the key was absent
+       * entirely, so the response itself is the thing to look at.
+       */
       console.log(
         'OCR detect',
         body.kind,
-        box ? JSON.stringify(box) : `none ${JSON.stringify(objects ?? null).slice(0, 160)}`,
+        box ? JSON.stringify(box) : `none raw=${JSON.stringify(result ?? null).slice(0, 400)}`,
       );
       return c.json({ box });
     } catch (err) {
