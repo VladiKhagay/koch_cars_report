@@ -260,7 +260,22 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
         max_objects: 5,
       });
       const { objects } = unwrap<{ objects?: unknown }>(result);
-      return c.json({ box: parseDetectObjects(objects) });
+      const box = parseDetectObjects(objects);
+      /*
+       * Whether a box comes back decides which image the read runs on — a tight
+       * crop upscaled to 1024px, or the whole frame with the plate perhaps
+       * 190px wide — and that was invisible from outside. A misread could not
+       * be told apart from a read that never got usable pixels to begin with.
+       * The raw objects are logged when nothing survived parsing, because "the
+       * model detected nothing" and "it detected something we rejected" are
+       * different problems with different fixes.
+       */
+      console.log(
+        'OCR detect',
+        body.kind,
+        box ? JSON.stringify(box) : `none ${JSON.stringify(objects ?? null).slice(0, 160)}`,
+      );
+      return c.json({ box });
     } catch (err) {
       // Detection is only an optimisation — the client re-reads the full frame.
       console.error('Workers AI detect error', err);
@@ -301,8 +316,13 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
    * a VIN, which is already stored in Postgres, and this is the shortest thing
    * that makes the next report answerable.
    */
-  if (!outcome.text) {
-    console.log('OCR unparsed', body.kind, JSON.stringify(raw.slice(0, 120)));
-  }
+  /*
+   * Every read, not only the failures: the base64 length is the one clue to
+   * WHICH image the model was given. A crop is a few hundred KB, a whole
+   * uncropped frame is megabytes — so paired with the detect line above, this
+   * says whether a misread happened on good pixels or bad ones. Successes are
+   * logged too, so the two can be compared when the read model is swapped.
+   */
+  console.log('OCR read', body.kind, body.image.length, outcome.text ? 'ok' : JSON.stringify(raw.slice(0, 120)));
   return c.json(outcome);
 }
