@@ -252,12 +252,26 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
 
   if (body.task === 'detect') {
     try {
-      // `detect` does not support streaming, so no `stream` flag is sent.
+      /*
+       * `stream: false` is REQUIRED here, and the reasoning it replaces was
+       * backwards. The old comment read "`detect` does not support streaming,
+       * so no `stream` flag is sent" — true premise, wrong conclusion. Omitting
+       * the flag makes the binding answer with an empty object: no `objects`,
+       * no `metrics`, no `finish_reason`. Verified against the live model on
+       * this account, same image, same target:
+       *   no flag      -> {}
+       *   stream:false -> { objects: [{ x_min… }], metrics: {…} }
+       * With it missing, detection returned nothing on every request ever made,
+       * the client silently skipped the crop, and every read ran on the whole
+       * frame — which is why a plate photographed from a few steps back came
+       * back with invented digits while a close-up read fine.
+       */
       const result = await c.env.AI.run(DETECT_MODEL, {
         task: 'detect',
         image: dataUri,
         target: DETECT_TARGETS[body.kind],
         max_objects: 5,
+        stream: false,
       });
       const { objects } = unwrap<{ objects?: unknown }>(result);
       const box = parseDetectObjects(objects);
@@ -332,6 +346,18 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
    * says whether a misread happened on good pixels or bad ones. Successes are
    * logged too, so the two can be compared when the read model is swapped.
    */
-  console.log('OCR read', body.kind, body.image.length, outcome.text ? 'ok' : JSON.stringify(raw.slice(0, 120)));
+  /*
+   * The parsed value, not just "ok": a read that parses is not the same as a
+   * read that is RIGHT. Eight digits in the correct shape can still be the
+   * wrong eight, and that is the failure nobody catches — it fills the field,
+   * marks itself auto-filled, and gets submitted. Logging the value is what
+   * lets a reported plate be checked against what the model actually said.
+   */
+  console.log(
+    'OCR read',
+    body.kind,
+    body.image.length,
+    outcome.text ? `ok ${outcome.text}` : JSON.stringify(raw.slice(0, 120)),
+  );
   return c.json(outcome);
 }
