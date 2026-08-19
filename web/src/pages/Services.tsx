@@ -496,10 +496,18 @@ export default function Services() {
                         )}
 
                         <div className="flex flex-wrap gap-2">
-                          <Button icon="check" onClick={() => void saveEdit(s.id)}>
+                          <Button
+                            className="min-w-32 flex-1 sm:flex-none"
+                            icon="check"
+                            onClick={() => void saveEdit(s.id)}
+                          >
                             {t('admin.save')}
                           </Button>
-                          <Button variant="secondary" onClick={() => setExpanded(null)}>
+                          <Button
+                            className="min-w-32 flex-1 sm:flex-none"
+                            variant="secondary"
+                            onClick={() => setExpanded(null)}
+                          >
                             {t('common.cancel')}
                           </Button>
                         </div>

@@ -300,7 +300,10 @@ export function IconButton({
       type="button"
       aria-label={label}
       title={label}
-      className={`inline-flex size-control shrink-0 items-center justify-center rounded-lg transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${VARIANT[variant]} ${className}`}
+      /* `icon-btn` is the hook the dense-table rules compact against. It marks
+         "this control is a square glyph, safe to shrink to 30px in a table
+         row" — which a button carrying a text label is not. */
+      className={`icon-btn inline-flex size-control shrink-0 items-center justify-center rounded-lg transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${VARIANT[variant]} ${className}`}
       {...rest}
     >
       <Icon name={icon} size={20} />

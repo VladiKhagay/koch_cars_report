@@ -357,11 +357,26 @@ export default function AdminUsers() {
                           </Field>
                         </div>
 
+                        {/* On a phone the pair fills the line, each holding a
+                            128px floor, so a label is never squeezed to a
+                            glyph; below that width they wrap to a line each
+                            rather than shrinking. From `sm` up they sit at
+                            their natural width, where a form's actions belong
+                            at the start of the row, not stretched across it. */}
                         <div className="flex flex-wrap gap-2">
-                          <Button icon="check" busy={saving} onClick={() => void saveEdit(u.id)}>
+                          <Button
+                            className="min-w-32 flex-1 sm:flex-none"
+                            icon="check"
+                            busy={saving}
+                            onClick={() => void saveEdit(u.id)}
+                          >
                             {t('admin.save')}
                           </Button>
-                          <Button variant="secondary" onClick={() => setExpanded(null)}>
+                          <Button
+                            className="min-w-32 flex-1 sm:flex-none"
+                            variant="secondary"
+                            onClick={() => setExpanded(null)}
+                          >
                             {t('common.cancel')}
                           </Button>
                         </div>
