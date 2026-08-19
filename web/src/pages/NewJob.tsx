@@ -38,7 +38,7 @@ const emptyForm = {
 /** How long the "job submitted" confirmation stays up before it self-clears. */
 const SUCCESS_TTL_MS = 8000;
 
-type ProblemId = 'platePhoto' | 'vinPhoto' | 'plate' | 'vin' | 'service';
+type ProblemId = 'platePhoto' | 'plate' | 'vin' | 'service';
 
 function scrollTo(el: HTMLElement | null) {
   if (!el) return;
@@ -138,6 +138,14 @@ export default function NewJob() {
     }
   }
 
+  /* Clears the OCR state with it: a "couldn't read it" hint left standing over
+     an empty slot describes a photo that is no longer there. */
+  function removeVinPhoto() {
+    beginNextCar();
+    setForm((f) => ({ ...f, vinPhoto: null }));
+    setOcrIssue((i) => ({ ...i, vin: null }));
+  }
+
   function addExtraPhoto(blob: Blob) {
     beginNextCar();
     setForm((f) =>
@@ -179,8 +187,12 @@ export default function NewJob() {
   const problems: { id: ProblemId; label: string; focus: () => void }[] = [];
   if (!form.platePhoto)
     problems.push({ id: 'platePhoto', label: t('newJob.needPlatePhoto'), focus: () => scrollTo(platePhotoRef.current) });
-  if (!form.vinPhoto)
-    problems.push({ id: 'vinPhoto', label: t('newJob.needVinPhoto'), focus: () => scrollTo(vinPhotoRef.current) });
+  /* No VIN photo requirement. It was the last gate the VIN could still put in
+     front of recording a car: the number went optional because a VIN plate is
+     routinely unreadable, and then demanding a photograph OF the unreadable
+     thing put the worker back where they started — stalling, or taking a
+     useless frame to get past the form. The plate photo stays required; it is
+     the one every car has, and the one the job is identified by. */
   if (!plateValid)
     problems.push({
       id: 'plate',
@@ -228,7 +240,7 @@ export default function NewJob() {
       workerNote: form.note || null,
       serviceId: form.serviceId!,
       plateBlob: form.platePhoto!,
-      vinBlob: form.vinPhoto!,
+      vinBlob: form.vinPhoto,
       extraBlobs: form.extraPhotos,
     };
 
@@ -316,9 +328,11 @@ export default function NewJob() {
                 label={t('newJob.vinPhoto')}
                 photo={form.vinPhoto}
                 busy={ocrBusy.vin}
+                optional
                 error={ocrIssue.vin ? t(`newJob.ocrReasons.${ocrIssue.vin}`) : null}
                 onCapture={(b, original) => void handleVinCapture(b, original)}
                 onTypeItIn={() => vinInputRef.current?.focus()}
+                onRemove={removeVinPhoto}
               />
             </div>
           </div>

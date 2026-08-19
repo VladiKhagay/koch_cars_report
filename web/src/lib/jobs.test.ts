@@ -96,9 +96,23 @@ describe('submitJob — retry after a failed upload', () => {
 });
 
 describe('submitJob — photo slots', () => {
-  it('always uploads plate and vin', async () => {
+  it('uploads plate and vin when both were taken', async () => {
     await submitJob(payload());
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['plate', 'vin']);
+  });
+
+  /* The VIN photo is optional for the same reason the VIN is: a VIN plate is
+     routinely unreadable, and requiring a photograph of the unreadable thing
+     is a gate on recording the car at all. A job without one carries no row of
+     that kind — never a placeholder standing in for a photo nobody took. */
+  it('skips the vin slot entirely when no VIN photo was taken', async () => {
+    await submitJob({ ...payload(), vinBlob: null });
+    expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['plate']);
+  });
+
+  it('still numbers the extras from 1 when the vin slot is empty', async () => {
+    await submitJob({ ...payload([blob(), blob()]), vinBlob: null });
+    expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['plate', 'extra_1', 'extra_2']);
   });
 
   it('maps extras onto extra_1..3 by position', async () => {

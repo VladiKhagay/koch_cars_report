@@ -150,7 +150,6 @@
     "fixTitle_one": "{{count}} thing to finish before you can submit",
     "fixTitle_other": "{{count}} things to finish before you can submit",
     "needPlatePhoto": "Take the license plate photo",
-    "needVinPhoto": "Take the VIN photo",
     "needPlate": "Enter the plate number",
     "needService": "Pick the work performed",
     "jumpTo": "Go to it",

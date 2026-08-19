@@ -18,7 +18,13 @@ export interface NewJobPayload {
   workerNote: string | null;
   serviceId: string;
   plateBlob: Blob;
-  vinBlob: Blob;
+  /**
+   * Optional, for the same reason the VIN itself is: the plate under the
+   * windscreen is regularly unreadable or absent, and a photo requirement the
+   * car cannot satisfy is a gate on recording the car at all. `null` means no
+   * VIN photo was taken — the viewer already reports a missing one as missing.
+   */
+  vinBlob: Blob | null;
   /** Up to three optional photos — damage, interior, anything worth a record. */
   extraBlobs?: Blob[];
   /**
@@ -95,7 +101,9 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   const extras = (payload.extraBlobs ?? []).slice(0, MAX_EXTRA_PHOTOS);
   const uploads: { kind: PhotoKind; blob: Blob }[] = [
     { kind: 'plate', blob: payload.plateBlob },
-    { kind: 'vin', blob: payload.vinBlob },
+    // A job with no VIN photo simply has no row of that kind, rather than an
+    // empty object standing in for one.
+    ...(payload.vinBlob ? [{ kind: 'vin' as PhotoKind, blob: payload.vinBlob }] : []),
     ...extras.map((blob, i) => ({ kind: EXTRA_KINDS[i], blob })),
   ];
 

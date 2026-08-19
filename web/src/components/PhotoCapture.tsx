@@ -31,13 +31,24 @@ interface Props {
    * alone can cost the read.
    */
   onCapture: (blob: Blob, original: Blob) => void;
+  /** Says so on the empty tile, so a skippable photo doesn't read as a demand. */
+  optional?: boolean;
   /** "Type it in" pressed — parent should focus the manual input. */
   onTypeItIn?: () => void;
   /** Offered only where a photo is optional, so a required slot can't be emptied. */
   onRemove?: () => void;
 }
 
-export default function PhotoCapture({ label, photo, busy, error, onCapture, onTypeItIn, onRemove }: Props) {
+export default function PhotoCapture({
+  label,
+  photo,
+  busy,
+  error,
+  optional,
+  onCapture,
+  onTypeItIn,
+  onRemove,
+}: Props) {
   const { t } = useTranslation();
   /*
    * Two inputs rather than one whose `capture` attribute is toggled. Browsers
@@ -143,7 +154,10 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
           className={`${shell} items-center justify-center gap-2 border-dashed border-line-strong bg-surface text-ink-900`}
         >
           <Icon name="camera" size={28} />
-          <span className="text-center text-sm font-semibold">{label}</span>
+          <span className="text-center text-sm font-semibold">
+            {label}
+            {optional && <span className="ms-1.5 font-medium text-ink-500">{t('common.optional')}</span>}
+          </span>
           <button
             type="button"
             onClick={openCamera}
