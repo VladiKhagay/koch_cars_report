@@ -287,5 +287,22 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'ocr_unavailable' }, 502);
   }
 
-  return c.json(parseOcrAnswer(raw, body.kind));
+  const outcome = parseOcrAnswer(raw, body.kind);
+  /*
+   * The one failure that used to leave no trace anywhere. An exception is
+   * logged above, but the common case is quieter: the model answers, the
+   * answer does not survive normalisation, and the worker is told "couldn't
+   * read it" while nothing records WHAT came back — so "it didn't read the
+   * plate" could not be diagnosed from the logs at all. A plate that arrives
+   * one digit short, or carrying a letter the confusion table does not cover,
+   * looks identical from outside to a photo the model never saw.
+   *
+   * Failures only, and only the first 120 characters: the value is a plate or
+   * a VIN, which is already stored in Postgres, and this is the shortest thing
+   * that makes the next report answerable.
+   */
+  if (!outcome.text) {
+    console.log('OCR unparsed', body.kind, JSON.stringify(raw.slice(0, 120)));
+  }
+  return c.json(outcome);
 }
