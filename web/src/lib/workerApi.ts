@@ -45,8 +45,38 @@ async function postOcr(image: Blob, kind: 'plate' | 'vin', task: 'query' | 'dete
   return res.json();
 }
 
+/**
+ * Largest encoded image the Worker's /ocr will take.
+ *
+ * Its own cap is 6MB of base64 (~4.5MB of image) and was sized when reads ran
+ * on the 1920px upload copy. Reads now run on the camera original, which on a
+ * current phone is regularly bigger than that — so the read came back 413 and
+ * resolved to no value at all. It bites the plate hardest: a VIN sticker is a
+ * small object, so detection crops it to ~1024px, while a plate fills its
+ * frame, the box is rejected as uninformative, and the full-size original is
+ * what gets sent.
+ *
+ * 2560px still puts far more pixels on the plate than the upload copy the
+ * reads used to run on, which is the whole point of reading the original.
+ */
+const MAX_OCR_BYTES = 4 * 1024 * 1024;
+
+async function fitForOcr(image: Blob): Promise<Blob> {
+  if (image.size <= MAX_OCR_BYTES) return image;
+  try {
+    return await downscaleImage(image, 2560, 0.85);
+  } catch {
+    // Nothing is gained by refusing here: the Worker's own limit still applies,
+    // and a rejection now surfaces as an unusable read rather than silently.
+    return image;
+  }
+}
+
 async function readOcr(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
-  const data = (await postOcr(image, kind, 'query')) as { text: string | null; reason: OcrReason | null };
+  const data = (await postOcr(await fitForOcr(image), kind, 'query')) as {
+    text: string | null;
+    reason: OcrReason | null;
+  };
   return { text: data.text, reason: data.reason };
 }
 
@@ -87,7 +117,13 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
     const second = await readOcr(enhanced, kind);
     return second.text ? second : first;
   } catch {
-    return { text: null, reason: null };
+    /* A read that never completed — 413, 429, a dropped connection — used to
+       resolve to no text AND no reason, and the capture tile renders exactly
+       that as a plain success: a green tick over an empty field, with nothing
+       telling the worker to type the value in. It is an unusable read, which
+       is what 'not_in_frame' means here (see OCR_REASONS in worker/src/ocr.ts:
+       "no usable value came back"). */
+    return { text: null, reason: 'not_in_frame' };
   }
 }
 

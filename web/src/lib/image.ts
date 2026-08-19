@@ -9,9 +9,23 @@
  */
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
+/**
+ * `name` of the error `downscaleImage` throws when the browser has no decoder
+ * for the file at all — an iPhone HEIC opened in desktop Chrome, most often.
+ *
+ * Worth telling apart from every other failure in here: a canvas or encoder
+ * quirk leaves the original file perfectly good to upload and to read, while
+ * an undecodable one is useless to everything downstream — the crop, the OCR
+ * model (which is handed it labelled image/jpeg) and the photo viewer alike.
+ * It has to be refused at the capture rather than carried forward.
+ */
+export const UNDECODABLE_IMAGE = 'UndecodableImage';
+
 /** Downscale a captured photo client-side before it ever leaves the phone. */
 export async function downscaleImage(file: File | Blob, maxDim = 1920, quality = 0.82): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw Object.assign(new Error('Unsupported image format'), { name: UNDECODABLE_IMAGE });
+  });
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
   const width = Math.round(bitmap.width * scale);
   const height = Math.round(bitmap.height * scale);

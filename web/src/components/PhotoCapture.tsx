@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MAX_UPLOAD_BYTES, downscaleImage } from '../lib/image';
+import { MAX_UPLOAD_BYTES, UNDECODABLE_IMAGE, downscaleImage } from '../lib/image';
 import Icon from './Icon';
 import { Spinner } from './ui';
 
@@ -50,7 +50,7 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
   const galleryRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [errorDismissed, setErrorDismissed] = useState(false);
-  const [tooLarge, setTooLarge] = useState(false);
+  const [rejected, setRejected] = useState<'tooLarge' | 'unsupported' | null>(null);
 
   useEffect(() => {
     if (!photo) {
@@ -70,14 +70,24 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setTooLarge(false);
+    setRejected(null);
     try {
       const downscaled = await downscaleImage(file);
       onCapture(downscaled, file);
     } catch (err) {
-      // createImageBitmap/canvas encoding has known WebKit quirks on some
-      // camera-captured photos. Rather than silently drop the capture,
-      // fall back to the un-downscaled original so the flow keeps working.
+      // A file this browser cannot decode is not a capture at all. It used to
+      // be carried forward anyway: stored to R2 in a format the viewer cannot
+      // show, and posted to OCR labelled image/jpeg, where the model returns
+      // "couldn't read it" and the worker retakes the same unreadable photo.
+      // An iPhone HEIC in desktop Chrome is the everyday case. Say so instead.
+      if (err instanceof Error && err.name === UNDECODABLE_IMAGE) {
+        console.error('Photo could not be decoded', err);
+        setRejected('unsupported');
+        return;
+      }
+      // Canvas *encoding* has known WebKit quirks on some camera-captured
+      // photos. There the original decoded fine, so rather than silently drop
+      // the capture, fall back to it and let the flow keep working.
       console.error('Photo downscale failed, using original', err);
       // ...but only if the Worker would actually accept it. An oversized
       // original is not a slow upload, it is a permanent one: /upload answers
@@ -86,7 +96,7 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
       // Refusing here keeps that out of the queue and tells the worker to
       // retake, which is the only thing that actually resolves it.
       if (file.size > MAX_UPLOAD_BYTES) {
-        setTooLarge(true);
+        setRejected('tooLarge');
         return;
       }
       onCapture(file, file);
@@ -207,10 +217,10 @@ export default function PhotoCapture({ label, photo, busy, error, onCapture, onT
       {/* Sits outside the state blocks because a rejected file leaves the tile
           in whatever state it was already in — empty for a first capture,
           still-successful for a retake that was too big. */}
-      {tooLarge && (
+      {rejected && (
         <p role="alert" className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-danger-700">
           <Icon name="alertTriangle" size={14} className="mt-px shrink-0" />
-          {t('newJob.photoTooLarge')}
+          {t(rejected === 'tooLarge' ? 'newJob.photoTooLarge' : 'newJob.photoUnsupported')}
         </p>
       )}
     </div>

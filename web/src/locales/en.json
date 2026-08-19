@@ -115,6 +115,7 @@
     "uploadFromDevice": "Upload from device",
     "removePhoto": "Remove",
     "photoTooLarge": "That photo is too large (max 8MB) — please retake it",
+    "photoUnsupported": "This browser can't open that photo format — take it with the camera instead",
     "captured": "{{label}} captured",
     "typeItIn": "Type it in",
     "autoFilled": "auto-filled",

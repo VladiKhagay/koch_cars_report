@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { boxToCropRect, levelRange, normalizeBox } from './image';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { UNDECODABLE_IMAGE, boxToCropRect, downscaleImage, levelRange, normalizeBox } from './image';
 
 const W = 1920;
 const H = 1080;
@@ -109,5 +109,51 @@ describe('levelRange', () => {
 
   it('declines on an empty histogram', () => {
     expect(levelRange(new Uint32Array(256))).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------- decoding */
+
+/*
+ * The two ways downscaling fails are not the same failure, and the capture
+ * tile has to tell them apart. An iPhone HEIC dropped into desktop Chrome
+ * cannot be decoded at all — carrying it forward stored a file the viewer
+ * cannot show and posted it to the OCR model labelled image/jpeg, which came
+ * back "couldn't read it" and sent the worker off to retake a photo that was
+ * never going to work. A canvas encode quirk is the opposite: the original
+ * decoded fine and is still worth uploading.
+ */
+describe('downscaleImage — undecodable vs unencodable', () => {
+  const file = new Blob(['not really an image']);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function failureName(): Promise<string> {
+    try {
+      await downscaleImage(file);
+      return 'resolved';
+    } catch (err) {
+      return (err as Error).name;
+    }
+  }
+
+  it('marks a format the browser cannot decode, so the capture can refuse it', async () => {
+    vi.stubGlobal('createImageBitmap', () =>
+      Promise.reject(new DOMException('The source image could not be decoded.', 'InvalidStateError')),
+    );
+    await expect(failureName()).resolves.toBe(UNDECODABLE_IMAGE);
+  });
+
+  it('leaves an encode failure unmarked, so the original is still used', async () => {
+    vi.stubGlobal('createImageBitmap', () => Promise.resolve({ width: 100, height: 80 }));
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        getContext: () => ({ drawImage: () => {} }),
+        toBlob: (cb: (b: Blob | null) => void) => cb(null),
+      }),
+    });
+    await expect(failureName()).resolves.not.toBe(UNDECODABLE_IMAGE);
   });
 });

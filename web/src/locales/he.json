@@ -119,6 +119,7 @@
     "uploadFromDevice": "העלאה מהמכשיר",
     "removePhoto": "הסרה",
     "photoTooLarge": "הצילום גדול מדי (עד 8MB) — צלמו מחדש",
+    "photoUnsupported": "הדפדפן לא יודע לפתוח את סוג הקובץ הזה — צלמו במצלמה במקום",
     "captured": "{{label}} צולם",
     "typeItIn": "הקלדה ידנית",
     "autoFilled": "מולא אוטומטית",
