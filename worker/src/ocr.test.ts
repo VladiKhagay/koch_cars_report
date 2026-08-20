@@ -27,6 +27,27 @@ describe('normalizePlate — Israeli 8-digit format', () => {
     expect(parseOcrAnswer('816-78-404', 'plate')).toEqual({ text: '81678404', reason: null });
   });
 
+  /*
+   * Observed in production, and it cost a read. An Israeli plate is printed
+   * with raised dots; the prompt asks for the plate as printed; so the model
+   * answered '344·48·104' — a correct read, rejected because U+00B7 was
+   * missing from the separator class. The worker was told the photo could not
+   * be read, and retook a photo that was never the problem.
+   */
+  it('joins the middle dot Israeli plates are actually printed with', () => {
+    expect(normalizePlate('344·48·104')).toBe('34448104');
+    expect(normalizePlate('816·78·404')).toBe('81678404');
+    expect(parseOcrAnswer('344·48·104', 'plate')).toEqual({ text: '34448104', reason: null });
+  });
+
+  it('lets prose break the run, so the middle dot cannot swallow a year', () => {
+    expect(normalizePlate('344·48·104 on a 2019 Toyota')).toBe('34448104');
+    // Welding two bare numbers across punctuation is old behaviour the middle
+    // dot inherits from the space, dot and hyphen; the length check catches it.
+    expect(normalizePlate('344·48·104 · 2019')).toBeNull();
+    expect(normalizePlate('12 · 34')).toBeNull();
+  });
+
   it('strips chatty preambles', () => {
     expect(normalizePlate('The plate is 12345678')).toBe('12345678');
     expect(normalizePlate('I can read the plate: 12345678')).toBe('12345678');

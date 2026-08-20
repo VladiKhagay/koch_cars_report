@@ -163,9 +163,25 @@ export function normalizePlate(raw: string): string | null {
     })
     .join(' ');
 
-  // Join separators that sit *between* digits, so a printed "123-45-678"
-  // becomes one run while unrelated numbers stay separate.
-  const joined = repaired.replace(/(\d)[\s.–-]+(?=\d)/g, '$1');
+  /*
+   * Join separators that sit *between* digits, so a printed "123-45-678"
+   * becomes one run while unrelated numbers stay separate.
+   *
+   * The middle dot (U+00B7) is in here because it is what Israeli plates are
+   * actually printed with, and the prompt now asks the model to answer as
+   * printed — so it dutifully returns "344·48·104", which this class used to
+   * leave as three runs and reject. That was a correct read, correctly
+   * transcribed, thrown away on a punctuation mark: the worker saw "couldn't
+   * read it" and blamed the camera. It stayed invisible until the prompt was
+   * fixed, because the old one banned separators outright.
+   *
+   * A digit is required on both sides, so what breaks a run is prose: "123-45-678
+   * on a 2019 Toyota" keeps the year out because "on a" is not in this class.
+   * Two bare numbers separated only by punctuation DO weld — that was already
+   * true of the space, dot and hyphen, and the middle dot inherits it. It has
+   * never mattered, because the length check downstream rejects the result.
+   */
+  const joined = repaired.replace(/(\d)[\s.·•–-]+(?=\d)/g, '$1');
 
   const runs = joined.match(/\d+/g);
   if (!runs) return null;
