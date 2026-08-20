@@ -14,6 +14,19 @@ describe('normalizePlate — Israeli 8-digit format', () => {
     expect(normalizePlate('817-07-504')).toBe('81707504');
   });
 
+  /*
+   * The printed spelling is what the model is now ASKED for. The prompt used to
+   * ban separators and name the digit count, and both cost reads — it padded
+   * ('816878404') or dropped a digit ('8174804'). Asking for the plate as
+   * printed returned '816-78-404' on every run of the same photo. This pins the
+   * shape the prompt and the parser now agree on; break it and the model is
+   * transcribing into a format nothing here accepts.
+   */
+  it('accepts the printed spelling the prompt now asks the model for', () => {
+    expect(normalizePlate('816-78-404')).toBe('81678404');
+    expect(parseOcrAnswer('816-78-404', 'plate')).toEqual({ text: '81678404', reason: null });
+  });
+
   it('strips chatty preambles', () => {
     expect(normalizePlate('The plate is 12345678')).toBe('12345678');
     expect(normalizePlate('I can read the plate: 12345678')).toBe('12345678');

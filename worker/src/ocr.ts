@@ -25,12 +25,28 @@ const DETECT_MODEL = DEFAULT_MODEL;
 // photo. Validation below decides what counts as a usable read; the model's
 // only job is to transcribe.
 const PROMPTS: Record<'plate' | 'vin', string> = {
+  /*
+   * Ask for the plate AS PRINTED, separators and all. The previous prompt named
+   * the digit count and banned separators — "Israeli plates are 8 digits …
+   * return ONLY the 8 plate digits, no hyphens" — and both halves cost reads.
+   * Naming the count makes the model pad to reach it; banning the dashes takes
+   * away the 3-2-3 grouping it uses to keep its place, which is how a plate
+   * comes back a digit short. Measured against a real production photo
+   * (816-78-404), two runs per cell at temperature 0:
+   *
+   *                    full frame       crop
+   *   old prompt       81678404   ok    8174804     wrong
+   *   "digits only"    816-78-404 ok    816784      wrong
+   *   as printed       816-78-404 ok    816-78-404  ok
+   *
+   * normalizePlate already joins digit runs across separators — '123-45-678'
+   * is in its tests — so the printed spelling is the form it handles best. The
+   * old prompt forbade precisely that.
+   */
   plate:
-    'Read the Israeli vehicle license plate in this image. ' +
-    'Israeli plates are 8 digits, no letters. ' +
-    'Return ONLY the 8 plate digits. ' +
-    'Do not include spaces, hyphens, punctuation, explanations, or any other text. ' +
-    'Always make your best guess.',
+    'Read the license plate in this image. ' +
+    'Answer with the characters exactly as printed, keeping the dashes. ' +
+    'No explanations or any other text.',
   // The VIN plate sits under the windscreen, so nearly every real photo has
   // reflections across it. Naming that in the prompt stops the model treating
   // the glare as the subject and answering about it.
