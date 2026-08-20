@@ -113,9 +113,25 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
     // both survive a levels stretch. Only worth a second call when the stretch
     // actually changed something.
     const enhanced = await enhanceForOcr(target);
-    if (enhanced === target) return first;
-    const second = await readOcr(enhanced, kind);
-    return second.text ? second : first;
+    if (enhanced !== target) {
+      const second = await readOcr(enhanced, kind);
+      if (second.text) return second;
+    }
+
+    /*
+     * Last rung: the uncropped frame. Both attempts above read the same pixels
+     * — a levels stretch of a crop is still that crop — so a crop that loses a
+     * digit loses it twice, which is exactly what production showed: 344-48-104
+     * came back as "34-48-104" from the crop, twice over. The full frame is
+     * genuinely different input, and it measured 3/3 correct on the photo whose
+     * crop was misreading. Runs only on a photo that has already failed, and
+     * can only turn a rejection into a read.
+     */
+    if (target !== image) {
+      const third = await readOcr(image, kind);
+      if (third.text) return third;
+    }
+    return first;
   } catch {
     /* A read that never completed — 413, 429, a dropped connection — used to
        resolve to no text AND no reason, and the capture tile renders exactly

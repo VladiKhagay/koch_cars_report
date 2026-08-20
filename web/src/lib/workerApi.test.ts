@@ -25,7 +25,9 @@ const image = vi.hoisted(() => ({
   downscaleImage: vi.fn(async (blob: Blob) => blob),
   blobToBase64: vi.fn(async () => 'base64'),
   enhanceForOcr: vi.fn(async (blob: Blob) => blob),
-  cropToBox: vi.fn(async (blob: Blob) => blob),
+  // A distinct Blob on purpose: the crop must not be identical to the original,
+  // or the full-frame fallback would be re-reading the very same pixels.
+  cropToBox: vi.fn(async () => new Blob(['crop'])),
   imageSize: vi.fn(async () => ({ width: 1024, height: 768 })),
   normalizeBox: vi.fn((box: unknown) => box),
 }));
@@ -180,6 +182,36 @@ describe('ocrPhoto', () => {
     ocrServer({ reads: [{ text: '81707504', reason: null }] });
     await ocrPhoto(photo, 'plate');
     expect(image.downscaleImage).toHaveBeenCalledTimes(1); // detection only
+  });
+
+  /*
+   * Production: a crop that loses a digit loses it twice, because the enhance
+   * retry is a levels stretch of the SAME crop. 344-48-104 came back as
+   * "34-48-104" and the worker was sent to type it in, while the uncropped
+   * frame — already on the phone, already paid for — reads on its own strengths.
+   */
+  it('falls back to the uncropped frame when the crop cannot be read', async () => {
+    ocrServer({
+      box: { x0: 0.4, y0: 0.5, x1: 0.7, y1: 0.6 },
+      reads: [{ text: null, reason: 'not_in_frame' }, { text: '34448104', reason: null }],
+    });
+    await expect(ocrPhoto(photo, 'plate')).resolves.toEqual({ text: '34448104', reason: null });
+  });
+
+  it('does not re-read the same pixels when no crop was taken', async () => {
+    // No box, so target IS the original: a third read would be the same image.
+    const fetchSpy = ocrServer({ reads: [{ text: null, reason: 'not_in_frame' }] });
+    await expect(ocrPhoto(photo, 'plate')).resolves.toEqual({ text: null, reason: 'not_in_frame' });
+    const reads = fetchSpy.mock.calls.filter((c) => JSON.parse(c[1].body).task === 'query');
+    expect(reads).toHaveLength(1);
+  });
+
+  it('keeps the first outcome when every rung fails', async () => {
+    ocrServer({
+      box: { x0: 0.4, y0: 0.5, x1: 0.7, y1: 0.6 },
+      reads: [{ text: null, reason: 'not_in_frame' }, { text: null, reason: 'not_in_frame' }],
+    });
+    await expect(ocrPhoto(photo, 'plate')).resolves.toEqual({ text: null, reason: 'not_in_frame' });
   });
 
   it('still reads from the crop when detection finds one', async () => {
