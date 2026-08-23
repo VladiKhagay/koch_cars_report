@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildCustomerReport, buildWorkerPaymentReport, type ExportJob } from './exports';
+import {
+  buildCustomerReport,
+  buildMyJobsSheet,
+  buildWorkerPaymentReport,
+  type Cell,
+  type ExportJob,
+} from './exports';
 import { resolveCustomerColumns } from './reportConfig';
 
 const job = (over: Partial<ExportJob> = {}): ExportJob => ({
@@ -15,7 +21,37 @@ const job = (over: Partial<ExportJob> = {}): ExportJob => ({
 });
 
 /** Flattens a grid so a value can be searched for wherever it landed. */
-const flat = (rows: (string | number)[][]) => rows.flat().map(String);
+const flat = (rows: Cell[][]) => rows.flat().map(String);
+
+describe('buildMyJobsSheet', () => {
+  const headers = ['Date', 'Plate', 'Brand', 'Service'];
+  const row = { created_at: '2026-03-04T09:30:00.000Z', plate: '12-345-67', brand: 'Volkswagen', service: 'Full detail' };
+
+  it('writes the grid columns in the grid order, with the date as a date', () => {
+    const [header, cells] = buildMyJobsSheet([row], headers);
+    expect(header).toEqual(headers);
+    expect(cells[0]).toBeInstanceOf(Date);
+    expect((cells[0] as Date).toISOString()).toBe(row.created_at);
+    expect(cells.slice(1)).toEqual(['12-345-67', 'Volkswagen', 'Full detail']);
+  });
+
+  /* A car logged without a brand prints an empty cell — not "null", which is
+     what a spreadsheet reader would take for the make of the car. */
+  it('prints a missing brand as a blank cell', () => {
+    const [, cells] = buildMyJobsSheet([{ ...row, brand: null }], headers);
+    expect(cells[2]).toBe('');
+  });
+
+  /* Nothing on this sheet may carry pay: it is the worker's own record of what
+     they logged, but it is also a file that gets forwarded. */
+  it('never emits the worker price', () => {
+    expect(flat(buildMyJobsSheet([row], headers))).not.toContain('25');
+  });
+
+  it('is headers only when the filters select nothing', () => {
+    expect(buildMyJobsSheet([], headers)).toEqual([headers]);
+  });
+});
 
 describe('buildCustomerReport', () => {
   it('emits only the visible columns, in configured order', () => {
@@ -98,7 +134,7 @@ describe('buildWorkerPaymentReport', () => {
 
   const build = (jobs: ExportJob[] = dana) => buildWorkerPaymentReport(jobs, 'Dana', 'en-GB');
   /** The summary row for a service (or the totals), by its label in column B. */
-  const summaryFor = (rows: (string | number)[][], label: string) =>
+  const summaryFor = (rows: Cell[][], label: string) =>
     rows.find((r) => r[1] === label);
 
   it('lists the jobs oldest first, one row each', () => {

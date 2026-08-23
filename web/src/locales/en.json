@@ -161,6 +161,20 @@
   },
   "myJobs": {
     "title": "My Jobs",
+    "lead": "Your jobs, newest first. This month to start with.",
+    "searchPlate": "Search by plate",
+    "range": "Date range",
+    "month": "Month",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "filters": "Filters",
+    "activeFilters": "Filters: {{count}}",
+    "preset": {
+      "thisMonth": "This month",
+      "lastMonth": "Last month",
+      "last3Months": "Last 3 months",
+      "custom": "Custom"
+    },
     "emptyTitle": "No jobs submitted yet",
     "emptyBody": "Every car you submit shows up here. You can change the services and the note for 15 minutes afterwards.",
     "locked": "Locked",
@@ -168,7 +182,13 @@
     "editableFor": "{{minutes}} min left to edit",
     "editableSoon": "Under a minute left to edit",
     "queuedHint": "Not submitted yet — waiting for a connection",
-    "noService": "No service recorded"
+    "noService": "No service recorded",
+    "emptyMonthTitle": "No jobs this month",
+    "status": "Status",
+    "actions": "Actions",
+    "exportExcel": "Export to Excel",
+    "exportDone": "Download started. The file covers every job the filters above select.",
+    "exportFailed": "Couldn't build the file. Check your connection and try again."
   },
   "dashboard": {
     "title": "Dashboard",

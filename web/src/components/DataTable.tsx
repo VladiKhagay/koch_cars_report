@@ -78,15 +78,21 @@ export function Th({
   align = 'start',
   hideBelow,
   className = '',
+  ariaSort,
 }: {
   children?: ReactNode;
   align?: Align;
   hideBelow?: 'sm' | 'md' | 'lg';
   className?: string;
+  /** Set on every sortable column of a sortable table — including the ones
+   *  currently unsorted (`none`), which is how a screen reader learns they can
+   *  be sorted at all. Belongs on the cell, not on the button inside it. */
+  ariaSort?: 'ascending' | 'descending' | 'none';
 }) {
   return (
     <th
       scope="col"
+      aria-sort={ariaSort}
       /* Sentence case, not letterspaced caps: a column header should read as a
          word, not as a database field name. */
       className={`border-b border-line px-3 py-[5px] text-xs font-semibold text-ink-500 ${ALIGN[align]} ${

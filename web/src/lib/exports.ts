@@ -21,8 +21,12 @@ export interface ExportJob {
   service?: { name_en: string; catalog_number: string } | null;
 }
 
-/** A row of cells. Numbers stay numbers so Excel can sum and format them. */
-export type Cell = string | number;
+/**
+ * A row of cells. Numbers stay numbers so Excel can sum and format them, and a
+ * Date stays a Date so it sorts and filters as a date rather than as the text
+ * of whatever locale happened to write the file.
+ */
+export type Cell = string | number | Date;
 
 /* ------------------------------------------------- customer treatment report */
 
@@ -66,6 +70,38 @@ export function buildCustomerReport(
   return [
     shown.map((c) => SHEET_HEADERS[c.key]),
     ...jobs.map((job) => shown.map((c) => customerValue(job, c.key, locale))),
+  ];
+}
+
+/* ------------------------------------------------------------ my jobs sheet */
+
+/** One row of the worker's own grid, as the screen has it. */
+export interface MyJobsRow {
+  created_at: string;
+  plate: string;
+  brand: string | null;
+  /** Already resolved to the reader's language by the caller, as the cell is. */
+  service: string;
+}
+
+/**
+ * The worker's own grid as a sheet: the same data columns, in the same order,
+ * over whatever rows the filters currently select.
+ *
+ * Status and Actions are not columns of data and are not exported. One is a
+ * countdown that is already stale by the time the file opens, the other is a
+ * button — writing either into a spreadsheet puts a claim in a file that
+ * outlives the fifteen minutes it was true for.
+ *
+ * The date is a Date, not a formatted string: this file is opened to be sorted
+ * and totalled, and a text date sorts alphabetically. The headers are passed in
+ * because they are the table's own headers — the sheet says what the screen
+ * said, in the language the worker is reading it in.
+ */
+export function buildMyJobsSheet(rows: MyJobsRow[], headers: string[]): Cell[][] {
+  return [
+    headers,
+    ...rows.map((row) => [new Date(row.created_at), row.plate, row.brand ?? '', row.service]),
   ];
 }
 

@@ -139,13 +139,24 @@ export async function findRecentDuplicate(siteId: string, vin: string): Promise<
 export interface JobFilters {
   siteId?: string | null;
   workerId?: string;
-  serviceId?: string;
+  /** One service or several. An empty list means "any", same as absent. */
+  serviceIds?: string[];
   /** Local calendar days, `yyyy-mm-dd`, inclusive at both ends. */
   from?: string;
   to?: string;
   /** Raw box contents — sanitised here, never interpolated as typed. */
   search?: string;
+  /**
+   * Which columns the term is matched against. The default is what the
+   * manager's grid can read; the worker screen queries `jobs_worker_view`,
+   * which deliberately has no billing_code column — and PostgREST fails the
+   * whole query, not just that clause, when asked to filter a column that
+   * isn't there. So the caller names its own columns.
+   */
+  searchColumns?: string[];
 }
+
+const DEFAULT_SEARCH_COLUMNS = ['plate', 'vin', 'billing_code'];
 
 /**
  * The chain of `PostgrestFilterBuilder` methods this narrowing uses. Declared
@@ -155,6 +166,7 @@ export interface JobFilters {
  */
 interface JobQuery<Q> {
   eq(column: string, value: string): Q;
+  in(column: string, values: string[]): Q;
   gte(column: string, value: string): Q;
   lte(column: string, value: string): Q;
   or(filter: string): Q;
@@ -171,7 +183,7 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
   let q = query;
   if (filters.siteId) q = q.eq('site_id', filters.siteId);
   if (filters.workerId) q = q.eq('worker_id', filters.workerId);
-  if (filters.serviceId) q = q.eq('service_id', filters.serviceId);
+  if (filters.serviceIds?.length) q = q.in('service_id', filters.serviceIds);
 
   // Dates are local calendar days; the column is a timestamptz, so each day is
   // widened to its full local span rather than compared against midnight UTC.
@@ -182,7 +194,8 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
      is NULL, not a match, which is the right answer — a blank field is not a
      hit for every query. */
   const term = searchTerm(filters.search ?? '');
-  if (term) q = q.or(`plate.ilike.%${term}%,vin.ilike.%${term}%,billing_code.ilike.%${term}%`);
+  const columns = filters.searchColumns ?? DEFAULT_SEARCH_COLUMNS;
+  if (term) q = q.or(columns.map((c) => `${c}.ilike.%${term}%`).join(','));
 
   return q;
 }

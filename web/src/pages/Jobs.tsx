@@ -308,7 +308,14 @@ export default function Jobs() {
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
-      { siteId: effectiveSite, workerId: workerFilter, serviceId: serviceFilter, from, to, search },
+      {
+        siteId: effectiveSite,
+        workerId: workerFilter,
+        serviceIds: serviceFilter ? [serviceFilter] : undefined,
+        from,
+        to,
+        search,
+      },
     );
 
     const { data, count, error } = await q;

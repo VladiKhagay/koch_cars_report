@@ -200,6 +200,7 @@ function recorder() {
   const q = {
     calls,
     eq: (c: string, v: string) => (calls.push(['eq', c, v]), q),
+    in: (c: string, v: string[]) => (calls.push(['in', c, v.join('|')]), q),
     gte: (c: string, v: string) => (calls.push(['gte', c, v]), q),
     lte: (c: string, v: string) => (calls.push(['lte', c, v]), q),
     or: (f: string) => (calls.push(['or', f]), q),
@@ -209,28 +210,44 @@ function recorder() {
 
 describe('applyJobFilters', () => {
   it('narrows by service in the query, not afterwards', () => {
-    const q = applyJobFilters(recorder(), { serviceId: 'svc-7' });
-    expect(q.calls).toEqual([['eq', 'service_id', 'svc-7']]);
+    const q = applyJobFilters(recorder(), { serviceIds: ['svc-7'] });
+    expect(q.calls).toEqual([['in', 'service_id', 'svc-7']]);
+  });
+
+  /* The worker screen lets several services be ticked at once. Several ids have
+     to reach the database as one `in` — narrowing to the first of them would
+     quietly show a subset of the month and look like missing work. */
+  it('sends every ticked service, not just the first', () => {
+    const q = applyJobFilters(recorder(), { serviceIds: ['svc-7', 'svc-9'] });
+    expect(q.calls).toEqual([['in', 'service_id', 'svc-7|svc-9']]);
   });
 
   it('combines the service filter with the others', () => {
     const q = applyJobFilters(recorder(), {
       siteId: 'site-1',
       workerId: 'worker-2',
-      serviceId: 'svc-7',
+      serviceIds: ['svc-7'],
       search: '12345',
     });
     expect(q.calls).toEqual([
       ['eq', 'site_id', 'site-1'],
       ['eq', 'worker_id', 'worker-2'],
-      ['eq', 'service_id', 'svc-7'],
+      ['in', 'service_id', 'svc-7'],
       ['or', 'plate.ilike.%12345%,vin.ilike.%12345%,billing_code.ilike.%12345%'],
     ]);
   });
 
+  /* jobs_worker_view has no billing_code column, and PostgREST rejects the
+     whole query — not just the offending clause — when asked to filter one that
+     isn't there. A worker searching a plate would get an empty screen. */
+  it('searches only the columns the caller names', () => {
+    const q = applyJobFilters(recorder(), { search: '12345', searchColumns: ['plate'] });
+    expect(q.calls).toEqual([['or', 'plate.ilike.%12345%']]);
+  });
+
   it('adds nothing at all when no filter is set', () => {
     expect(applyJobFilters(recorder(), {}).calls).toEqual([]);
-    expect(applyJobFilters(recorder(), { serviceId: '', siteId: null, search: '  ' }).calls).toEqual([]);
+    expect(applyJobFilters(recorder(), { serviceIds: [], siteId: null, search: '  ' }).calls).toEqual([]);
   });
 
   it('widens each date to its full local day, both ends inclusive', () => {
