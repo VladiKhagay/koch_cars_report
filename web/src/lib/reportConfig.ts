@@ -1,18 +1,22 @@
 /**
  * The customer treatment report's column set.
  *
- * This report leaves the building — it goes to the importer. Two fields must
- * never appear in it at any visibility: who did the work, and what the yard
- * pays them. `sites.customer_report_config` is a jsonb blob that a manager
- * writes through an RPC, which makes it *data*, and a privacy rule enforced
- * only by data is a privacy rule one bad row away from being off. So the set
- * of columns the report may contain lives here, in code, and the stored config
- * can only order and toggle within it.
+ * This report leaves the building — it goes to the importer. `worker_price`
+ * must never appear in it at any visibility: what the yard pays its staff is
+ * nobody else's business. `worker` was held to the same rule until 0013, when
+ * the yard decided the importer should see who did the work. The name is now
+ * an allowed column; the pay is still not.
  *
- * Migration 0007 validates the same list at the write boundary. Both layers
+ * `sites.customer_report_config` is a jsonb blob that a manager writes through
+ * an RPC, which makes it *data*, and a privacy rule enforced only by data is a
+ * privacy rule one bad row away from being off. So the set of columns the
+ * report may contain lives here, in code, and the stored config can only order
+ * and toggle within it.
+ *
+ * Migration 0013 validates the same list at the write boundary. Both layers
  * are deliberate: the database stops a bad value being stored, this stops a
  * bad value being rendered if one ever is — by a direct SQL edit, a restored
- * backup taken before 0007, or a future migration that reintroduces a key.
+ * backup, or a future migration that reintroduces a key.
  */
 export const CUSTOMER_COLUMNS = [
   'date',
@@ -22,6 +26,7 @@ export const CUSTOMER_COLUMNS = [
   'service',
   'catalog_number',
   'billing_code',
+  'worker',
 ] as const;
 
 export type CustomerColumnKey = (typeof CUSTOMER_COLUMNS)[number];
@@ -47,6 +52,7 @@ export const SHEET_HEADERS: Record<CustomerColumnKey, string> = {
   service: 'Work performed',
   catalog_number: 'Catalog number',
   billing_code: 'Customer billing code',
+  worker: 'Worker',
 };
 
 function isCustomerColumn(value: unknown): value is CustomerColumnKey {
@@ -56,9 +62,10 @@ function isCustomerColumn(value: unknown): value is CustomerColumnKey {
 /**
  * Turns whatever is stored on the site row into an ordered, safe column list.
  *
- * Unknown keys are dropped rather than rejected: a config carrying `worker`
- * must not produce an error the manager can't act on, and must not block the
- * export either — it should just quietly not have that column. Allowlisted
+ * Unknown keys are dropped rather than rejected: a config carrying
+ * `worker_price` must not produce an error the manager can't act on, and must
+ * not block the export either — it should just quietly not have that column.
+ * Allowlisted
  * keys the config omits are appended HIDDEN, so a column added to the product
  * later never starts appearing in customer paperwork on its own.
  */

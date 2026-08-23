@@ -1,6 +1,11 @@
--- Read-only check that 0005, 0006 and 0007 are fully in place.
+-- Read-only check that 0005, 0006, 0007 and 0013 are fully in place.
 -- Paste into the Supabase SQL editor. Every row should read 'ok'.
 -- Nothing here writes.
+--
+-- 0013 allowed `worker` into the customer report. The two checks that asserted
+-- its absence were rewritten rather than deleted: `worker_price` is still
+-- forbidden, and a verifier that shouts LEAK at a correct database is one
+-- people learn to ignore.
 
 select 'rpc update_customer_report_config' as check,
        case when exists (
@@ -27,19 +32,51 @@ select 'trigger services_guard_worker_price (0006)',
        then 'ok' else 'MISSING — managers can set catalogue pay' end
 
 union all
--- The whole point of 0007: no site may carry these two keys.
-select 'no worker/worker_price in any site config',
+-- What survives of 0007: the pay never appears in a document that leaves the
+-- building. The name may, since 0013.
+select 'no worker_price in any site config',
        case when not exists (
          select 1 from sites s,
                      lateral jsonb_array_elements(s.customer_report_config -> 'columns') c
-         where c ->> 'key' in ('worker', 'worker_price')
-       ) then 'ok' else 'LEAK — rerun the update in 0007' end
+         where c ->> 'key' = 'worker_price'
+       ) then 'ok' else 'LEAK — a site config carries worker pay' end
 
 union all
-select 'every site config has the 7 allowed columns',
+-- Matched against the allowlist line itself, not the whole body: the body also
+-- mentions worker_price in a comment saying why it is excluded.
+select 'rpc allowlist includes worker (0013)',
+       case when exists (
+         select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.proname = 'update_customer_report_config'
+           and pg_get_functiondef(p.oid) like '%''billing_code'', ''worker''%'
+       ) then 'ok' else 'STALE — still the 0007 allowlist, rerun 0013' end
+
+union all
+select 'new sites default to the worker column (0013)',
+       case when (
+         select pg_get_expr(d.adbin, d.adrelid)
+         from pg_attrdef d
+         join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+         where d.adrelid = 'sites'::regclass and a.attname = 'customer_report_config'
+       ) like '%worker%' then 'ok' else 'MISSING — rerun the alter in 0013' end
+
+union all
+-- 0013 appends the column to every existing site rather than resetting it, so
+-- a site the manager has since reconfigured still has to carry the key.
+select 'every site config carries the worker column (0013)',
        case when not exists (
          select 1 from sites s
-         where (select count(*) from jsonb_array_elements(s.customer_report_config -> 'columns')) <> 7
+         where not exists (
+           select 1 from jsonb_array_elements(s.customer_report_config -> 'columns') c
+           where c ->> 'key' = 'worker'
+         )
+       ) then 'ok' else 'MISSING — rerun the update in 0013' end
+
+union all
+select 'every site config has the 8 allowed columns',
+       case when not exists (
+         select 1 from sites s
+         where (select count(*) from jsonb_array_elements(s.customer_report_config -> 'columns')) <> 8
        ) then 'ok' else 'check — a site has a non-default column set' end
 
 union all

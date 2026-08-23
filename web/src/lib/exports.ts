@@ -42,15 +42,20 @@ function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string)
       return job.service?.catalog_number ?? '';
     case 'billing_code':
       return job.billing_code ?? '';
+    // A job whose worker record is gone — a deleted user, or a row that never
+    // carried one — prints a blank cell rather than dropping the row or
+    // writing "null" into paperwork somebody reads.
+    case 'worker':
+      return job.worker?.name ?? '';
   }
 }
 
 /**
  * The sheet the importer receives.
  *
- * There is no branch here that can reach `worker` or `worker_price`: the switch
- * above is exhaustive over the allowlisted keys, so the type checker rejects a
- * future key that has no case, and no case exists that reads either field.
+ * There is no branch here that can reach `worker_price`: the switch above is
+ * exhaustive over the allowlisted keys, so the type checker rejects a future
+ * key that has no case, and no case exists that reads what the yard pays.
  */
 export function buildCustomerReport(
   jobs: ExportJob[],

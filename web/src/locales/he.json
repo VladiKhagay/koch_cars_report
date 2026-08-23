@@ -311,7 +311,8 @@
       "vin": "שלדה",
       "service": "שירות",
       "catalog_number": "מק\"ט",
-      "billing_code": "מספר קבלה"
+      "billing_code": "מספר קבלה",
+      "worker": "עובד"
     }
   },
   "admin": {

@@ -33,21 +33,32 @@ describe('buildCustomerReport', () => {
   });
 
   /*
-   * The report goes to the importer. Even handed a config that asks for them,
-   * the worker's name and pay must not reach the file.
+   * The report goes to the importer. Since 0013 it may name who did the work,
+   * but what the yard pays them is still not for anybody outside the building.
    */
-  it('never emits the worker name or price, even if the config asks', () => {
+  it('never emits the worker price, even if the config asks', () => {
     const columns = resolveCustomerColumns({
       columns: [
-        { key: 'worker', visible: true },
         { key: 'worker_price', visible: true },
         { key: 'date', visible: true },
       ],
     });
     const cells = flat(buildCustomerReport([job()], columns, 'en-GB'));
-    expect(cells).not.toContain('Dana');
     expect(cells).not.toContain('25');
-    expect(cells.some((c) => /worker/i.test(c))).toBe(false);
+    expect(cells.some((c) => /price|pay/i.test(c))).toBe(false);
+  });
+
+  it('emits the worker name when the column is on', () => {
+    const columns = resolveCustomerColumns({ columns: [{ key: 'worker', visible: true }] });
+    const [header, row] = buildCustomerReport([job()], columns, 'en-GB');
+    expect(header).toEqual(['Worker']);
+    expect(row).toEqual(['Dana']);
+  });
+
+  it('writes a blank cell for a job with no worker', () => {
+    const columns = resolveCustomerColumns({ columns: [{ key: 'worker', visible: true }] });
+    const [, row] = buildCustomerReport([job({ worker: null })], columns, 'en-GB');
+    expect(row).toEqual(['']);
   });
 
   it('produces a header-only sheet when nothing is visible', () => {

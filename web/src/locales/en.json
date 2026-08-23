@@ -297,7 +297,8 @@
       "vin": "VIN",
       "service": "Service",
       "catalog_number": "Catalog number",
-      "billing_code": "Receipt number"
+      "billing_code": "Receipt number",
+      "worker": "Worker"
     }
   },
   "admin": {

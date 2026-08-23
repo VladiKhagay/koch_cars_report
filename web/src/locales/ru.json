@@ -311,7 +311,8 @@
       "vin": "VIN",
       "service": "Услуга",
       "catalog_number": "Кат. номер",
-      "billing_code": "Номер квитанции"
+      "billing_code": "Номер квитанции",
+      "worker": "Сотрудник"
     }
   },
   "admin": {

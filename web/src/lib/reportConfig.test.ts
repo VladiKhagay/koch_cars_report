@@ -12,22 +12,34 @@ const visible = (cols: ColumnConfig[]) => cols.filter((c) => c.visible).map((c) 
 
 describe('resolveCustomerColumns — privacy', () => {
   /*
-   * The one test that matters. The 0005 default shipped `worker` visible and
-   * `worker_price` present, and any backup taken before 0007 still holds them.
-   * This report goes to the importer.
+   * The one test that matters. The 0005 default shipped `worker_price`
+   * present, and any backup taken before 0007 still holds it. This report goes
+   * to the importer, and what the yard pays its staff is not for them.
+   *
+   * `worker` is deliberately NOT asserted against here: 0013 made the name an
+   * allowed column. The pay never was one and is not now.
    */
-  it('drops worker and worker_price however they arrive', () => {
+  it('drops worker_price however it arrives', () => {
     const leaky = {
       columns: [
         { key: 'date', visible: true },
-        { key: 'worker', visible: true },
         { key: 'worker_price', visible: true },
         { key: 'plate', visible: true },
       ],
     };
-    expect(keys(resolveCustomerColumns(leaky))).not.toContain('worker');
     expect(keys(resolveCustomerColumns(leaky))).not.toContain('worker_price');
     expect(visible(resolveCustomerColumns(leaky))).toEqual(['date', 'plate']);
+  });
+
+  it('keeps worker where the config asks for it', () => {
+    const cols = resolveCustomerColumns({
+      columns: [
+        { key: 'worker', visible: true },
+        { key: 'date', visible: true },
+      ],
+    });
+    expect(keys(cols).slice(0, 2)).toEqual(['worker', 'date']);
+    expect(visible(cols)).toEqual(['worker', 'date']);
   });
 
   it('never returns a key outside the allowlist', () => {
