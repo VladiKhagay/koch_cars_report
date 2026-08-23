@@ -398,6 +398,14 @@
     "scrollHint": "גללו הצידה לשאר",
     "emptyTitle": "עדיין לא נרשמו עבודות",
     "emptyBody": "הספירה מתחילה מהרכב הראשון שתשלחו. שום דבר לא חסר.",
-    "chartLabel": "{{title}} — תרשים עמודות"
+    "chartLabel": "{{title}} — תרשים עמודות",
+    "monthJobs": "בחודש",
+    "emptyMonth": "לא נרשמו עבודות בחודש הזה",
+    "noComparison": "אין נתונים מ־{{month}} להשוואה",
+    "changeUp": "עלייה של {{percent}}% לעומת {{month}}",
+    "changeDown": "ירידה של {{percent}}% לעומת {{month}}",
+    "changeSame": "כמו ב־{{month}}",
+    "changeFrom": "({{jobs}} עבודות)",
+    "serviceTooltip": "{{service}} — {{count}} עבודות, {{percent}}% מהחודש"
   }
 }

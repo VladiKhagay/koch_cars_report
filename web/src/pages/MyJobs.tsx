@@ -21,18 +21,11 @@ import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
 import { applyJobFilters } from '../lib/jobs';
 import { buildMyJobsSheet } from '../lib/exports';
-import {
-  dayKey,
-  monthKey,
-  monthRange,
-  presetFor,
-  rangeFor,
-  shiftMonth,
-  type Preset,
-} from '../lib/dateRange';
+import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
 import { useQueuedJobs } from '../lib/useQueue';
 import type { Job, Service } from '../lib/types';
 import Icon from '../components/Icon';
+import MonthNav from '../components/MonthNav';
 import ServiceChips from '../components/ServiceChips';
 import StatusBanner from '../components/StatusBanner';
 import {
@@ -53,7 +46,6 @@ import {
   Card,
   EmptyState,
   Group,
-  IconButton,
   Page,
   PageHeading,
   SearchField,
@@ -277,11 +269,6 @@ export default function MyJobs() {
   /** True when the window is exactly one calendar month, which month nav needs. */
   const shownMonth = monthKey(from);
   const wholeMonth = from === monthRange(shownMonth).from && to === monthRange(shownMonth).to;
-  const currentMonth = monthKey(dayKey(new Date()));
-
-  function goMonth(delta: number) {
-    setFilters(monthRange(shiftMonth(shownMonth, delta)));
-  }
 
   const load = useCallback(async () => {
     if (!appUser) return;
@@ -507,40 +494,15 @@ export default function MyJobs() {
               {/*
                 Month navigation, first and largest: the month is the window
                 this screen is read through, and stepping back one month is the
-                thing a worker does far more often than typing a date. The
-                middle control is a native month picker rather than a menu we
-                drew — it is a real month/year selector on every platform, it
-                already speaks the worker's language, and it costs no code.
+                thing a worker does far more often than typing a date. Shared
+                with "My Stats", which is read through the same window.
 
                 It is only shown when the window IS one calendar month. Arrows
                 over a three-month range would claim to be showing June while
                 the table shows June to August.
               */}
               {wholeMonth ? (
-                <div className="flex items-center gap-2">
-                  <IconButton
-                    icon="chevronLeft"
-                    variant="secondary"
-                    label={t('myJobs.prevMonth')}
-                    onClick={() => goMonth(-1)}
-                  />
-                  <input
-                    type="month"
-                    value={shownMonth}
-                    // Nothing has been logged in a month that hasn't started.
-                    max={currentMonth}
-                    aria-label={t('myJobs.month')}
-                    onChange={(e) => e.target.value && setFilters(monthRange(e.target.value))}
-                    className={`${fieldClass} flex-1 text-center font-semibold`}
-                  />
-                  <IconButton
-                    icon="chevronRight"
-                    variant="secondary"
-                    label={t('myJobs.nextMonth')}
-                    disabled={shownMonth >= currentMonth}
-                    onClick={() => goMonth(1)}
-                  />
-                </div>
+                <MonthNav month={shownMonth} onChange={(m) => setFilters(monthRange(m))} />
               ) : (
                 <p className="text-center text-sm font-semibold text-ink-900">{rangeLabel}</p>
               )}

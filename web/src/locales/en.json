@@ -384,6 +384,14 @@
     "scrollHint": "Scroll sideways for the rest",
     "emptyTitle": "No jobs recorded yet",
     "emptyBody": "Your counts start from the first car you submit. Nothing is missing.",
-    "chartLabel": "{{title}} — bar chart"
+    "chartLabel": "{{title}} — bar chart",
+    "monthJobs": "Month total",
+    "emptyMonth": "No jobs recorded in this month",
+    "noComparison": "Nothing logged in {{month}} to compare against",
+    "changeUp": "Up {{percent}}% on {{month}}",
+    "changeDown": "Down {{percent}}% on {{month}}",
+    "changeSame": "Same as {{month}}",
+    "changeFrom": "({{jobs}} jobs)",
+    "serviceTooltip": "{{service}} — {{count}} jobs, {{percent}}% of the month"
   }
 }

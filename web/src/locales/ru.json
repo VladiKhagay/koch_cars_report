@@ -398,6 +398,14 @@
     "scrollHint": "Прокрутите вбок, чтобы увидеть остальное",
     "emptyTitle": "Работы пока не записаны",
     "emptyBody": "Подсчёт начнётся с первого отправленного авто. Ничего не потеряно.",
-    "chartLabel": "{{title}} — столбчатая диаграмма"
+    "chartLabel": "{{title}} — столбчатая диаграмма",
+    "monthJobs": "За месяц",
+    "emptyMonth": "В этом месяце работ не записано",
+    "noComparison": "За {{month}} нет данных для сравнения",
+    "changeUp": "Больше на {{percent}}%, чем в {{month}}",
+    "changeDown": "Меньше на {{percent}}%, чем в {{month}}",
+    "changeSame": "Столько же, сколько в {{month}}",
+    "changeFrom": "({{jobs}} работ)",
+    "serviceTooltip": "{{service}} — {{count}} работ, {{percent}}% за месяц"
   }
 }
