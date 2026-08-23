@@ -2,7 +2,7 @@
  * The jobs grid — the screen that replaces the office spreadsheet.
  *
  * The Dashboard answers "what happened today"; this answers "find me that car
- * and put its receipt number in". Those are different jobs, so this is a
+ * and put its reservation number in". Those are different jobs, so this is a
  * different screen rather than a mode of the first one: dense rows, a page at a
  * time, filters that persist while you work down a stack of paperwork.
  *
@@ -94,7 +94,7 @@ interface Handlers {
 /* ------------------------------------------------------------------- cells */
 
 /**
- * The receipt number, editable in place.
+ * The reservation number, editable in place.
  *
  * The draft lives in the cell, not in a map on the page: a page-level draft
  * would re-render all 50 rows on every keystroke, and this is the one field a
