@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { uploadPhoto } from './workerApi';
+import { uploadPhoto, HttpError } from './workerApi';
 import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
 import type { PhotoKind } from './types';
@@ -7,6 +7,20 @@ import type { PhotoKind } from './types';
 /** The optional slots, in the order they are filled. Matches migration 0005. */
 export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
 export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
+
+/**
+ * True when retrying `submitJob` with the SAME payload can never succeed —
+ * a 4xx from the Worker (uploadPhoto's HttpError), or a Postgres RLS/
+ * permission rejection (error code 42501) from the `jobs`/`photos` insert.
+ * Anything else (a network failure, a 5xx, an unrecognised error shape) is
+ * treated as transient so a real outage never gets mistaken for a permanent
+ * failure and drops data.
+ */
+export function isPermanentError(err: unknown): boolean {
+  if (err instanceof HttpError) return err.status >= 400 && err.status < 500;
+  const code = (err as { code?: string } | null | undefined)?.code;
+  return code === '42501'; // insufficient_privilege — RLS denied the write
+}
 
 export interface NewJobPayload {
   siteId: string;

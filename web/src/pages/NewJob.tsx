@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { Service } from '../lib/types';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
-import { submitJob, findRecentDuplicate, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { submitJob, findRecentDuplicate, isPermanentError, MAX_EXTRA_PHOTOS } from '../lib/jobs';
 import { enqueueForRetry } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
 import ServiceChips from '../components/ServiceChips';
@@ -57,7 +57,7 @@ export default function NewJob() {
   const [autoFilled, setAutoFilled] = useState<{ plate: boolean; vin: boolean }>({ plate: false, vin: false });
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'success' | 'queued'>('idle');
+  const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
   const [lastPlate, setLastPlate] = useState('');
   const [attempted, setAttempted] = useState(false);
 
@@ -258,10 +258,18 @@ export default function NewJob() {
       await submitJob(payload);
       resetForm();
       setStatus('success');
-    } catch {
-      await enqueueForRetry(payload);
+    } catch (err) {
+      /*
+       * Either way the payload is persisted — never discarded on a permanent
+       * error, since the plate/VIN photos only exist in memory here and a
+       * job row may already have been created (see submitJob's jobId note).
+       * A permanent failure just skips auto-retry (it cannot succeed
+       * unchanged) and is flagged for a human instead — see MyJobs.tsx.
+       */
+      const permanent = isPermanentError(err);
+      await enqueueForRetry(payload, { needsAttention: permanent });
       resetForm();
-      setStatus('queued');
+      setStatus(permanent ? 'failed' : 'queued');
     } finally {
       setSubmitting(false);
     }
@@ -285,18 +293,32 @@ export default function NewJob() {
             role="status"
             aria-live="polite"
             className={`flex items-start gap-3 rounded-xl border-2 p-4 ${
-              status === 'success' ? 'border-ok-600 bg-ok-50 text-ok-700' : 'border-ink-900 bg-ink-900 text-surface'
+              status === 'success'
+                ? 'border-ok-600 bg-ok-50 text-ok-700'
+                : status === 'failed'
+                  ? 'border-danger-600 bg-danger-50 text-danger-700'
+                  : 'border-ink-900 bg-ink-900 text-surface'
             }`}
           >
-            <Icon name={status === 'success' ? 'checkCircle' : 'sync'} size={24} className="mt-0.5 shrink-0" />
+            <Icon
+              name={status === 'success' ? 'checkCircle' : status === 'failed' ? 'alertTriangle' : 'sync'}
+              size={24}
+              className="mt-0.5 shrink-0"
+            />
             <div className="min-w-0 flex-1">
               <p className="text-base font-bold">
-                {status === 'success' ? t('newJob.submitted') : t('queue.title')}
+                {status === 'success'
+                  ? t('newJob.submitted')
+                  : status === 'failed'
+                    ? t('newJob.failedTitle')
+                    : t('queue.title')}
               </p>
               <p className="mt-0.5 text-sm font-medium">
                 {status === 'success'
                   ? `${t('newJob.submittedPlate', { plate: lastPlate })} ${t('newJob.editWindow')}`
-                  : t('newJob.queuedOffline')}
+                  : status === 'failed'
+                    ? t('newJob.failedBody')
+                    : t('newJob.queuedOffline')}
               </p>
             </div>
             <button

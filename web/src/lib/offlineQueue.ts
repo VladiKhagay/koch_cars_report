@@ -1,11 +1,24 @@
-import { submitJob, type NewJobPayload } from './jobs';
+import { submitJob, isPermanentError, type NewJobPayload } from './jobs';
 
 const DB_NAME = 'car-prep-tracker';
 const STORE = 'pending-jobs';
 
+/** Stop auto-retrying — and flag for a human — after this many failed attempts... */
+const MAX_ATTEMPTS = 5;
+/** ...or this long since the job was first queued, whichever comes first. */
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface QueuedJob extends NewJobPayload {
   queuedId: string;
   queuedAt: string;
+  /** Failed submit attempts so far. Missing on jobs queued before this field existed — treat as 0. */
+  attempts?: number;
+  /**
+   * Set once retrying stopped making sense (a permanent error, or the
+   * attempts/age bound above) — the job stays in the queue, visible, but
+   * flushQueue skips it until a human deals with it.
+   */
+  needsAttention?: boolean;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -70,15 +83,22 @@ export async function refreshQueue(): Promise<QueuedJob[]> {
 }
 
 /**
- * Called when a submission fails (offline, flaky signal, Worker down).
- * The job is never lost — it's persisted locally and retried automatically
- * the moment connectivity returns.
+ * Called when a submission fails (offline, flaky signal, Worker down, or a
+ * permanent rejection). The payload is never lost — it's persisted locally
+ * either way, so a captured photo is never silently dropped.
+ *
+ * `needsAttention: true` is for a failure already known to be permanent (see
+ * isPermanentError in jobs.ts) — it's stored straight into the terminal
+ * state instead of being auto-retried first, since retrying it unchanged
+ * cannot succeed.
  */
-export async function enqueueForRetry(payload: NewJobPayload): Promise<void> {
+export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAttention?: boolean }): Promise<void> {
   const queued: QueuedJob = {
     ...payload,
     queuedId: crypto.randomUUID(),
     queuedAt: new Date().toISOString(),
+    attempts: opts?.needsAttention ? 1 : 0,
+    needsAttention: opts?.needsAttention,
   };
   await withStore('readwrite', (store) => store.put(queued));
   await refreshQueue();
@@ -94,22 +114,38 @@ async function removeQueued(queuedId: string): Promise<void> {
 
 let flushing = false;
 
-/** Retries every queued submission in order; stops at the first failure so ordering is preserved. */
+/**
+ * Retries every queued submission in order. A transient failure (still
+ * offline, still 5xx) stops the run there so ordering is preserved and it's
+ * retried in full next time. A permanent failure, or one that's exhausted
+ * its attempts/age budget, is flagged `needsAttention` and skipped — it does
+ * NOT block the rest of the queue, since one broken item has no bearing on
+ * whether the next one can succeed.
+ */
 export async function flushQueue(onProgress?: (remaining: number) => void): Promise<void> {
   if (flushing || !navigator.onLine) return;
   flushing = true;
   let changed = false;
   try {
     const pending = await listQueued();
+    let remaining = pending.length;
     for (const job of pending) {
+      if (job.needsAttention) continue;
       try {
         await submitJob(job);
         await removeQueued(job.queuedId);
         changed = true;
-        onProgress?.(pending.length - 1);
-      } catch {
-        // Still failing (still offline, or server issue) — stop and retry later.
-        break;
+        remaining -= 1;
+        onProgress?.(remaining);
+      } catch (err) {
+        const attempts = (job.attempts ?? 0) + 1;
+        const age = Date.now() - new Date(job.queuedAt).getTime();
+        const exhausted = isPermanentError(err) || attempts >= MAX_ATTEMPTS || age >= MAX_AGE_MS;
+        await withStore('readwrite', (store) =>
+          store.put({ ...job, attempts, needsAttention: exhausted || undefined }),
+        );
+        changed = true;
+        if (!exhausted) break; // still transient — stop here, retry the whole run later
       }
     }
   } finally {

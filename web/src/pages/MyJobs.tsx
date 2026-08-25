@@ -469,18 +469,26 @@ export default function MyJobs() {
           <SectionHeading icon="sync">{t('queue.title')}</SectionHeading>
           <p className="text-sm text-ink-600">{t('queue.body')}</p>
           {queued.map((job) => (
-            <Card key={job.queuedId} className="border-ink-900">
+            <Card key={job.queuedId} className={job.needsAttention ? 'border-danger-600' : 'border-ink-900'}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-base font-semibold tracking-wide text-ink-900">{job.plate}</p>
                   <p className="truncate font-mono text-xs text-ink-600">
                     {job.vin ?? '—'} · {job.brand ?? '—'}
                   </p>
-                  <p className="mt-1 text-xs text-ink-600">{t('myJobs.queuedHint')}</p>
+                  <p className="mt-1 text-xs text-ink-600">
+                    {job.needsAttention ? t('myJobs.needsAttentionHint') : t('myJobs.queuedHint')}
+                  </p>
                 </div>
-                <Badge tone="info" icon="sync">
-                  {t('queue.title')}
-                </Badge>
+                {job.needsAttention ? (
+                  <Badge tone="danger" icon="alertTriangle">
+                    {t('myJobs.needsAttention')}
+                  </Badge>
+                ) : (
+                  <Badge tone="info" icon="sync">
+                    {t('queue.title')}
+                  </Badge>
+                )}
               </div>
             </Card>
           ))}

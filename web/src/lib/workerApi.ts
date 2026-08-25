@@ -233,13 +233,27 @@ export async function setUserActive(
   }
 }
 
+/**
+ * Thrown by uploadPhoto so callers can tell a permanent rejection (4xx — the
+ * request itself is invalid/forbidden, retrying it unchanged will never
+ * succeed) from a transient one (network failure, 5xx) without parsing
+ * message text. See isPermanentError in jobs.ts.
+ */
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob): Promise<string> {
   const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'image/jpeg', Authorization: await authHeader() },
     body: image,
   });
-  if (!res.ok) throw new Error(`Photo upload failed (${res.status})`);
+  if (!res.ok) throw new HttpError(res.status, `Photo upload failed (${res.status})`);
   const data = (await res.json()) as { key: string };
   return data.key;
 }
