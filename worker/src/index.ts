@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context, Next } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { jwk } from 'hono/jwk';
@@ -67,10 +68,24 @@ app.get('/health', (c) => c.json({ ok: true }));
 // published JWKS instead of holding a secret ourselves. This also means key
 // rotation on the Supabase side (Settings -> JWT Keys -> Create Standby Key)
 // never requires touching this Worker.
-const requireAuth = jwk({
-  jwks_uri: (c) => `${c.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
-  alg: ['ES256'],
-});
+// `verification.iss` only accepts a string/RegExp, not a per-request
+// function, so it can't be set inside the options object above the way
+// `jwks_uri` is (that one takes `(c) => ...` and is resolved lazily per
+// request). Wrapping `jwk()` in a plain middleware lets us build the options
+// object at request time instead, so `iss` can be pinned to this project's
+// own SUPABASE_URL rather than accepting a token issued by *any* Supabase
+// project whose JWKS happened to validate the signature. `aud` is pinned to
+// Supabase's fixed 'authenticated' audience for signed-in users for the same
+// reason: reject anything not meant for this class of caller.
+const requireAuth = (c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) =>
+  jwk({
+    jwks_uri: `${c.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
+    alg: ['ES256'],
+    verification: {
+      aud: 'authenticated',
+      iss: `${c.env.SUPABASE_URL}/auth/v1`,
+    },
+  })(c, next);
 app.use('/ocr', requireAuth);
 app.use('/upload', requireAuth);
 app.use('/photo/*', requireAuth);

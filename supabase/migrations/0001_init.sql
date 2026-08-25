@@ -169,6 +169,16 @@ alter table job_services enable row level security;
 alter table photos enable row level security;
 alter table audit_log enable row level security;
 
+-- ADMIN ROLE SCOPE (single-tenant): every policy below that checks
+-- `u.role = 'admin'` deliberately grants that row cross-site, i.e. it has
+-- no matching `u.site_id = <table>.site_id` clause the way manager/worker
+-- checks do. This is intentional, not an oversight: all `sites` rows
+-- belong to one business (this is a single-tenant deployment), so a
+-- company-wide admin is the correct scope. Do not add site-scoping to
+-- admin policies to "fix" this unless multi-tenant support is explicitly
+-- added — that would be a schema-level change, not a policy tweak. See
+-- "Tenancy Model Decision" in SECURITY-AUDIT.md for the full writeup.
+
 -- sites: everyone authenticated can read (needed for login/site pickers);
 -- only admins write.
 create policy sites_select on sites for select

@@ -22,6 +22,7 @@
 10. [Remediation Plan](#10-remediation-plan)
 11. [Production Security Checklist](#11-production-security-checklist)
 12. [Change Log](#12-change-log)
+13. [Tenancy Model Decision](#13-tenancy-model-decision)
 
 ---
 
@@ -276,13 +277,13 @@ No cookies are used for authorization anywhere. Supabase tokens live in localSto
 
 ### L-6 — `jwk()` does not validate `iss` / `aud`
 
-**Status: NOT FIXED — deliberately deferred, needs a live token to validate.**
+**Status: FIXED (2026-08-25), statically verified — not yet exercised against a live sign-in.**
 
-Currently harmless: the JWKS URI is project-scoped, so only your project's keys are trusted. Worth pinning anyway as defence against a future multi-tenant or key-sharing mistake.
+`requireAuth` (`worker/src/index.ts`) is now a thin per-request wrapper around `jwk()` instead of a module-scope call, so `verification.iss` can read `c.env.SUPABASE_URL` at request time the same way `jwks_uri` already did — the "`iss` is awkward" blocker below no longer applies. `aud: 'authenticated'` and `iss: \`${SUPABASE_URL}/auth/v1\`` are both pinned. A token from any other Supabase project, or one not carrying Supabase's standard `authenticated` audience, is now rejected even if its signature happens to verify against the configured JWKS.
 
-Hono 4.13 does support it — `jwk({ …, verification: { aud: 'authenticated' } })`. The valuable half is `aud`, which would reject any project-issued token that is not a signed-in user session (reinforcing the H-1 closure if the anon key ever became ES256). `iss` is awkward: `verification` is a static option evaluated at module scope and cannot read `c.env.SUPABASE_URL`, unlike `jwks_uri`, which accepts a function.
+*Original note, kept for context:* Hono 4.13 does support it — `jwk({ …, verification: { aud: 'authenticated' } })`. The valuable half is `aud`, which would reject any project-issued token that is not a signed-in user session (reinforcing the H-1 closure if the anon key ever became ES256). `iss` was awkward because `verification` used to be a static option evaluated at module scope and could not read `c.env.SUPABASE_URL`, unlike `jwks_uri`, which accepts a function — resolved by moving `jwk()` construction inside the request-scoped middleware.
 
-**Not shipped**, because it sits on the production auth path and there is no live user token available here to confirm the claim shape against. Supabase access tokens carry `aud: "authenticated"` in the normal case, but "almost certainly correct" is the wrong confidence level for a change whose failure mode is locking out every user. Apply it alongside a real sign-in test.
+**Validated:** `tsc --noEmit` clean, existing 40-test Worker suite (`ocr.test.ts`, `upload.test.ts`) passes unchanged. **Not validated:** an actual production sign-in against the deployed Worker — Supabase access tokens carry `aud: "authenticated"` in the normal case, but confirm with one real login before/at the next deploy, since the failure mode of a wrong claim value is locking out every user.
 
 ### L-7 — Dev-only dependency advisories
 
@@ -399,6 +400,12 @@ Escalation paths checked specifically:
 | Cross-site access | **Blocked.** Every policy joins on `u.site_id = <row>.site_id` for managers/workers. `useSiteScope` only offers a picker to admins, and RLS backs that up. |
 | Log a job in someone else's name | **Blocked.** `jobs_insert` requires `u.id = jobs.worker_id`. |
 
+### Tenancy model
+
+**Confirmed 2026-08-25 (owner): single-tenant deployment.** Every row in `public.sites` is a physical location of the same business — not a separate customer or unrelated tenant. `admin` is, by design, the one role with no `site_id` join anywhere in `0001_init.sql`'s RLS policies (the "Cross-site access" row above describes the `manager`/`worker` scoping; `admin` deliberately sits outside it), and `/invite` (`worker/src/invite.ts`) does not restrict which site an admin can invite to, for the same reason — RLS already grants that admin unrestricted cross-site access, so an extra check in the Worker would just be a second, redundant enforcement point.
+
+This was flagged and investigated as F1–F3 in a 2026-08-25 follow-up review, because "site-scoped roles" reads ambiguously without stating which roles it covers. **Resolved by design, not by a code change:** a global admin is correct for one company operating multiple yards. No `admin`/`super_admin` role split is planned or needed. Revisit this section only if the tenancy model changes (e.g. this software is ever sold to run multiple unrelated businesses on one deployment) — at that point F1–F3 become a real cross-tenant leakage risk and the fix is a schema-level role split, not a patch.
+
 ### IDOR
 
 **None found.** Both direct-object endpoints (`/upload`, `/photo`) re-derive authorization from the database per request; neither trusts a client-supplied identifier. `JobDetail` fetches by `:id` but through RLS-gated PostgREST.
@@ -474,7 +481,7 @@ Working checklist. Tick as landed.
 - [x] **N-1** — migration `0010_revoke_rpc_from_anon.sql` applied and **verified live**: all seven RPCs now return `401 permission denied` (SQLSTATE 42501) to the anon key.
 - [ ] **L-5** — 🔧 **MANUAL.** Supabase password policy and HIBP breach check.
 - [ ] **L-3** — server-derive `audit_log.action`/`changes` if the log is ever meant to be evidentiary.
-- [ ] **L-6** — pin `aud` in `jwk()`. Deferred: needs a live sign-in to validate, see the finding.
+- [x] **L-6** — `aud`/`iss` pinned in `jwk()` (2026-08-25). Statically verified (typecheck + tests); still needs one live sign-in check before/at next deploy, see the finding.
 - [x] **L-7** — Worker dev tree now clean (`0 vulnerabilities`) after the wrangler 4 upgrade. Web's remaining `nanoid` advisory is dev-only.
 - [ ] `compatibility_date` bump — **not done deliberately.** ~20 months of accumulated compat-flag changes is a behavioural change that wants its own testing pass, not a drive-by edit inside a security fix.
 - [ ] Encrypt the nightly backup before upload; split the Cloudflare API tokens by purpose.
@@ -539,3 +546,28 @@ For the record, since this path is easy to misread later: it was **already broke
 | 2026-08-17 | **Deployed to production.** Worker `7c5cc5b8`, frontend `360fe648`. Verified live: all six security headers served; all five Worker routes 401 without a token (including the new `/user-active`); CORS denies a foreign origin and allows the app origin. |
 | 2026-08-17 | **M-4 accepted as residual risk** — no custom domain will be purchased; the app stays on `workers.dev` without WAF/Bot Management/Access. Corrected an error in the original write-up: this does **not** block M-5, because the Workers rate-limit binding needs no zone. M-5 re-scoped accordingly. |
 | 2026-08-17 | **M-5 fixed and L-7 cleared.** Upgraded wrangler 3.114 → 4.123 (and `@cloudflare/workers-types` 4 → 5), which both enabled `[[ratelimits]]` and took the Worker's dev tree to 0 advisories. Added `OCR_LIMITER` (60/60s) and `UPLOAD_LIMITER` (120/60s) keyed on JWT `sub`, checked ahead of the Supabase lookup and body read. Deployed as version `501d5af9`; verified both bindings live, all routes still 401 without a token, and 30 anonymous `/ocr` hits returned 401 rather than 429 — the limiter cannot be drained by unauthenticated traffic. **Every finding in this audit is now closed.** |
+| 2026-08-25 | **Follow-up audit (F1–F4).** Independent re-review confirmed every finding above is still fixed in current code (migrations 0011–0013 introduced no regressions). Raised F1–F3: `admin` is a global, not site-scoped, role — flagged because it wasn't explicit anywhere that this was intentional. **Owner confirmed: single-tenant deployment, resolved by design** — see the new [Tenancy model](#tenancy-model) section under §7. No code change. |
+| 2026-08-25 | **L-6 fixed.** `requireAuth` in `worker/src/index.ts` rebuilt as a per-request middleware wrapping `jwk()`, which unblocks pinning `iss` to `${SUPABASE_URL}/auth/v1` (previously not possible from a static, module-scope options object) alongside `aud: 'authenticated'`. Validated via `tsc --noEmit` and the existing 40-test Worker suite; a live sign-in check is still owed before/at the next deploy. See the finding for detail. |
+| 2026-08-25 | **Ops documentation added.** New `SECURITY-NOTES.md`: Supabase password-policy checklist (L-5), Cloudflare API token separation guidance (backup vs. deploy), and R2 90-day photo-lifecycle verification steps. All three remain manual dashboard/CLI actions for the owner — not implementable from the repo. |
+| 2026-08-25 | **Tenancy Model Decision recorded** — see [§13](#13-tenancy-model-decision) — as its own top-level, easy-to-find section, and mirrored as a code comment directly above the RLS section in `supabase/migrations/0001_init.sql` so the decision travels with the policies it explains. No RLS logic changed. |
+
+---
+
+## 13. Tenancy Model Decision
+
+**Date:** 2026-08-25
+**Decision owner:** project owner (confirmed directly, not inferred from code).
+
+- **Single-tenant deployment confirmed:** all `sites` rows belong to one business. `sites` models physical yard/branch locations of that one company, not separate customers or unrelated tenants.
+- **Admin role intentionally has cross-site access; this is by design, not a bug.** Every RLS policy in `supabase/migrations/0001_init.sql` that checks `u.role = 'admin'` has no accompanying `u.site_id = <table>.site_id` clause — unlike the `manager`/`worker` checks, which always scope to the caller's own site. See the `ADMIN ROLE SCOPE` comment block added directly above the RLS policy section in that migration for the in-code version of this note.
+- **No multi-tenant plans at this time.** If multi-tenant support is added in the future, this decision must be revisited and schema/RLS changes will be required — a global admin would then need to become either a narrower `site_admin` (scoped like manager) plus a much smaller `super_admin` set, or an equivalent split. That is a schema-level migration, not a policy tweak, and should not be attempted as a drive-by change.
+- **Assumption:** no multi-tenant plans exist at this time. If multi-tenancy is later required, this design is insufficient and must be changed at the schema/RLS level before launch of that capability.
+- **F1–F3 from the follow-up security audit (2026-08-25) are resolved by this design decision**, not by a code change. F1–F3 identified that `admin` has no site scoping and asked whether that was intentional; this section, plus the [Tenancy model](#tenancy-model) discussion under [§7](#7-authentication--authorization-review), is the answer. No RLS policy was modified as part of closing F1–F3 — only this documentation and the corresponding SQL comment.
+
+### Operational Checklist (manual, dashboard/CLI — not implementable from this repo)
+
+These three items were raised alongside F1–F3 and are tracked here for one place to find them; full step-by-step is in `SECURITY-NOTES.md`.
+
+- [ ] **Supabase password policy (L-5).** Dashboard → Authentication → Policies (label varies by dashboard version) → Password Requirements: set **minimum length to 8**, enable **"Prevent use of leaked passwords" (HIBP)**.
+- [ ] **Cloudflare API token separation.** `deploy-web.yml`, `deploy-worker.yml`, and `backup.yml` currently share one `CLOUDFLARE_API_TOKEN` GitHub secret. The backup job only needs R2 write; the deploy jobs need Workers Scripts:Edit. Create a separate, minimally-scoped token (**Account → Workers R2 Storage → Edit** only) for the backup job, add it as a new GitHub secret, and point `backup.yml` at it — see `SECURITY-NOTES.md` §2 for the exact steps. This shrinks blast radius: a leaked backup-job token then can't be used to redeploy the app.
+- [ ] **R2 photo lifecycle (90-day retention).** Cloudflare dashboard → R2 → `car-prep-photos` bucket → Lifecycle Rules, or `wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-days 90 --prefix ""` (already documented in `worker/README.md:47`). The open item is *verifying* the rule is actually live on the bucket, not writing the command — see `SECURITY-NOTES.md` §3. Caveat: confirm 90 days satisfies any insurance/warranty/consumer-protection recordkeeping obligation that applies to vehicle prep jobs in your jurisdiction before relying on it — that's a business/legal call, not a technical one.
