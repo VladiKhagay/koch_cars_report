@@ -198,9 +198,10 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
       id: 'plate',
       header: () => t('jobs.plate'),
       // The plate is the handle on the record, so it is also the way into it.
+      // A job may have no plate at all (see the vin column's own note).
       cell: ({ row, getValue }) => (
         <Link to={`/jobs/${row.original.id}`} className="underline-offset-2 hover:underline">
-          <CellTitle mono>{getValue()}</CellTitle>
+          <CellTitle mono>{getValue() ?? '—'}</CellTitle>
         </Link>
       ),
     }),
@@ -603,7 +604,7 @@ export default function Jobs() {
                       <ConfirmPanel
                         icon="trash"
                         question={t('jobs.duplicateQuestion', {
-                          plate: original.plate,
+                          plate: original.plate ?? original.vin ?? '—',
                           date: new Date(original.created_at).toLocaleString(i18n.language, {
                             day: '2-digit',
                             month: 'short',

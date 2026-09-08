@@ -11,7 +11,8 @@ import { SHEET_HEADERS, type ColumnConfig } from './reportConfig';
 /** The job fields either report can read. Nothing else is fetched. */
 export interface ExportJob {
   created_at: string;
-  plate: string;
+  /** Absent on jobs with no physical plate. Prints as a blank cell. */
+  plate: string | null;
   /** Absent on jobs whose VIN could not be read. Prints as a blank cell. */
   vin: string | null;
   brand: string | null;
@@ -37,7 +38,7 @@ function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string)
     case 'brand':
       return job.brand ?? '';
     case 'plate':
-      return job.plate;
+      return job.plate ?? '';
     case 'vin':
       return job.vin ?? '';
     case 'service':
@@ -78,7 +79,7 @@ export function buildCustomerReport(
 /** One row of the worker's own grid, as the screen has it. */
 export interface MyJobsRow {
   created_at: string;
-  plate: string;
+  plate: string | null;
   brand: string | null;
   /** Already resolved to the reader's language by the caller, as the cell is. */
   service: string;
@@ -101,7 +102,7 @@ export interface MyJobsRow {
 export function buildMyJobsSheet(rows: MyJobsRow[], headers: string[]): Cell[][] {
   return [
     headers,
-    ...rows.map((row) => [new Date(row.created_at), row.plate, row.brand ?? '', row.service]),
+    ...rows.map((row) => [new Date(row.created_at), row.plate ?? '', row.brand ?? '', row.service]),
   ];
 }
 
@@ -154,7 +155,7 @@ export function buildWorkerPaymentReport(
       new Date(job.created_at).toLocaleDateString(locale),
       job.worker?.name ?? workerName,
       job.service?.name_en ?? '',
-      job.plate,
+      job.plate ?? '',
       fromCents(cents),
     ]);
 

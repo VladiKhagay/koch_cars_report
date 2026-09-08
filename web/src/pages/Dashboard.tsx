@@ -71,8 +71,12 @@ export default function Dashboard() {
     const q = search.trim().toUpperCase();
     if (!q) return jobs;
     return jobs.filter(
-      // A job with no VIN is simply not a VIN match — it must not throw here.
-      (j) => j.plate.includes(q) || (j.vin ?? '').includes(q) || (j.worker_name ?? '').toUpperCase().includes(q),
+      // A job with no plate/VIN is simply not a match on that field — it must
+      // not throw here.
+      (j) =>
+        (j.plate ?? '').includes(q) ||
+        (j.vin ?? '').includes(q) ||
+        (j.worker_name ?? '').toUpperCase().includes(q),
     );
   }, [jobs, search]);
 
@@ -190,10 +194,12 @@ export default function Dashboard() {
             >
               <div className="min-w-0">
                 <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
-                  {job.plate}
+                  {job.plate ?? job.vin ?? '—'}
                   <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
                 </p>
-                <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>
+                {/* When there's no plate, the VIN already stands in for it above —
+                    showing it again here would just repeat the line. */}
+                {job.plate && <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>}
                 <p className="truncate text-xs text-ink-600">
                   {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString(i18n.language)}
                 </p>

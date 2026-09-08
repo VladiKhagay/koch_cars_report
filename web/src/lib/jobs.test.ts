@@ -187,6 +187,42 @@ describe('submitJob — a car with no readable VIN', () => {
   });
 });
 
+/*
+ * Same treatment as the VIN, in the other direction: some cars arrive with no
+ * physical plate at all. A job still needs SOMETHING to identify it by, so
+ * plate and VIN can each go missing on their own, just not both at once.
+ */
+describe('submitJob — a car with no plate', () => {
+  const row = () => insertedJobs[0] as Record<string, unknown>;
+
+  it('stores NULL, not an empty string or a placeholder', async () => {
+    await submitJob({ ...payload(), plate: null, plateBlob: null });
+    expect(row().plate).toBeNull();
+  });
+
+  it('treats a blank typed plate the same as no plate at all', async () => {
+    await submitJob({ ...payload(), plate: '   ', plateBlob: null });
+    expect(row().plate).toBeNull();
+  });
+
+  it('still finds a duplicate by VIN with no plate to compare', async () => {
+    await submitJob({ ...payload(), plate: null, plateBlob: null });
+    expect(row().duplicate_of_job_id).toBe('earlier-job');
+  });
+
+  it('skips the plate photo slot entirely when no plate photo was taken', async () => {
+    await submitJob({ ...payload(), plate: null, plateBlob: null });
+    expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['vin']);
+  });
+
+  it('rejects a job with neither a plate nor a VIN', async () => {
+    await expect(
+      submitJob({ ...payload(), plate: null, plateBlob: null, vin: null, vinBlob: null }),
+    ).rejects.toThrow();
+    expect(insertedJobs).toHaveLength(0);
+  });
+});
+
 /* --------------------------------------------------------------- filtering */
 
 /**

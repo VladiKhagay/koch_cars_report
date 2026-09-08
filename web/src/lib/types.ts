@@ -34,7 +34,11 @@ export interface Job {
   worker_id: string;
   created_at: string;
   updated_at: string;
-  plate: string;
+  /**
+   * NULL when the car has no physical plate — a job is logged without one
+   * rather than with a placeholder. At least one of plate/vin is always set.
+   */
+  plate: string | null;
   /**
    * NULL when the VIN was not readable — a car is logged without one rather
    * than with a placeholder, so readers can tell "not known" from a value.

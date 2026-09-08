@@ -155,7 +155,7 @@ export default function JobDetail() {
             beside it on the same line. At 28px that pair is wider than a 360px
             screen, so the brand wrapped alone under its plate. */}
         <h1 className="font-mono text-xl font-semibold tracking-wide text-ink-900 sm:text-2xl">
-          {job.plate}
+          {job.plate ?? job.vin ?? '—'}
           <span className="ms-3 font-sans text-sm font-normal tracking-normal text-ink-600 sm:text-base">
             {job.brand ?? '—'}
           </span>

@@ -38,7 +38,7 @@ const emptyForm = {
 /** How long the "job submitted" confirmation stays up before it self-clears. */
 const SUCCESS_TTL_MS = 8000;
 
-type ProblemId = 'platePhoto' | 'plate' | 'vin' | 'service';
+type ProblemId = 'identifier' | 'plate' | 'vin' | 'service';
 
 function scrollTo(el: HTMLElement | null) {
   if (!el) return;
@@ -58,7 +58,7 @@ export default function NewJob() {
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
-  const [lastPlate, setLastPlate] = useState('');
+  const [lastIdentifier, setLastIdentifier] = useState('');
   const [attempted, setAttempted] = useState(false);
 
   const plateInputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +146,12 @@ export default function NewJob() {
     setOcrIssue((i) => ({ ...i, vin: null }));
   }
 
+  function removePlatePhoto() {
+    beginNextCar();
+    setForm((f) => ({ ...f, platePhoto: null }));
+    setOcrIssue((i) => ({ ...i, plate: null }));
+  }
+
   function addExtraPhoto(blob: Blob) {
     beginNextCar();
     setForm((f) =>
@@ -171,12 +177,18 @@ export default function NewJob() {
     setForm((f) => ({ ...f, serviceId: id }));
   }
 
-  const plateValid = form.plate.length > 0 && isValidPlate(form.plate);
+  /* The plate is optional too now (a car can arrive with no physical plate),
+     so "no plate" is valid and only a plate that has been STARTED has to be
+     well-formed. Same rule as the VIN below. */
+  const plateFormatValid = form.plate.length === 0 || isValidPlate(form.plate);
   /* The VIN is optional, so "no VIN" is valid and only a VIN that has been
      STARTED has to be a well-formed one. Half a VIN is a typo, not a decision;
      leaving the field alone is the decision. */
   const vinFormatValid = form.vin.length === 0 || isValidVinFormat(form.vin);
   const vinChecksumOk = form.vin ? vinChecksumValid(form.vin) : true;
+  /* A job still needs SOMETHING to identify the car by. Plate and VIN can
+     each be missing on their own, just not both at once. */
+  const hasIdentifier = form.plate.length > 0 || form.vin.length > 0;
 
   /**
    * Everything standing between this car and a submitted record, in the order
@@ -185,18 +197,21 @@ export default function NewJob() {
    * and doing nothing — the single worst failure this screen had.
    */
   const problems: { id: ProblemId; label: string; focus: () => void }[] = [];
-  if (!form.platePhoto)
-    problems.push({ id: 'platePhoto', label: t('newJob.needPlatePhoto'), focus: () => scrollTo(platePhotoRef.current) });
-  /* No VIN photo requirement. It was the last gate the VIN could still put in
-     front of recording a car: the number went optional because a VIN plate is
-     routinely unreadable, and then demanding a photograph OF the unreadable
-     thing put the worker back where they started — stalling, or taking a
-     useless frame to get past the form. The plate photo stays required; it is
-     the one every car has, and the one the job is identified by. */
-  if (!plateValid)
+  if (!hasIdentifier)
+    problems.push({
+      id: 'identifier',
+      label: t('newJob.needIdentifier'),
+      focus: () => {
+        scrollTo(plateInputRef.current);
+        plateInputRef.current?.focus();
+      },
+    });
+  if (form.plate && !plateFormatValid)
     problems.push({
       id: 'plate',
-      label: t('newJob.needPlate'),
+      // Only fires on a plate that was typed and came out malformed — the
+      // field itself can be left empty, same as VIN below.
+      label: t('newJob.plateInvalid'),
       focus: () => {
         scrollTo(plateInputRef.current);
         plateInputRef.current?.focus();
@@ -229,17 +244,20 @@ export default function NewJob() {
     if (!appUser?.site_id || submitting) return;
 
     setSubmitting(true);
-    const plate = form.plate;
+    // Whichever of plate/VIN got typed identifies the car in the confirmation
+    // message below — hasIdentifier guarantees at least one is set.
+    const identifier = form.plate || form.vin;
     const payload = {
       siteId: appUser.site_id,
       workerId: appUser.id,
-      plate: form.plate,
-      // Empty means "not readable", and that is stored as NULL — never as ''.
+      // Empty means "not present/not readable", and that is stored as NULL —
+      // never as ''.
+      plate: form.plate || null,
       vin: form.vin || null,
       brand: form.brand || null,
       workerNote: form.note || null,
       serviceId: form.serviceId!,
-      plateBlob: form.platePhoto!,
+      plateBlob: form.platePhoto,
       vinBlob: form.vinPhoto,
       extraBlobs: form.extraPhotos,
     };
@@ -250,7 +268,7 @@ export default function NewJob() {
       setDuplicateWarning(false);
       setAutoFilled({ plate: false, vin: false });
       setOcrIssue({ plate: null, vin: null });
-      setLastPlate(plate);
+      setLastIdentifier(identifier);
       scrollTo(topRef.current);
     };
 
@@ -315,7 +333,7 @@ export default function NewJob() {
               </p>
               <p className="mt-0.5 text-sm font-medium">
                 {status === 'success'
-                  ? `${t('newJob.submittedPlate', { plate: lastPlate })} ${t('newJob.editWindow')}`
+                  ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}`
                   : status === 'failed'
                     ? t('newJob.failedBody')
                     : t('newJob.queuedOffline')}
@@ -340,9 +358,11 @@ export default function NewJob() {
                 label={t('newJob.platePhoto')}
                 photo={form.platePhoto}
                 busy={ocrBusy.plate}
+                optional
                 error={ocrIssue.plate ? t(`newJob.ocrReasons.${ocrIssue.plate}`) : null}
                 onCapture={(b, original) => void handlePlateCapture(b, original)}
                 onTypeItIn={() => plateInputRef.current?.focus()}
+                onRemove={removePlatePhoto}
               />
             </div>
             <div ref={vinPhotoRef}>
@@ -406,7 +426,7 @@ export default function NewJob() {
                 </span>
               )
             }
-            error={attempted && !plateValid && form.plate ? t('newJob.plateInvalid') : undefined}
+            error={attempted && !plateFormatValid && form.plate ? t('newJob.plateInvalid') : undefined}
           >
             <input
               id="job-plate"
@@ -425,7 +445,7 @@ export default function NewJob() {
                 setAutoFilled((a) => ({ ...a, plate: false }));
               }}
               className={`${fieldClass} font-mono tracking-wider uppercase ${
-                attempted && !plateValid ? fieldErrorClass : ''
+                attempted && !plateFormatValid ? fieldErrorClass : ''
               }`}
             />
           </Field>

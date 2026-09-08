@@ -25,13 +25,18 @@ export function isPermanentError(err: unknown): boolean {
 export interface NewJobPayload {
   siteId: string;
   workerId: string;
-  plate: string;
+  /** Optional: `null` (or empty) when the car has no physical plate. At least one of plate/vin must be set. */
+  plate: string | null;
   /** Optional: `null` (or empty) when the VIN could not be read off the car. */
   vin: string | null;
   brand: string | null;
   workerNote: string | null;
   serviceId: string;
-  plateBlob: Blob;
+  /**
+   * Optional, for the same reason the VIN photo is: a car with no plate has
+   * no photo to take of it. `null` means no plate photo was taken.
+   */
+  plateBlob: Blob | null;
   /**
    * Optional, for the same reason the VIN itself is: the plate under the
    * windscreen is regularly unreadable or absent, and a photo requirement the
@@ -70,11 +75,17 @@ export interface NewJobPayload {
  * recorded on the payload before any upload starts.
  */
 export async function submitJob(payload: NewJobPayload): Promise<string> {
-  const plate = payload.plate.toUpperCase().trim();
-  /* An absent VIN is stored as NULL, never as '' — an empty string is a value,
-     and it would collide with every other blank one in the duplicate check and
-     sort into the middle of the VIN index as if it were a real VIN. */
+  /* An absent plate or VIN is stored as NULL, never as '' — an empty string is
+     a value, and it would collide with every other blank one in the duplicate
+     check and sort into the middle of the index as if it were a real value. */
+  const plate = payload.plate?.toUpperCase().trim() || null;
   const vin = payload.vin?.toUpperCase().trim() || null;
+
+  // A job needs something to identify the car by. The form already blocks
+  // this case; guarded here too so a retry-queue payload or a future direct
+  // caller can't insert a row the DB constraint would reject with an opaque
+  // error.
+  if (!plate && !vin) throw new Error('Job requires a plate or a VIN');
 
   let jobId = payload.jobId;
 
@@ -114,9 +125,9 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
 
   const extras = (payload.extraBlobs ?? []).slice(0, MAX_EXTRA_PHOTOS);
   const uploads: { kind: PhotoKind; blob: Blob }[] = [
-    { kind: 'plate', blob: payload.plateBlob },
-    // A job with no VIN photo simply has no row of that kind, rather than an
-    // empty object standing in for one.
+    // A job with no plate/VIN photo simply has no row of that kind, rather
+    // than an empty object standing in for one.
+    ...(payload.plateBlob ? [{ kind: 'plate' as PhotoKind, blob: payload.plateBlob }] : []),
     ...(payload.vinBlob ? [{ kind: 'vin' as PhotoKind, blob: payload.vinBlob }] : []),
     ...extras.map((blob, i) => ({ kind: EXTRA_KINDS[i], blob })),
   ];
