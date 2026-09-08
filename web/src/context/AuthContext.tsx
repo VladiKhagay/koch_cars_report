@@ -31,12 +31,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      /* session and appUser must land together, same as the initial load
+         below — otherwise ProtectedRoute sees a signed-in session with no
+         appUser yet and bounces to /login while Login, seeing the same
+         session, bounces back to /, and the page goes blank until a manual
+         refresh re-runs the initial load (which does fetch both first). */
+      setLoading(true);
       setSession(newSession);
       if (newSession) {
         await loadAppUser(newSession.user.id);
       } else {
         setAppUser(null);
       }
+      setLoading(false);
     });
 
     return () => sub.subscription.unsubscribe();
