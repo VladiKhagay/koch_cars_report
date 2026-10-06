@@ -30,6 +30,11 @@ export default function JobDetail() {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [workerName, setWorkerName] = useState('');
+  /* Reassignment candidates: workers at the job's own site, so the picker
+     can never hand a job to someone who couldn't have been assigned it in
+     the first place (mirrors the jobs_insert RLS check). */
+  const [siteWorkers, setSiteWorkers] = useState<{ id: string; name: string }[]>([]);
+  const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [serviceName, setServiceName] = useState('');
   /* Only the extras that exist: probing all three slots blind would render
      three 'photo unavailable' tiles on every job that has none. */
@@ -64,6 +69,17 @@ export default function JobDetail() {
 
     const { data: worker } = await supabase.from('users').select('name').eq('id', j.worker_id).single();
     setWorkerName(worker?.name ?? '');
+    setSelectedWorkerId(j.worker_id);
+
+    if (appUser?.role === 'admin' || appUser?.role === 'manager') {
+      const { data: workers } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('site_id', j.site_id)
+        .eq('role', 'worker')
+        .order('name');
+      setSiteWorkers(workers ?? []);
+    }
 
     if (j.service_id) {
       const { data: svc } = await supabase
@@ -85,9 +101,15 @@ export default function JobDetail() {
   async function handleSave() {
     if (!job || !appUser) return;
     setSaving(true);
-    const changes = { billing_code: billingCode || null, manager_note: managerNote || null };
+    const changes = {
+      billing_code: billingCode || null,
+      manager_note: managerNote || null,
+      worker_id: selectedWorkerId || job.worker_id,
+    };
     await supabase.from('jobs').update(changes).eq('id', job.id);
     await recordAudit(job.id, appUser.id, 'update', changes);
+    setJob({ ...job, worker_id: changes.worker_id });
+    setWorkerName(siteWorkers.find((w) => w.id === changes.worker_id)?.name ?? workerName);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -188,7 +210,34 @@ export default function JobDetail() {
             */}
             <dl className="space-y-3">
               <Row label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
-              <Row label={t('jobDetail.worker')} value={workerName || '—'} />
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <label htmlFor="job-worker" className="text-sm font-medium text-ink-600">
+                    {t('jobDetail.worker')}
+                  </label>
+                  <select
+                    id="job-worker"
+                    value={selectedWorkerId}
+                    onChange={(e) => setSelectedWorkerId(e.target.value)}
+                    className={`${fieldClass} mt-0.5`}
+                  >
+                    {/* The currently assigned worker may have left the site's
+                        roster (deactivated) since this job was logged — keep
+                        them selectable so the field never silently jumps to
+                        someone else on load. */}
+                    {!siteWorkers.some((w) => w.id === job.worker_id) && (
+                      <option value={job.worker_id}>{workerName || '—'}</option>
+                    )}
+                    {siteWorkers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <Row label={t('jobDetail.worker')} value={workerName || '—'} />
+              )}
               <Row label={t('newJob.vin')} value={job.vin ?? '—'} mono />
               <Row label={t('jobDetail.service')} value={serviceName || '—'} />
               {job.worker_note && <Row label={t('jobDetail.workerNote')} value={job.worker_note} />}

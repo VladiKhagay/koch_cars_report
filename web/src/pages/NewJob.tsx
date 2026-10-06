@@ -304,52 +304,6 @@ export default function NewJob() {
             has nothing left to do and the shared heading can own it. */}
         <PageHeading>{t('newJob.title')}</PageHeading>
 
-        {/* Outcome of the PREVIOUS car. Full-width, named by plate, and gone
-            the moment this car's entry starts. */}
-        {status !== 'idle' && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`flex items-start gap-3 rounded-xl border-2 p-4 ${
-              status === 'success'
-                ? 'border-ok-600 bg-ok-50 text-ok-700'
-                : status === 'failed'
-                  ? 'border-danger-600 bg-danger-50 text-danger-700'
-                  : 'border-ink-900 bg-ink-900 text-surface'
-            }`}
-          >
-            <Icon
-              name={status === 'success' ? 'checkCircle' : status === 'failed' ? 'alertTriangle' : 'sync'}
-              size={24}
-              className="mt-0.5 shrink-0"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-bold">
-                {status === 'success'
-                  ? t('newJob.submitted')
-                  : status === 'failed'
-                    ? t('newJob.failedTitle')
-                    : t('queue.title')}
-              </p>
-              <p className="mt-0.5 text-sm font-medium">
-                {status === 'success'
-                  ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}`
-                  : status === 'failed'
-                    ? t('newJob.failedBody')
-                    : t('newJob.queuedOffline')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setStatus('idle')}
-              aria-label={t('newJob.dismiss')}
-              className="-m-1 inline-flex size-tap shrink-0 items-center justify-center rounded-lg"
-            >
-              <Icon name="x" size={20} />
-            </button>
-          </div>
-        )}
-
         {/* Group 1 — what you photograph. */}
         <Group>
           <div className="grid grid-cols-2 gap-3">
@@ -559,6 +513,53 @@ export default function NewJob() {
       <div className="sticky bottom-0 z-10 border-t border-line bg-surface px-4 py-3 shadow-bar">
         {/* Same source as the page column, so the bar can never drift from it. */}
         <div className={`mx-auto w-full ${PAGE_WIDTH.form}`}>
+          {/* Outcome of the PREVIOUS car. Lives right above the button that
+              triggers it, so a pass/fail never requires scrolling back up to
+              find out which one happened. */}
+          {status !== 'idle' && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`mb-3 flex items-start gap-3 rounded-xl border-2 p-4 ${
+                status === 'success'
+                  ? 'border-ok-600 bg-ok-50 text-ok-700'
+                  : status === 'failed'
+                    ? 'border-danger-600 bg-danger-50 text-danger-700'
+                    : 'border-ink-900 bg-ink-900 text-surface'
+              }`}
+            >
+              <Icon
+                name={status === 'success' ? 'checkCircle' : status === 'failed' ? 'alertTriangle' : 'sync'}
+                size={24}
+                className="mt-0.5 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold">
+                  {status === 'success'
+                    ? t('newJob.submitted')
+                    : status === 'failed'
+                      ? t('newJob.failedTitle')
+                      : t('queue.title')}
+                </p>
+                <p className="mt-0.5 text-sm font-medium">
+                  {status === 'success'
+                    ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}`
+                    : status === 'failed'
+                      ? t('newJob.failedBody')
+                      : t('newJob.queuedOffline')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatus('idle')}
+                aria-label={t('newJob.dismiss')}
+                className="-m-1 inline-flex size-tap shrink-0 items-center justify-center rounded-lg"
+              >
+                <Icon name="x" size={20} />
+              </button>
+            </div>
+          )}
+
           {showProblems && (
             <div
               id="submit-problems"
