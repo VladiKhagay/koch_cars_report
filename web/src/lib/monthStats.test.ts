@@ -23,6 +23,14 @@ describe('shares', () => {
   it('returns nothing for a month with no jobs — no 0/0 shares', () => {
     expect(shares(new Map(), label)).toEqual([]);
   });
+
+  it('works just as well on money as on counts — My Stats reuses it for the earnings breakdown', () => {
+    // Same shape as job counts, worker_cost in currency units instead of a count.
+    expect(shares(new Map([['a', 120], ['b', 80]]), label)).toEqual([
+      { label: 'Wash', value: 120, share: 60 },
+      { label: 'Polish', value: 80, share: 40 },
+    ]);
+  });
 });
 
 describe('percentChange', () => {

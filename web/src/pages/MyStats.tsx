@@ -10,12 +10,15 @@ import BarChart from '../components/BarChart';
 import Icon from '../components/Icon';
 import MonthNav from '../components/MonthNav';
 import StatTile from '../components/StatTile';
+import StatusBanner from '../components/StatusBanner';
 import { EmptyState, Group, Page, PageHeading, SectionHeading, Skeleton } from '../components/ui';
 
 /** The slice of `job_daily_stats` this screen reads. */
 interface ServiceCount {
   service_id: string;
   job_count: number;
+  /** The worker's own pay for these jobs — readable under RLS, see 0005. */
+  worker_cost: number;
 }
 
 function monthLabel(month: string, locale: string) {
@@ -30,12 +33,10 @@ export default function MyStats() {
 
   /** The month everything below the trend chart is about. Current on arrival. */
   const [month, setMonth] = useState(() => monthKey(dayKey(new Date())));
-  /* Only the two columns the breakdown adds up — typing this as a whole
-     JobDailyStat would claim a worker_cost the query never asked for, and a
-     worker cannot read that column anyway. */
   const [serviceRows, setServiceRows] = useState<ServiceCount[]>([]);
   const [serviceLabels, setServiceLabels] = useState<Record<string, string>>({});
   const [monthLoading, setMonthLoading] = useState(true);
+  const [monthError, setMonthError] = useState(false);
 
   // The whole history, one row per month. Small enough to hold: a worker
   // logging 300 cars a month for five years is 60 rows.
@@ -80,17 +81,23 @@ export default function MyStats() {
     const { from, to } = monthRange(month);
     let live = true;
     setMonthLoading(true);
+    setMonthError(false);
     supabase
       .from('job_daily_stats')
-      .select('service_id, job_count')
+      .select('service_id, job_count, worker_cost')
       .eq('worker_id', appUser.id)
       .gte('day', from)
       .lte('day', to)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         // A slow response for a month the worker has already stepped past must
         // not overwrite the month they are now looking at.
         if (!live) return;
-        setServiceRows((data ?? []) as ServiceCount[]);
+        if (error) {
+          setServiceRows([]);
+          setMonthError(true);
+        } else {
+          setServiceRows((data ?? []) as ServiceCount[]);
+        }
         setMonthLoading(false);
       });
     return () => {
@@ -118,6 +125,14 @@ export default function MyStats() {
     const counts = new Map<string, number>();
     for (const r of serviceRows) counts.set(r.service_id, (counts.get(r.service_id) ?? 0) + r.job_count);
     return shares(counts, (id) => serviceLabels[id] ?? t('myJobs.noService'));
+  }, [serviceRows, serviceLabels, t]);
+
+  const monthEarnings = serviceRows.reduce((sum, r) => sum + r.worker_cost, 0);
+
+  const earningsByService = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of serviceRows) totals.set(r.service_id, (totals.get(r.service_id) ?? 0) + r.worker_cost);
+    return shares(totals, (id) => serviceLabels[id] ?? t('myJobs.noService'));
   }, [serviceRows, serviceLabels, t]);
 
   return (
@@ -154,9 +169,35 @@ export default function MyStats() {
             <StatTile label={t('stats.avgPerMonth')} value={avgPerMonth} />
           </div>
 
+          {monthLoading ? (
+            <div className="grid grid-cols-1 gap-3" aria-hidden>
+              <Skeleton className="h-24" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              <StatTile label={t('stats.monthEarnings')} value={monthEarnings} />
+            </div>
+          )}
+
           <ChangeNote change={change} previous={prevTotal} prevMonth={shiftMonth(month, -1)} />
 
-          <ServiceBreakdown slices={byService} loading={monthLoading} />
+          {monthError && <StatusBanner tone="error" live>{t('stats.monthError')}</StatusBanner>}
+
+          <ServiceBreakdown
+            title={t('stats.jobsByService')}
+            emptyText={t('stats.emptyMonth')}
+            slices={byService}
+            loading={monthLoading}
+            tooltip={(s) => t('stats.serviceTooltip', { service: s.label, count: s.value, percent: s.share })}
+          />
+
+          <ServiceBreakdown
+            title={t('stats.earningsByService')}
+            emptyText={t('stats.emptyMonth')}
+            slices={earningsByService}
+            loading={monthLoading}
+            tooltip={(s) => t('stats.earningsTooltip', { service: s.label, amount: s.value, percent: s.share })}
+          />
 
           {/* The same counts over time, held close to the tiles they explain.
               The window ends at the selected month, so it always contains it. */}
@@ -218,13 +259,24 @@ const SHADES = ['bg-ink-900', 'bg-ink-800', 'bg-ink-700', 'bg-ink-600', 'bg-ink-
  * bar carries its exact count and its share as text, so the graphic is a
  * second reading of the numbers rather than the only one.
  */
-function ServiceBreakdown({ slices, loading }: { slices: Slice[]; loading: boolean }) {
-  const { t } = useTranslation();
+function ServiceBreakdown({
+  title,
+  emptyText,
+  slices,
+  loading,
+  tooltip,
+}: {
+  title: string;
+  emptyText: string;
+  slices: Slice[];
+  loading: boolean;
+  tooltip: (s: Slice) => string;
+}) {
   const max = Math.max(1, ...slices.map((s) => s.value));
 
   return (
     <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-      <SectionHeading icon="chart">{t('stats.jobsByService')}</SectionHeading>
+      <SectionHeading icon="chart">{title}</SectionHeading>
 
       {loading && (
         <div className="space-y-3" aria-hidden>
@@ -237,14 +289,14 @@ function ServiceBreakdown({ slices, loading }: { slices: Slice[]; loading: boole
       {!loading && slices.length === 0 && (
         <p className="flex items-center justify-center gap-2 py-8 text-center text-sm font-medium text-ink-600">
           <Icon name="info" size={18} className="text-ink-500" />
-          {t('stats.emptyMonth')}
+          {emptyText}
         </p>
       )}
 
       {!loading && slices.length > 0 && (
         <ul className="space-y-3">
           {slices.map((s, i) => (
-            <li key={s.label} title={t('stats.serviceTooltip', { service: s.label, count: s.value, percent: s.share })}>
+            <li key={s.label} title={tooltip(s)}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0 truncate text-sm font-medium text-ink-900">{s.label}</span>
                 <span className="shrink-0 font-mono text-sm tabular-nums text-ink-700">

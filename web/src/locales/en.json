@@ -395,6 +395,10 @@
     "changeDown": "Down {{percent}}% on {{month}}",
     "changeSame": "Same as {{month}}",
     "changeFrom": "({{jobs}} jobs)",
-    "serviceTooltip": "{{service}} — {{count}} jobs, {{percent}}% of the month"
+    "serviceTooltip": "{{service}} — {{count}} jobs, {{percent}}% of the month",
+    "monthEarnings": "Month earnings",
+    "earningsByService": "Earnings by service",
+    "earningsTooltip": "{{service}} — {{amount}}, {{percent}}% of the month",
+    "monthError": "Couldn't load this month's data. Try again shortly."
   }
 }

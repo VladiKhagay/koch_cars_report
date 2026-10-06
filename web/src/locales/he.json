@@ -409,6 +409,10 @@
     "changeDown": "ירידה של {{percent}}% לעומת {{month}}",
     "changeSame": "כמו ב־{{month}}",
     "changeFrom": "({{jobs}} עבודות)",
-    "serviceTooltip": "{{service}} — {{count}} עבודות, {{percent}}% מהחודש"
+    "serviceTooltip": "{{service}} — {{count}} עבודות, {{percent}}% מהחודש",
+    "monthEarnings": "הכנסה החודש",
+    "earningsByService": "הכנסה לפי שירות",
+    "earningsTooltip": "{{service}} — {{amount}}, {{percent}}% מהחודש",
+    "monthError": "טעינת הנתונים לחודש זה נכשלה. נסו שוב בקרוב."
   }
 }

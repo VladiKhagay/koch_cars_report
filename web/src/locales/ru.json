@@ -409,6 +409,10 @@
     "changeDown": "Меньше на {{percent}}%, чем в {{month}}",
     "changeSame": "Столько же, сколько в {{month}}",
     "changeFrom": "({{jobs}} работ)",
-    "serviceTooltip": "{{service}} — {{count}} работ, {{percent}}% за месяц"
+    "serviceTooltip": "{{service}} — {{count}} работ, {{percent}}% за месяц",
+    "monthEarnings": "Заработок за месяц",
+    "earningsByService": "Заработок по услугам",
+    "earningsTooltip": "{{service}} — {{amount}}, {{percent}}% за месяц",
+    "monthError": "Не удалось загрузить данные за этот месяц. Попробуйте ещё раз."
   }
 }
