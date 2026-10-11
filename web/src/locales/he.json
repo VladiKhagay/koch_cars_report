@@ -27,7 +27,8 @@
     "profile": "פרופיל",
     "account": "חשבון",
     "mainNav": "ניווט ראשי",
-    "skipToContent": "דלג לתוכן"
+    "skipToContent": "דלג לתוכן",
+    "lookup": "חיפוש רכב"
   },
   "welcome": {
     "title": "ברוכים הבאים",
@@ -75,7 +76,6 @@
     "title": "שירותים",
     "addTitle": "הוספת שירות",
     "missingFields": "מספר קטלוגי ושם הם שדות חובה.",
-    "duplicateCatalog": "המספר הקטלוגי הזה כבר בשימוש.",
     "catalogPlaceholder": "מספר קטלוגי (למשל SVC-006)",
     "namePlaceholder": "שם (אנגלית)",
     "nameRuPlaceholder": "שם (רוסית, לא חובה)",
@@ -414,5 +414,15 @@
     "earningsByService": "הכנסה לפי שירות",
     "earningsTooltip": "{{service}} — {{amount}}, {{percent}}% מהחודש",
     "monthError": "טעינת הנתונים לחודש זה נכשלה. נסו שוב בקרוב."
+  },
+  "lookup": {
+    "title": "חיפוש רכב",
+    "lead": "בדיקה אם הרכב כבר רשום ואילו שירותים בוצעו.",
+    "label": "מספר רישוי או VIN",
+    "search": "חיפוש",
+    "notFound": "לא נמצאה רשומה לרכב הזה.",
+    "notFoundBody": "בדקו את מספר הרישוי או ה-VIN — נדרש המספר המלא.",
+    "error": "החיפוש נכשל. נסו שוב.",
+    "results": "רשומות שנמצאו"
   }
 }

@@ -122,7 +122,7 @@ export default function Services() {
       ...(price === undefined ? {} : { worker_price: price }),
     });
     if (insertError) {
-      setError(insertError.code === '23505' ? t('services.duplicateCatalog') : insertError.message);
+      setError(insertError.message);
       return;
     }
     setCatalogNumber('');
@@ -174,7 +174,7 @@ export default function Services() {
       })
       .eq('id', serviceId);
     if (updateError) {
-      setError(updateError.code === '23505' ? t('services.duplicateCatalog') : updateError.message);
+      setError(updateError.message);
       return;
     }
     setExpanded(null);

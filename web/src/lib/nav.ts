@@ -29,6 +29,7 @@ export function navItemsFor(role: UserRole | undefined, t: (key: string) => stri
         { to: '/new', label: t('nav.newJob'), icon: 'camera' },
         { to: '/mine', label: t('nav.myJobs'), icon: 'list' },
         { to: '/stats', label: t('nav.myStats'), icon: 'chart' },
+        { to: '/lookup', label: t('nav.lookup'), icon: 'search' },
       ],
       secondary: [],
     };

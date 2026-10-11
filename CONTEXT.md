@@ -31,7 +31,7 @@ Excel.
 | Constraint | Value | Consequence |
 |---|---|---|
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
-| Volume | ~125 cars/day, ~3,000/month | Trivially small. Never optimize for throughput here. |
+| Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
 | Photos | 2/car (plate + VIN), 90-day retention | ~6 GB rolling window. Drove the storage choice. |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
@@ -137,7 +137,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | Migration | Contents |
 |---|---|
 | `0001_init.sql` | Tables, RLS policies, `current_app_user()`, `jobs_worker_view` |
-| `0002_catalog_numbers_and_stats.sql` | `services.catalog_number` (unique), monthly/service stat views |
+| `0002_catalog_numbers_and_stats.sql` | `services.catalog_number` (unique until 0017), monthly/service stat views |
 | `0003_tighten_worker_job_select.sql` | **Security fix** (see §6), `find_recent_duplicate()` |
 | `0004_user_mgmt_services_softdelete_stats.sql` | Service soft-delete, `update_my_name()`, `set_user_active()`, `job_daily_stats` |
 
@@ -159,7 +159,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 ```
 sites(id, name, customer_report_config)
 users(id, auth_id, name, role[worker|manager|admin], site_id, active)
-services(id, catalog_number UNIQUE, name_en, name_ru, worker_price,
+services(id, catalog_number (not unique, 0017), name_en, name_ru, worker_price,
          active, sort_order, deleted_at)
 jobs(id, site_id, worker_id, created_at, plate, vin, brand,
      service_id,            -- one service per job (0005)
@@ -340,7 +340,7 @@ car-prep-tracker/
 ### Routes
 
 `/login` · `/welcome` (set password from invite) · `/profile`
-**worker:** `/new` `/mine` `/stats` — **manager+admin:** `/dashboard`
+**worker:** `/new` `/mine` `/stats` `/lookup` (plate/VIN lookup via `lookup_vehicle`, 0018 — no submitter shown) — **manager+admin:** `/dashboard`
 `/jobs/:id` `/export` `/analytics` `/services` — **manager:** `/team` —
 **admin:** `/admin/users` `/admin/sites`
 

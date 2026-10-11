@@ -27,7 +27,8 @@
     "profile": "Profile",
     "account": "Account",
     "mainNav": "Main navigation",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "lookup": "Car lookup"
   },
   "welcome": {
     "title": "Welcome",
@@ -75,7 +76,6 @@
     "title": "Services",
     "addTitle": "Add a service",
     "missingFields": "Catalog number and name are required.",
-    "duplicateCatalog": "That catalog number is already in use.",
     "catalogPlaceholder": "Catalog number (e.g. SVC-006)",
     "namePlaceholder": "Name (English)",
     "nameRuPlaceholder": "Name (Russian, optional)",
@@ -400,5 +400,15 @@
     "earningsByService": "Earnings by service",
     "earningsTooltip": "{{service}} — {{amount}}, {{percent}}% of the month",
     "monthError": "Couldn't load this month's data. Try again shortly."
+  },
+  "lookup": {
+    "title": "Car lookup",
+    "lead": "Check whether a car is already registered and which services were done.",
+    "label": "Plate or VIN",
+    "search": "Search",
+    "notFound": "No record of this car.",
+    "notFoundBody": "Check the plate or VIN and try again — the full number is required.",
+    "error": "Search failed. Try again.",
+    "results": "Records found"
   }
 }

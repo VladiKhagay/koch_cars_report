@@ -11,6 +11,7 @@ import PhotoCaptureHarness from './dev/PhotoCaptureHarness';
 import NewJob from './pages/NewJob';
 import MyJobs from './pages/MyJobs';
 import MyStats from './pages/MyStats';
+import VehicleLookup from './pages/VehicleLookup';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
 import Analytics from './pages/Analytics';
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/new" element={<ProtectedRoute roles={['worker']}><NewJob /></ProtectedRoute>} />
             <Route path="/mine" element={<ProtectedRoute roles={['worker']}><MyJobs /></ProtectedRoute>} />
             <Route path="/stats" element={<ProtectedRoute roles={['worker']}><MyStats /></ProtectedRoute>} />
+            <Route path="/lookup" element={<ProtectedRoute roles={['worker']}><VehicleLookup /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute roles={['manager', 'admin']}><Dashboard /></ProtectedRoute>} />
             <Route path="/jobs" element={<ProtectedRoute roles={['manager', 'admin']}><Jobs /></ProtectedRoute>} />
             <Route path="/jobs/:id" element={<ProtectedRoute roles={['manager', 'admin']}><JobDetail /></ProtectedRoute>} />
