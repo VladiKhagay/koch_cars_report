@@ -66,9 +66,14 @@ export async function handleInvite(c: Context<{ Bindings: Env }>) {
   const invited = (await inviteRes.json()) as { id: string };
 
   // 2. Create the profile row so the invitee lands fully provisioned.
-  const profileRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/users`, {
+  //
+  // Inviting the same email again is how an expired invite is RESENT: Supabase
+  // re-sends to a user who never accepted (it only refuses confirmed ones). Their
+  // profile row already exists from the first invite, so a duplicate is skipped
+  // rather than failing the whole call — the existing name/role/site are kept.
+  const profileRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/users?on_conflict=auth_id`, {
     method: 'POST',
-    headers: { ...serviceHeaders, Prefer: 'return=minimal' },
+    headers: { ...serviceHeaders, Prefer: 'return=minimal,resolution=ignore-duplicates' },
     body: JSON.stringify({
       auth_id: invited.id,
       name: body.name.trim(),
