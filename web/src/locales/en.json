@@ -158,7 +158,8 @@
     "extraPhotos": "Extra photos",
     "extraPhotosHint": "Damage, interior, anything worth a record. Up to {{count}}.",
     "extraPhoto": "Extra photo {{n}}",
-    "addExtraPhoto": "Add a photo"
+    "addExtraPhoto": "Add a photo",
+    "site": "Site"
   },
   "myJobs": {
     "title": "My Jobs",
@@ -191,7 +192,9 @@
     "actions": "Actions",
     "exportExcel": "Export to Excel",
     "exportDone": "Download started. The file covers every job the filters above select.",
-    "exportFailed": "Couldn't build the file. Check your connection and try again."
+    "exportFailed": "Couldn't build the file. Check your connection and try again.",
+    "with": "with {{names}}",
+    "coworker": "Co-worker"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -301,7 +304,7 @@
     "customerHelp": "This file goes to the customer. It never contains worker names or worker pay.",
     "noColumns": "No columns are switched on, so the report would be blank. Configure it below.",
     "paymentsTitle": "Worker payments",
-    "paymentsHelp": "Internal payroll sheet for one worker: their jobs in the date range, with a per-service summary and total. Do not send this to a customer.",
+    "paymentsHelp": "Internal payroll sheet for one person: every job they worked on in the date range, at any site, including shared jobs at their share of the pay. Per-service summary and total. Do not send this to a customer.",
     "downloadPayments": "Download worker payments",
     "worker": "Worker",
     "searchWorkers": "Search workers",
@@ -410,5 +413,13 @@
     "notFoundBody": "Check the plate or VIN and try again — the full number is required.",
     "error": "Search failed. Try again.",
     "results": "Records found"
+  },
+  "coworkers": {
+    "label": "Co-workers",
+    "search": "Search staff",
+    "pick": "Add a co-worker…",
+    "remove": "Remove {{name}}",
+    "noMatches": "Nobody matches that name.",
+    "max": "That’s the most — {{max}} co-workers per job. Pay is split evenly."
   }
 }

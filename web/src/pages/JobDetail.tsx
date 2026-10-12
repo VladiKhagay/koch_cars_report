@@ -5,8 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
+import { useSiteScope } from '../lib/useSiteScope';
+import { useStaff } from '../lib/useStaff';
 import type { Job, PhotoKind, Service } from '../lib/types';
 import PhotoViewer from '../components/PhotoViewer';
+import CoworkerPicker from '../components/CoworkerPicker';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
 import {
@@ -17,6 +20,7 @@ import {
   Field,
   Page,
   SectionHeading,
+  Select,
   Skeleton,
   fieldClass,
 } from '../components/ui';
@@ -29,12 +33,14 @@ export default function JobDetail() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
-  const [workerName, setWorkerName] = useState('');
-  /* Reassignment candidates: workers at the job's own site, so the picker
-     can never hand a job to someone who couldn't have been assigned it in
-     the first place (mirrors the jobs_insert RLS check). */
-  const [siteWorkers, setSiteWorkers] = useState<{ id: string; name: string }[]>([]);
+  const staff = useStaff();
+  const { sites } = useSiteScope();
+  /* Submitter, crew and site are editable together: reassigning the job to one
+     of its co-workers, or moving it to the yard it was really done at, are the
+     corrections a manager actually makes. Shares recompute in Postgres (0019). */
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
+  const [coworkerIds, setCoworkerIds] = useState<string[]>([]);
+  const [siteId, setSiteId] = useState('');
   const [serviceName, setServiceName] = useState('');
   /* Only the extras that exist: probing all three slots blind would render
      three 'photo unavailable' tiles on every job that has none. */
@@ -43,6 +49,7 @@ export default function JobDetail() {
   const [managerNote, setManagerNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     if (id) void load(id);
@@ -67,19 +74,9 @@ export default function JobDetail() {
       .order('kind');
     setExtraKinds((extras ?? []).map((p: { kind: PhotoKind }) => p.kind));
 
-    const { data: worker } = await supabase.from('users').select('name').eq('id', j.worker_id).single();
-    setWorkerName(worker?.name ?? '');
     setSelectedWorkerId(j.worker_id);
-
-    if (appUser?.role === 'admin' || appUser?.role === 'manager') {
-      const { data: workers } = await supabase
-        .from('users')
-        .select('id, name')
-        .eq('site_id', j.site_id)
-        .eq('role', 'worker')
-        .order('name');
-      setSiteWorkers(workers ?? []);
-    }
+    setCoworkerIds(j.coworker_ids ?? []);
+    setSiteId(j.site_id);
 
     if (j.service_id) {
       const { data: svc } = await supabase
@@ -105,12 +102,26 @@ export default function JobDetail() {
       billing_code: billingCode || null,
       manager_note: managerNote || null,
       worker_id: selectedWorkerId || job.worker_id,
+      // The new submitter can't also be their own co-worker — the trigger would
+      // drop them anyway; dropping them here keeps the screen honest.
+      coworker_ids: coworkerIds.filter((id) => id !== (selectedWorkerId || job.worker_id)),
+      site_id: siteId || job.site_id,
     };
-    await supabase.from('jobs').update(changes).eq('id', job.id);
-    await recordAudit(job.id, appUser.id, 'update', changes);
-    setJob({ ...job, worker_id: changes.worker_id });
-    setWorkerName(siteWorkers.find((w) => w.id === changes.worker_id)?.name ?? workerName);
+    /* A manager moving a job to another site can't write its audit row
+       afterwards — audit_log_insert is scoped to their own site, and the job
+       has just left it. So a move is audited first, while they still can. */
+    const moving = changes.site_id !== job.site_id;
+    if (moving) await recordAudit(job.id, appUser.id, 'update', changes);
+    const { error } = await supabase.from('jobs').update(changes).eq('id', job.id);
     setSaving(false);
+    if (error) {
+      setSaveError(true);
+      return;
+    }
+    if (!moving) await recordAudit(job.id, appUser.id, 'update', changes);
+    setSaveError(false);
+    setJob({ ...job, ...changes });
+    setCoworkerIds(changes.coworker_ids);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -160,6 +171,10 @@ export default function JobDetail() {
   }
 
   const canManage = appUser?.role === 'manager' || appUser?.role === 'admin';
+  const nameOf = (id: string) => staff.find((s) => s.id === id)?.name ?? '—';
+  /* Any active colleague, from any site. The current submitter stays listed
+     even if deactivated since, so the field never silently jumps on load. */
+  const submitterOptions = staff.filter((s) => s.active || s.id === job.worker_id);
 
   return (
     <Page width="list">
@@ -215,28 +230,58 @@ export default function JobDetail() {
                   <label htmlFor="job-worker" className="text-sm font-medium text-ink-600">
                     {t('jobDetail.worker')}
                   </label>
-                  <select
+                  <Select
                     id="job-worker"
                     value={selectedWorkerId}
                     onChange={(e) => setSelectedWorkerId(e.target.value)}
-                    className={`${fieldClass} mt-0.5`}
+                    className="mt-0.5"
                   >
-                    {/* The currently assigned worker may have left the site's
-                        roster (deactivated) since this job was logged — keep
-                        them selectable so the field never silently jumps to
-                        someone else on load. */}
-                    {!siteWorkers.some((w) => w.id === job.worker_id) && (
-                      <option value={job.worker_id}>{workerName || '—'}</option>
-                    )}
-                    {siteWorkers.map((w) => (
+                    {submitterOptions.map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               ) : (
-                <Row label={t('jobDetail.worker')} value={workerName || '—'} />
+                <Row label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
+              )}
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <label htmlFor="job-coworkers" className="text-sm font-medium text-ink-600">
+                    {t('coworkers.label')}
+                  </label>
+                  <div className="mt-0.5">
+                    <CoworkerPicker
+                      id="job-coworkers"
+                      staff={staff}
+                      sites={sites}
+                      value={coworkerIds}
+                      submitterId={selectedWorkerId || job.worker_id}
+                      onChange={setCoworkerIds}
+                    />
+                  </div>
+                </div>
+              ) : (
+                job.coworker_ids.length > 0 && (
+                  <Row label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
+                )
+              )}
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <label htmlFor="job-site" className="text-sm font-medium text-ink-600">
+                    {t('newJob.site')}
+                  </label>
+                  <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)} className="mt-0.5">
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : (
+                <Row label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
               )}
               <Row label={t('newJob.vin')} value={job.vin ?? '—'} mono />
               <Row label={t('jobDetail.service')} value={serviceName || '—'} />
@@ -267,6 +312,8 @@ export default function JobDetail() {
                 className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
               />
             </Field>
+
+            {saveError && <StatusBanner tone="error">{t('common.error')}</StatusBanner>}
 
             <Button size="lg" block busy={saving} icon={saved ? 'check' : undefined} onClick={() => void handleSave()}>
               {saved ? t('jobDetail.saved') : t('jobDetail.save')}

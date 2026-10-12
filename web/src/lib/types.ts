@@ -59,6 +59,15 @@ export interface Job {
    * trigger, never by the client — workers cannot edit their own pay.
    */
   worker_price: number;
+  /** Up to two people who worked the car with the submitter (migration 0019). */
+  coworker_ids: string[];
+  /**
+   * Each person's cut of worker_price, computed by Postgres (generated columns)
+   * so the rounding lives in one place. The submitter's share carries the
+   * leftover cent, so the shares always add up to worker_price.
+   */
+  submitter_share: number;
+  coworker_share: number;
   worker_note: string | null;
   manager_note: string | null;
   billing_code: string | null;
@@ -100,11 +109,24 @@ export interface JobServiceStat {
   worker_cost: number;
 }
 
+/** One row per PERSON on the crew (migration 0019), not per submitter. */
 export interface JobDailyStat {
   site_id: string;
   worker_id: string;
   service_id: string;
   day: string; // date
+  /** Jobs this person worked on — a shared car counts once for each of them. */
   job_count: number;
+  /** This person's share of the pay. */
   worker_cost: number;
+  /** Cars, counted once (on the submitter's row). Sum this for site totals. */
+  car_count: number;
+}
+
+/** A row of `list_staff()` — what any signed-in user may know about a colleague. */
+export interface StaffMember {
+  id: string;
+  name: string;
+  site_id: string | null;
+  active: boolean;
 }

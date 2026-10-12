@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { staffNames, useStaff } from '../lib/useStaff';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { Job } from '../lib/types';
 import Icon from '../components/Icon';
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const staff = useStaff();
   /** The day being viewed. Managers fill in billing codes that arrive a day or
    *  two late, so "today only" made yesterday's unfinished work unreachable. */
   const [day, setDay] = useState(todayIso());
@@ -201,7 +203,8 @@ export default function Dashboard() {
                     showing it again here would just repeat the line. */}
                 {job.plate && <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>}
                 <p className="truncate text-xs text-ink-600">
-                  {job.worker_name ?? '—'} · {new Date(job.created_at).toLocaleTimeString(i18n.language)}
+                  {[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} ·{' '}
+                  {new Date(job.created_at).toLocaleTimeString(i18n.language)}
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">

@@ -19,14 +19,17 @@ import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-tab
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
-import { applyJobFilters } from '../lib/jobs';
+import { applyJobFilters, crewIds } from '../lib/jobs';
 import { buildMyJobsSheet } from '../lib/exports';
 import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
 import { useQueuedJobs } from '../lib/useQueue';
+import { useSiteScope } from '../lib/useSiteScope';
+import { staffNames, useStaff } from '../lib/useStaff';
 import type { Job, Service } from '../lib/types';
 import Icon from '../components/Icon';
 import MonthNav from '../components/MonthNav';
 import ServiceChips from '../components/ServiceChips';
+import CoworkerPicker from '../components/CoworkerPicker';
 import StatusBanner from '../components/StatusBanner';
 import {
   CellMuted,
@@ -101,6 +104,10 @@ const helper = createColumnHelper<typeof features, Job>();
 /** Everything the cells call back into. Held in a ref so `columns` stays stable. */
 interface Handlers {
   serviceLabel: (id: string | null) => string;
+  /** "with Dana, Avi" — everyone on the job except the reader. Empty when solo. */
+  crewLabel: (job: Job) => string;
+  /** Only the submitter edits; a co-worker's row is read-only. */
+  isMine: (job: Job) => boolean;
   startEdit: (job: Job) => void;
   editingId: string | null;
   locale: string;
@@ -143,7 +150,17 @@ function buildColumns(
     helper.accessor((row) => handlers.current.serviceLabel(row.service_id), {
       id: 'service',
       header: () => t('jobs.service'),
-      cell: ({ getValue }) => <CellMuted>{getValue()}</CellMuted>,
+      cell: ({ row, getValue }) => {
+        const crew = handlers.current.crewLabel(row.original);
+        return (
+          <>
+            <CellMuted>{getValue()}</CellMuted>
+            {crew && (
+              <span className="block text-xs text-ink-600">{crew}</span>
+            )}
+          </>
+        );
+      },
     }),
     helper.display({
       id: 'status',
@@ -152,6 +169,13 @@ function buildColumns(
          who sees "3 min left to edit" walks over; one who sees only "Locked"
          has already lost the option they came for. */
       cell: ({ row }) => {
+        // A co-worker can't edit, so a countdown would promise them nothing.
+        if (!handlers.current.isMine(row.original))
+          return (
+            <Badge tone="info" icon="users">
+              {t('myJobs.coworker')}
+            </Badge>
+          );
         const remaining = minutesLeft(row.original.locked_at);
         return remaining > 0 ? (
           <Badge tone="ok" icon="clock">
@@ -168,7 +192,9 @@ function buildColumns(
       id: 'actions',
       header: () => t('myJobs.actions'),
       cell: ({ row }) =>
-        minutesLeft(row.original.locked_at) > 0 && handlers.current.editingId !== row.original.id ? (
+        handlers.current.isMine(row.original) &&
+        minutesLeft(row.original.locked_at) > 0 &&
+        handlers.current.editingId !== row.original.id ? (
           <Button variant="secondary" icon="pencil" onClick={() => handlers.current.startEdit(row.original)}>
             {t('newJob.edit')}
           </Button>
@@ -192,6 +218,8 @@ export default function MyJobs() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const queued = useQueuedJobs();
+  const staff = useStaff();
+  const { sites } = useSiteScope();
 
   const [jobs, setJobs] = useState<Job[]>(NO_ROWS);
   const [total, setTotal] = useState(0);
@@ -200,7 +228,12 @@ export default function MyJobs() {
   const [loading, setLoading] = useState(true);
   const [services, setServices] = useState<Service[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{ note: string; serviceId: string | null } | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    note: string;
+    serviceId: string | null;
+    siteId: string;
+    coworkerIds: string[];
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [, forceTick] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -287,10 +320,10 @@ export default function MyJobs() {
       supabase
         .from('jobs_worker_view')
         .select('*', { count: 'exact' })
-        .eq('worker_id', appUser.id)
         .order(sort.key, { ascending: sort.asc })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
-      { from, to, serviceIds, search, searchColumns: ['plate'] },
+      // Submitted OR co-worked — a shared car is in both people's lists.
+      { workerId: appUser.id, from, to, serviceIds, search, searchColumns: ['plate'] },
     );
 
     setJobs(data ?? NO_ROWS);
@@ -330,9 +363,24 @@ export default function MyJobs() {
     [services, i18n.language, t],
   );
 
+  const crewLabel = useCallback(
+    (job: Job) => {
+      const others = staffNames(staff, crewIds(job).filter((id) => id !== appUser?.id));
+      return others.length ? t('myJobs.with', { names: others.join(', ') }) : '';
+    },
+    [staff, appUser, t],
+  );
+
+  const isMine = useCallback((job: Job) => job.worker_id === appUser?.id, [appUser]);
+
   const startEdit = useCallback((job: Job) => {
     setEditingId(job.id);
-    setEditDraft({ note: job.worker_note ?? '', serviceId: job.service_id });
+    setEditDraft({
+      note: job.worker_note ?? '',
+      serviceId: job.service_id,
+      siteId: job.site_id,
+      coworkerIds: job.coworker_ids ?? [],
+    });
   }, []);
 
   async function saveEdit(jobId: string) {
@@ -342,7 +390,12 @@ export default function MyJobs() {
     // re-stamps it from the catalog whenever service_id changes.
     await supabase
       .from('jobs')
-      .update({ worker_note: editDraft.note || null, service_id: editDraft.serviceId })
+      .update({
+        worker_note: editDraft.note || null,
+        service_id: editDraft.serviceId,
+        site_id: editDraft.siteId,
+        coworker_ids: editDraft.coworkerIds,
+      })
       .eq('id', jobId);
     setSaving(false);
     setEditingId(null);
@@ -366,10 +419,9 @@ export default function MyJobs() {
         supabase
           .from('jobs_worker_view')
           .select('*')
-          .eq('worker_id', appUser!.id)
           .order(sort.key, { ascending: sort.asc })
           .range(start, start + EXPORT_CHUNK - 1),
-        { from, to, serviceIds, search, searchColumns: ['plate'] },
+        { workerId: appUser!.id, from, to, serviceIds, search, searchColumns: ['plate'] },
       );
       if (error) return null;
       all.push(...((data ?? []) as Job[]));
@@ -421,10 +473,10 @@ export default function MyJobs() {
 
   /* ----------------------------------------------------------------- table */
 
-  const handlers = useRef<Handlers>({ serviceLabel, startEdit, editingId, locale: i18n.language });
+  const handlers = useRef<Handlers>({ serviceLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language });
   // Refreshed every render, but the ref identity never changes — so `columns`
   // below can be built once and still call the current closures.
-  handlers.current = { serviceLabel, startEdit, editingId, locale: i18n.language };
+  handlers.current = { serviceLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language };
 
   const columns = useMemo(() => buildColumns(t, handlers), [t]);
   const table = useTable({ features, columns, data: jobs });
@@ -749,6 +801,27 @@ export default function MyJobs() {
                           onSelect={(id) => setEditDraft((d) => (d ? { ...d, serviceId: id } : d))}
                           label={t('newJob.service')}
                         />
+                        <Select
+                          aria-label={t('newJob.site')}
+                          value={editDraft.siteId}
+                          onChange={(e) => setEditDraft((d) => (d ? { ...d, siteId: e.target.value } : d))}
+                        >
+                          {sites.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </Select>
+                        {appUser && (
+                          <CoworkerPicker
+                            id={`coworkers-${row.original.id}`}
+                            staff={staff}
+                            sites={sites}
+                            value={editDraft.coworkerIds}
+                            submitterId={appUser.id}
+                            onChange={(ids) => setEditDraft((d) => (d ? { ...d, coworkerIds: ids } : d))}
+                          />
+                        )}
                         <textarea
                           value={editDraft.note}
                           onChange={(e) => setEditDraft((d) => (d ? { ...d, note: e.target.value } : d))}

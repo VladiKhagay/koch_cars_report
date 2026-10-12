@@ -48,6 +48,13 @@ Excel.
   week. Duplicates are **flagged for managers, never blocked**.
 - **Workers get a 15-minute edit window** after submitting, then the row locks.
   Managers can still edit.
+- **A job can have up to two co-workers** besides the submitter (`jobs.coworker_ids`,
+  migration 0019), from any site. Pay is split evenly — the submitter takes the
+  leftover cent — via the generated `submitter_share` / `coworker_share` columns.
+  A shared job counts as one job for each person but one car for the site
+  (`job_daily_stats.car_count`). Only the submitter edits; co-workers only see it.
+  The submitter picks the job's site (default: their own), and payroll is per
+  person across all sites.
 - **There is no upstream vehicle list.** Cars just show up. Validation is
   format-only: VIN length/charset is hard, the ISO 3779 check digit is a *soft*
   warning (non-US VINs legitimately fail it), plate format is a configurable

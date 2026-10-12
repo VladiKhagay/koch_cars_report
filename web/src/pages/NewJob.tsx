@@ -6,9 +6,12 @@ import type { Service } from '../lib/types';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { submitJob, findRecentDuplicate, isPermanentError, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { useSiteScope } from '../lib/useSiteScope';
+import { useStaff } from '../lib/useStaff';
 import { enqueueForRetry } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
 import ServiceChips from '../components/ServiceChips';
+import CoworkerPicker from '../components/CoworkerPicker';
 import Icon from '../components/Icon';
 import {
   Button,
@@ -17,6 +20,7 @@ import {
   Group,
   Page,
   PageHeading,
+  Select,
   Skeleton,
   fieldClass,
   fieldErrorClass,
@@ -33,6 +37,10 @@ const emptyForm = {
   vinPhoto: null as Blob | null,
   /** Optional, up to MAX_EXTRA_PHOTOS. Order here is the extra_1..3 order. */
   extraPhotos: [] as Blob[],
+  /** `null` = the submitter's own site. Reset after every car, so a worker who
+      helped at another yard once doesn't keep logging there by accident. */
+  siteId: null as string | null,
+  coworkerIds: [] as string[],
 };
 
 /** How long the "job submitted" confirmation stays up before it self-clears. */
@@ -49,6 +57,8 @@ function scrollTo(el: HTMLElement | null) {
 export default function NewJob() {
   const { t } = useTranslation();
   const { appUser } = useAuth();
+  const { sites } = useSiteScope();
+  const staff = useStaff();
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -129,8 +139,8 @@ export default function NewJob() {
          somebody read off the vehicle. Brand stays whatever a person typed. */
       setForm((f) => ({ ...f, vin: text }));
       setAutoFilled((a) => ({ ...a, vin: true }));
-      if (appUser?.site_id && isValidVinFormat(text)) {
-        const dup = await findRecentDuplicate(appUser.site_id, text);
+      if (siteId && isValidVinFormat(text)) {
+        const dup = await findRecentDuplicate(siteId, text);
         setDuplicateWarning(Boolean(dup));
       }
     } else if (reason) {
@@ -172,10 +182,20 @@ export default function NewJob() {
     setForm((f) => ({ ...f, extraPhotos: f.extraPhotos.filter((_, i) => i !== index) }));
   }
 
+  /* The duplicate flag is "same VIN at THIS site this week", so it is
+     re-asked when the site changes under an already-entered VIN. */
+  async function selectSite(id: string) {
+    beginNextCar();
+    setForm((f) => ({ ...f, siteId: id }));
+    setDuplicateWarning(isValidVinFormat(form.vin) ? Boolean(await findRecentDuplicate(id, form.vin)) : false);
+  }
+
   function selectService(id: string) {
     beginNextCar();
     setForm((f) => ({ ...f, serviceId: id }));
   }
+
+  const siteId = form.siteId ?? appUser?.site_id ?? null;
 
   /* The plate is optional too now (a car can arrive with no physical plate),
      so "no plate" is valid and only a plate that has been STARTED has to be
@@ -241,15 +261,16 @@ export default function NewJob() {
       problems[0].focus();
       return;
     }
-    if (!appUser?.site_id || submitting) return;
+    if (!appUser || !siteId || submitting) return;
 
     setSubmitting(true);
     // Whichever of plate/VIN got typed identifies the car in the confirmation
     // message below — hasIdentifier guarantees at least one is set.
     const identifier = form.plate || form.vin;
     const payload = {
-      siteId: appUser.site_id,
+      siteId,
       workerId: appUser.id,
+      coworkerIds: form.coworkerIds,
       // Empty means "not present/not readable", and that is stored as NULL —
       // never as ''.
       plate: form.plate || null,
@@ -497,6 +518,36 @@ export default function NewJob() {
               className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
             />
           </Field>
+        </Group>
+
+        {/* Group 4 — where, and who else. Both default to "my site, just me",
+            which is most cars; only a shared or away job needs a tap here. */}
+        <Group>
+          <Field htmlFor="job-site" label={t('newJob.site')}>
+            <Select id="job-site" value={siteId ?? ''} onChange={(e) => void selectSite(e.target.value)}>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {appUser && (
+            <Field htmlFor="job-coworkers" label={t('coworkers.label')} optional>
+              <CoworkerPicker
+                id="job-coworkers"
+                staff={staff}
+                sites={sites}
+                value={form.coworkerIds}
+                submitterId={appUser.id}
+                onChange={(ids) => {
+                  beginNextCar();
+                  setForm((f) => ({ ...f, coworkerIds: ids }));
+                }}
+              />
+            </Field>
+          )}
         </Group>
       </Page>
 

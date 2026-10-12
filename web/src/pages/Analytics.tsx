@@ -134,21 +134,30 @@ export default function Analytics() {
     [rows, workerFilter, serviceFilter],
   );
 
-  // One service per job (migration 0005), so job_count sums exactly — no row
-  // is counted twice. This used to need a separate exact count alongside the
-  // view, because a three-service job produced three rows here.
-  const total = useMemo(() => filtered.reduce((sum, r) => sum + r.job_count, 0), [filtered]);
+  /*
+   * The view has one row per PERSON on a job (0019), so a car worked by two
+   * people is in it twice. Site-wide figures count cars (`car_count`, the
+   * submitter's row only); once a worker is picked, the question is "how many
+   * jobs did they work on", which is their `job_count`, shared ones included.
+   */
+  const countOf = (r: JobDailyStat) => (workerFilter ? r.job_count : r.car_count);
+  const total = useMemo(
+    () => filtered.reduce((sum, r) => sum + countOf(r), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, workerFilter],
+  );
 
   const monthlyTrend = useMemo(() => {
     const byMonth = new Map<string, number>();
-    for (const r of filtered) byMonth.set(monthKey(r.day), (byMonth.get(monthKey(r.day)) ?? 0) + r.job_count);
+    for (const r of filtered) byMonth.set(monthKey(r.day), (byMonth.get(monthKey(r.day)) ?? 0) + countOf(r));
     return [...byMonth.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([m, v]) => ({
         label: new Date(`${m}-01`).toLocaleDateString(i18n.language, { month: 'short', year: '2-digit' }),
         value: v,
       }));
-  }, [filtered, i18n.language]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, workerFilter, i18n.language]);
 
   const byWorker = useMemo(() => {
     const map = new Map<string, number>();
@@ -159,10 +168,10 @@ export default function Analytics() {
 
   const byService = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of filtered) map.set(r.service_id, (map.get(r.service_id) ?? 0) + r.job_count);
+    for (const r of filtered) map.set(r.service_id, (map.get(r.service_id) ?? 0) + countOf(r));
     return [...map.entries()].map(([id, v]) => ({ label: labelFor(id), value: v })).sort((a, b) => b.value - a.value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, extraLabels, serviceOptions]);
+  }, [filtered, workerFilter, extraLabels, serviceOptions]);
 
   async function exportStats(allSites: boolean) {
     setExporting(true);

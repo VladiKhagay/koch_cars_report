@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useSiteScope } from '../lib/useSiteScope';
 import { buildCustomerReport, buildWorkerPaymentReport, type Cell, type ExportJob } from '../lib/exports';
+import { shareFor } from '../lib/jobs';
+import { staffNames, useStaff } from '../lib/useStaff';
 import {
   moveColumn,
   resolveCustomerColumns,
@@ -33,7 +35,16 @@ function todayIso() {
 /** Only the fields the two reports read — the query asks for nothing else. */
 const JOB_FIELDS =
   'created_at, plate, vin, brand, billing_code, worker_price,' +
-  ' worker:users!jobs_worker_id_fkey(name), service:services(name_en, catalog_number)';
+  ' worker_id, coworker_ids, submitter_share, coworker_share,' +
+  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, catalog_number)';
+
+/** What JOB_FIELDS returns, before either report reshapes it. */
+type FetchedJob = ExportJob & {
+  worker_id: string;
+  coworker_ids: string[];
+  submitter_share: number;
+  coworker_share: number;
+};
 
 type ReportKind = 'customer' | 'payments';
 
@@ -124,22 +135,21 @@ export default function Export() {
   const [workerSearch, setWorkerSearch] = useState('');
 
   /*
-   * The selectable workers are the ones at the site in scope, which is the same
-   * scope the jobs query runs under — RLS enforces it either way, this just
-   * stops the list offering people whose rows would come back empty. Managers
-   * and workers are pinned to their own site by useSiteScope; only an admin can
-   * move the site, and only an admin reaches this card at all.
+   * Everyone on staff, every site. The payment sheet is per PERSON across all
+   * sites (0019): pay follows the person, and someone who helped at another yard
+   * would otherwise be missing from both yards' lists. Only an admin reaches
+   * this card, and admins read every user.
    *
    * Inactive staff are deliberately included: somebody who left mid-month is
-   * still owed for the jobs they logged before they did.
+   * still owed for the jobs they worked before they did.
    */
+  const staff = useStaff();
   useEffect(() => {
-    if (!canSeePay || !siteId) return;
+    if (!canSeePay) return;
     let cancelled = false;
     void supabase
       .from('users')
       .select('id,name')
-      .eq('site_id', siteId)
       .order('name')
       .then(({ data }) => {
         if (cancelled) return;
@@ -148,13 +158,7 @@ export default function Export() {
     return () => {
       cancelled = true;
     };
-  }, [canSeePay, siteId]);
-
-  // A worker picked at one site must not survive a move to another.
-  useEffect(() => {
-    setWorkerId('');
-    setWorkerSearch('');
-  }, [siteId]);
+  }, [canSeePay]);
 
   /* A yard can carry a long staff list, and a native select is a scroll with no
      way to type at it. The search narrows the options rather than replacing the
@@ -191,33 +195,36 @@ export default function Export() {
   /**
    * The jobs both reports are built from.
    *
-   * `forWorkerId` narrows to one worker in Postgres rather than filtering the
+   * `forWorkerId` narrows to one person in Postgres rather than filtering the
    * rows afterwards: the payment sheet must not be able to contain somebody
    * else's job even for a moment, and a client-side filter over a query that
    * fetched the whole site is one forgotten line away from doing exactly that.
+   * It matches jobs they submitted OR co-worked, at ANY site — the site filter
+   * only applies to the customer report.
    *
    * Both date bounds are inclusive local calendar days — the same widening the
    * jobs grid does, so "1st to 31st" means the same span on both screens.
    */
-  async function fetchJobs(forWorkerId?: string): Promise<ExportJob[] | null> {
+  async function fetchJobs(forWorkerId?: string): Promise<FetchedJob[] | null> {
     const fromIso = new Date(`${from}T00:00:00`).toISOString();
     const toIso = new Date(`${to}T23:59:59.999`).toISOString();
 
     let query = supabase
       .from('jobs')
       .select(JOB_FIELDS)
-      .eq('site_id', siteId!)
       .is('deleted_at', null)
       .gte('created_at', fromIso)
       .lte('created_at', toIso)
       .order('created_at', { ascending: true });
 
-    if (forWorkerId) query = query.eq('worker_id', forWorkerId);
+    query = forWorkerId
+      ? query.or(`worker_id.eq.${forWorkerId},coworker_ids.cs.{${forWorkerId}}`)
+      : query.eq('site_id', siteId!);
 
     const { data, error } = await query;
 
     if (error) return null;
-    return (data ?? []) as unknown as ExportJob[];
+    return (data ?? []) as unknown as FetchedJob[];
   }
 
   async function writeSheet(rows: Cell[][], sheetName: string, suffix: string, who?: string) {
@@ -227,7 +234,8 @@ export default function Export() {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
-    const siteName = sites.find((s) => s.id === siteId)?.name ?? 'site';
+    // The payment sheet spans every site, so it isn't named after one.
+    const siteName = who ? undefined : (sites.find((s) => s.id === siteId)?.name ?? 'site');
     // The worker's name goes in the filename: these files land in a Downloads
     // folder a month at a time, and "payments-2026-03-01-to-…" ten times over
     // is ten files nobody can tell apart without opening them.
@@ -237,7 +245,7 @@ export default function Export() {
   }
 
   async function runExport(kind: ReportKind) {
-    if (!siteId || !columns || !periodComplete) return;
+    if ((kind === 'customer' && (!siteId || !columns)) || !periodComplete) return;
     // The payment sheet is per worker; without one there is no report to build.
     if (kind === 'payments' && !selectedWorker) return;
     setBusy(kind);
@@ -257,8 +265,22 @@ export default function Export() {
 
     const rows =
       kind === 'customer'
-        ? buildCustomerReport(jobs, columns, i18n.language)
-        : buildWorkerPaymentReport(jobs, selectedWorker!.name, i18n.language);
+        ? buildCustomerReport(
+            // Everyone who worked the car, submitter first: "Dana, Avi".
+            jobs.map((j) => ({
+              ...j,
+              worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
+            })),
+            columns!,
+            i18n.language,
+          )
+        : buildWorkerPaymentReport(
+            // This person's share, and their own name on every row — the job's
+            // submitter may be somebody else.
+            jobs.map((j) => ({ ...j, worker_price: shareFor(j, workerId), worker: { name: selectedWorker!.name } })),
+            selectedWorker!.name,
+            i18n.language,
+          );
 
     const file = await writeSheet(
       rows,
@@ -465,7 +487,7 @@ export default function Export() {
             icon="download"
             variant="secondary"
             busy={busy === 'payments'}
-            disabled={!siteId || !workerId || !periodComplete || busy !== null}
+            disabled={!workerId || !periodComplete || busy !== null}
             onClick={() => void runExport('payments')}
           >
             {busy === 'payments' ? t('export.preparing') : t('export.downloadPayments')}

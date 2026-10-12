@@ -50,7 +50,7 @@ vi.mock('./workerApi', () => ({
   },
 }));
 
-const { submitJob, applyJobFilters } = await import('./jobs');
+const { submitJob, applyJobFilters, shareFor } = await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
 const blob = () => new Blob(['x'], { type: 'image/jpeg' });
@@ -92,6 +92,29 @@ describe('submitJob — retry after a failed upload', () => {
     const id = await submitJob(p);
     expect(id).toBe('job-1');
     expect(insertedJobs).toHaveLength(1);
+  });
+});
+
+describe('submitJob — crew', () => {
+  it('writes the co-workers in the same insert as the job', async () => {
+    await submitJob({ ...payload(), coworkerIds: ['w-2', 'w-3'] });
+    expect(insertedJobs[0]).toMatchObject({ coworker_ids: ['w-2', 'w-3'] });
+  });
+
+  /* Payloads queued offline before the crew existed have no coworkerIds. */
+  it('lands an old queued payload with an empty crew', async () => {
+    await submitJob(payload());
+    expect(insertedJobs[0]).toMatchObject({ coworker_ids: [] });
+  });
+});
+
+describe('shareFor', () => {
+  const job = { worker_id: 'dana', submitter_share: 33.34, coworker_share: 33.33 };
+  it('gives the submitter their share, leftover cent included', () => {
+    expect(shareFor(job, 'dana')).toBe(33.34);
+  });
+  it('gives a co-worker the even share', () => {
+    expect(shareFor(job, 'avi')).toBe(33.33);
   });
 });
 
@@ -267,7 +290,7 @@ describe('applyJobFilters', () => {
     });
     expect(q.calls).toEqual([
       ['eq', 'site_id', 'site-1'],
-      ['eq', 'worker_id', 'worker-2'],
+      ['or', 'worker_id.eq.worker-2,coworker_ids.cs.{worker-2}'],
       ['in', 'service_id', 'svc-7'],
       ['or', 'plate.ilike.%12345%,vin.ilike.%12345%,billing_code.ilike.%12345%'],
     ]);
@@ -279,6 +302,14 @@ describe('applyJobFilters', () => {
   it('searches only the columns the caller names', () => {
     const q = applyJobFilters(recorder(), { search: '12345', searchColumns: ['plate'] });
     expect(q.calls).toEqual([['or', 'plate.ilike.%12345%']]);
+  });
+
+  /* A co-worker's own grid, a manager filtering by person and the payment
+     sheet all mean "jobs this person worked on" — submitted or not. Matching
+     only worker_id would hide every shared car from the co-worker. */
+  it('matches a person as submitter or co-worker', () => {
+    const q = applyJobFilters(recorder(), { workerId: 'w-9' });
+    expect(q.calls).toEqual([['or', 'worker_id.eq.w-9,coworker_ids.cs.{w-9}']]);
   });
 
   it('adds nothing at all when no filter is set', () => {

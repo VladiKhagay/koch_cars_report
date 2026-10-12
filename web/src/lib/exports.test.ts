@@ -145,25 +145,25 @@ describe('buildWorkerPaymentReport', () => {
 
   it('keeps the columns that show how the pay was arrived at', () => {
     const rows = build();
-    expect(rows[0]).toEqual(['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
-    expect(rows[1]).toEqual(['01/03/2026', 'Dana', 'Polish', '12-345-67', 15.5]);
+    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
+    expect(rows[1]).toEqual(['01/03/2026', '', 'Dana', 'Polish', '12-345-67', 15.5]);
   });
 
   it('counts the jobs done for each service', () => {
     const rows = build();
-    expect(summaryFor(rows, 'Wash')?.[3]).toBe(2);
-    expect(summaryFor(rows, 'Polish')?.[3]).toBe(1);
+    expect(summaryFor(rows, 'Wash')?.[4]).toBe(2);
+    expect(summaryFor(rows, 'Polish')?.[4]).toBe(1);
   });
 
   it('subtotals each service from the jobs actually listed', () => {
     const rows = build();
-    expect(summaryFor(rows, 'Wash')?.[4]).toBe(50);
-    expect(summaryFor(rows, 'Polish')?.[4]).toBe(15.5);
+    expect(summaryFor(rows, 'Wash')?.[5]).toBe(50);
+    expect(summaryFor(rows, 'Polish')?.[5]).toBe(15.5);
   });
 
   it('totals the job count and the amount owed', () => {
     const rows = build();
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 3, 65.5]);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 3, 65.5]);
   });
 
   /* The subtotals and the total are three separate sums over the same rows.
@@ -175,42 +175,47 @@ describe('buildWorkerPaymentReport', () => {
       job({ service: wash, worker_price: 0.2 }),
       job({ service: polish, worker_price: 0.1 }),
     ]);
-    expect(summaryFor(rows, 'Wash')?.[4]).toBe(0.3);
-    expect(rows[rows.length - 1][4]).toBe(0.4);
+    expect(summaryFor(rows, 'Wash')?.[5]).toBe(0.3);
+    expect(rows[rows.length - 1][5]).toBe(0.4);
   });
 
   it('counts a job exactly once, in one service bucket', () => {
     const rows = build();
-    const counts = ['Wash', 'Polish'].map((s) => Number(summaryFor(rows, s)![3]));
-    expect(counts.reduce((a, b) => a + b, 0)).toBe(rows[rows.length - 1][3]);
+    const counts = ['Wash', 'Polish'].map((s) => Number(summaryFor(rows, s)![4]));
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(rows[rows.length - 1][4]);
   });
 
   it('keeps a job with no service rather than dropping its cost', () => {
     const rows = build([job({ service: null, worker_price: 12 })]);
-    expect(summaryFor(rows, '—')).toEqual(['', '—', '', 1, 12]);
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 1, 12]);
+    expect(summaryFor(rows, '—')).toEqual(['', '—', '', '', 1, 12]);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 1, 12]);
   });
 
   it('survives a job with no VIN — the sheet does not read it at all', () => {
     const rows = build([job({ vin: null, worker_price: 20 })]);
-    expect(rows[rows.length - 1][4]).toBe(20);
+    expect(rows[rows.length - 1][5]).toBe(20);
     expect(flat(rows)).not.toContain('null');
   });
 
   it('produces a header and an empty summary when the worker did nothing', () => {
     const rows = build([]);
-    expect(rows[0]).toEqual(['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', 0, 0]);
+    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 0, 0]);
   });
 
   it('falls back to the selected worker when the job carries no worker record', () => {
     const rows = build([job({ worker: null, worker_price: 12 })]);
-    expect(rows[1][1]).toBe('Dana');
-    expect(rows[rows.length - 1][4]).toBe(12);
+    expect(rows[1][2]).toBe('Dana');
+    expect(rows[rows.length - 1][5]).toBe(12);
   });
 
   it('keeps amounts numeric so the sheet can be summed and formatted', () => {
-    expect(typeof build([job({ worker_price: 25 })])[1][4]).toBe('number');
+    expect(typeof build([job({ worker_price: 25 })])[1][5]).toBe('number');
+  });
+
+  it('names the site each job was done at', () => {
+    const rows = build([job({ site: { name: 'North yard' }, worker_price: 10 })]);
+    expect(rows[1][1]).toBe('North yard');
   });
 });
 
@@ -230,9 +235,9 @@ describe('through SheetJS', () => {
     );
     const sheet = XLSX.utils.aoa_to_sheet(rows);
 
-    // Column E is Amount; row 2 is the first data row.
-    expect(sheet.E2.t).toBe('n');
-    expect(sheet.E2.v).toBe(25);
+    // Column F is Amount; row 2 is the first data row.
+    expect(sheet.F2.t).toBe('n');
+    expect(sheet.F2.v).toBe(25);
   });
 
   it('round-trips the customer report back to the configured headers', async () => {

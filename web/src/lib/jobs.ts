@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { uploadPhoto, HttpError } from './workerApi';
 import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
-import type { PhotoKind } from './types';
+import type { Job, PhotoKind } from './types';
 
 /** The optional slots, in the order they are filled. Matches migration 0005. */
 export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
@@ -32,6 +32,11 @@ export interface NewJobPayload {
   brand: string | null;
   workerNote: string | null;
   serviceId: string;
+  /**
+   * Up to two people who worked the car too. Optional only because payloads
+   * queued before migration 0019 don't carry it — absent means "nobody else".
+   */
+  coworkerIds?: string[];
   /**
    * Optional, for the same reason the VIN photo is: a car with no plate has
    * no photo to take of it. `null` means no plate photo was taken.
@@ -109,6 +114,9 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
         vin_valid_checksum: vin ? vinChecksumValid(vin) : null,
         brand: payload.brand,
         service_id: payload.serviceId ?? payload.serviceIds?.[0] ?? null,
+        // Same insert as the job itself, so a retry can never land the car
+        // without its crew (or the crew twice).
+        coworker_ids: payload.coworkerIds ?? [],
         worker_note: payload.workerNote,
         duplicate_of_job_id: duplicateOfJobId,
       })
@@ -158,11 +166,30 @@ export async function findRecentDuplicate(siteId: string, vin: string): Promise<
   return (data as string | null) ?? null;
 }
 
+/* ------------------------------------------------------------------- crew */
+
+/** Most co-workers a submitter may add. Mirrors jobs_guard_coworkers (0019). */
+export const MAX_COWORKERS = 2;
+
+/** Everyone on the job, submitter first. */
+export function crewIds(job: Pick<Job, 'worker_id' | 'coworker_ids'>): string[] {
+  return [job.worker_id, ...(job.coworker_ids ?? [])];
+}
+
+/** What this person is owed for this job. Postgres did the split — see 0019. */
+export function shareFor(
+  job: Pick<Job, 'worker_id' | 'submitter_share' | 'coworker_share'>,
+  personId: string,
+): number {
+  return job.worker_id === personId ? job.submitter_share : job.coworker_share;
+}
+
 /* ------------------------------------------------------------ grid filters */
 
 /** What the jobs grid narrows by. Every field is optional; absent means "any". */
 export interface JobFilters {
   siteId?: string | null;
+  /** Matches jobs this person submitted OR co-worked. */
   workerId?: string;
   /** One service or several. An empty list means "any", same as absent. */
   serviceIds?: string[];
@@ -207,7 +234,9 @@ interface JobQuery<Q> {
 export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFilters): Q {
   let q = query;
   if (filters.siteId) q = q.eq('site_id', filters.siteId);
-  if (filters.workerId) q = q.eq('worker_id', filters.workerId);
+  // PostgREST ANDs separate `or` params, so this composes with the search below.
+  if (filters.workerId)
+    q = q.or(`worker_id.eq.${filters.workerId},coworker_ids.cs.{${filters.workerId}}`);
   if (filters.serviceIds?.length) q = q.in('service_id', filters.serviceIds);
 
   // Dates are local calendar days; the column is a timestamptz, so each day is

@@ -23,6 +23,7 @@ import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
 import { applyJobFilters } from '../lib/jobs';
 import { useSiteScope } from '../lib/useSiteScope';
+import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, Job, Service } from '../lib/types';
 import Icon from '../components/Icon';
 import {
@@ -88,6 +89,8 @@ interface Handlers {
   openDuplicate: (jobId: string) => void;
   siteName: (id: string) => string;
   serviceName: (job: JobRow) => string;
+  /** Submitter, then co-workers: "Dana, Avi". */
+  crewName: (job: JobRow) => string;
   locale: string;
 }
 
@@ -189,7 +192,7 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
       header: () => t('jobs.site'),
       cell: ({ getValue }) => <CellMuted>{handlers.current.siteName(getValue())}</CellMuted>,
     }),
-    helper.accessor((row) => row.worker?.name ?? '—', {
+    helper.accessor((row) => handlers.current.crewName(row), {
       id: 'worker',
       header: () => t('jobs.worker'),
       cell: ({ getValue }) => <CellMuted>{getValue()}</CellMuted>,
@@ -378,6 +381,13 @@ export default function Jobs() {
     [i18n.language],
   );
 
+  const staff = useStaff();
+  const crewName = useCallback(
+    (job: JobRow): string =>
+      [job.worker?.name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
+    [staff],
+  );
+
   const saveBillingCode = useCallback(
     async (job: JobRow, value: string) => {
       if (!appUser) return false;
@@ -439,11 +449,12 @@ export default function Jobs() {
     openDuplicate,
     siteName,
     serviceName,
+    crewName,
     locale: i18n.language,
   });
   // Refreshed every render, but the ref identity never changes — so `columns`
   // below can be built once and still call the current closures.
-  handlers.current = { saveBillingCode, openDuplicate, siteName, serviceName, locale: i18n.language };
+  handlers.current = { saveBillingCode, openDuplicate, siteName, serviceName, crewName, locale: i18n.language };
 
   const columns = useMemo(
     () => buildColumns(t, handlers, canSwitch),

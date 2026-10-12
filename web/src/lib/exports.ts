@@ -17,8 +17,14 @@ export interface ExportJob {
   vin: string | null;
   brand: string | null;
   billing_code: string | null;
+  /**
+   * On the payment sheet: the selected person's SHARE of the job, not the
+   * job's full price — the caller resolves it (shareFor) before building.
+   */
   worker_price: number;
+  /** On the customer report: everyone on the job, already joined ("Dana, Avi"). */
   worker?: { name: string } | null;
+  site?: { name: string } | null;
   service?: { name_en: string; catalog_number: string } | null;
 }
 
@@ -108,7 +114,7 @@ export function buildMyJobsSheet(rows: MyJobsRow[], headers: string[]): Cell[][]
 
 /* ------------------------------------------------------ worker payment report */
 
-export const PAYMENT_HEADERS = ['Date', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount'];
+export const PAYMENT_HEADERS = ['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount'];
 
 /** The labels the summary block at the foot of the payment sheet uses. */
 export const PAYMENT_SUMMARY_HEADERS = ['Summary', 'Work performed', 'Jobs', 'Amount'];
@@ -153,6 +159,8 @@ export function buildWorkerPaymentReport(
 
     rows.push([
       new Date(job.created_at).toLocaleDateString(locale),
+      // One sheet per person across every site they worked at (0019).
+      job.site?.name ?? '',
       job.worker?.name ?? workerName,
       job.service?.name_en ?? '',
       job.plate ?? '',
@@ -170,16 +178,16 @@ export function buildWorkerPaymentReport(
 
   rows.push([]);
   rows.push([summaryLabel]);
-  rows.push(['', serviceLabel, '', jobsLabel, amountLabel]);
+  rows.push(['', serviceLabel, '', '', jobsLabel, amountLabel]);
 
   // Alphabetical, so the same catalog produces the same sheet order every month
   // regardless of which service happened to be logged first.
   for (const name of [...perService.keys()].sort((a, b) => a.localeCompare(b, locale))) {
     const { count, cents } = perService.get(name)!;
-    rows.push(['', name, '', count, fromCents(cents)]);
+    rows.push(['', name, '', '', count, fromCents(cents)]);
   }
 
-  rows.push(['', 'Total', '', ordered.length, fromCents(totalCents)]);
+  rows.push(['', 'Total', '', '', ordered.length, fromCents(totalCents)]);
   return rows;
 }
 

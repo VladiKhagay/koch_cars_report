@@ -17,7 +17,7 @@ import { EmptyState, Group, Page, PageHeading, SectionHeading, Skeleton } from '
 interface ServiceCount {
   service_id: string;
   job_count: number;
-  /** The worker's own pay for these jobs — readable under RLS, see 0005. */
+  /** The worker's own share of the pay for these jobs, shared jobs split (0019). */
   worker_cost: number;
 }
 
@@ -48,7 +48,14 @@ export default function MyStats() {
       .eq('worker_id', appUser.id)
       .order('month')
       .then(({ data }) => {
-        setRows(data ?? []);
+        // The view is per site, and a worker who helped at another yard has a
+        // row for each site that month. Everything below reads one row a month.
+        const byMonth = new Map<string, JobMonthlyStat>();
+        for (const r of (data ?? []) as JobMonthlyStat[]) {
+          const seen = byMonth.get(r.month);
+          byMonth.set(r.month, seen ? { ...seen, job_count: seen.job_count + r.job_count } : r);
+        }
+        setRows([...byMonth.values()]);
         setLoading(false);
       });
   }, [appUser]);
