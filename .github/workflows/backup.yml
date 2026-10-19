@@ -23,8 +23,9 @@ jobs:
           set -euo pipefail
           # A missing secret used to produce an empty file and a green run.
           test -n "$DATABASE_URL" || { echo "SUPABASE_DB_URL secret is not set"; exit 1; }
-          sudo apt-get update && sudo apt-get install -y postgresql-client
-          pg_dump "$DATABASE_URL" --no-owner --no-privileges | gzip > backup.sql.gz
+          # pg_dump must be at least the server's major version (Supabase runs 17).
+          sudo apt-get update && sudo apt-get install -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump "$DATABASE_URL" --no-owner --no-privileges | gzip > backup.sql.gz
           # An empty gzip is 20 bytes; a real dump of this schema is far larger.
           test "$(stat -c %s backup.sql.gz)" -gt 2000 || { echo "backup is suspiciously small"; exit 1; }
 
