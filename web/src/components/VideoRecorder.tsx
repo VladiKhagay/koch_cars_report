@@ -165,7 +165,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
           <Icon name="video" size={28} className="shrink-0" />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-bold">{t('newJob.recordVideo')}</span>
-            <span className="block text-xs text-ink-600">{t('newJob.videoHint')}</span>
+            <span className="block text-pretty text-xs text-ink-600">{t('newJob.videoHint')}</span>
           </span>
           <Icon name="chevronRight" size={18} className="shrink-0 text-ink-500 rtl:-scale-x-100" />
         </button>

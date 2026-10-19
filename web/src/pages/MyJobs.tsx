@@ -47,6 +47,7 @@ import {
   Badge,
   Button,
   Card,
+  IconButton,
   EmptyState,
   Group,
   Page,
@@ -140,7 +141,22 @@ function buildColumns(
     helper.accessor((row) => row.plate ?? row.vin ?? '—', {
       id: 'plate',
       header: () => t('jobs.plate'),
-      cell: ({ getValue }) => <CellTitle mono>{getValue()}</CellTitle>,
+      cell: ({ row, getValue }) => (
+        <>
+          <span className="whitespace-nowrap">
+            <CellTitle mono>{getValue()}</CellTitle>
+          </span>
+          {/* The date column is hidden on a phone, so the time moves under the plate. */}
+          <span className="block text-xs text-ink-600 sm:hidden">
+            {new Date(row.original.created_at).toLocaleString(handlers.current.locale, {
+              day: '2-digit',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        </>
+      ),
     }),
     helper.accessor((row) => row.brand ?? '—', {
       id: 'brand',
@@ -195,9 +211,20 @@ function buildColumns(
         handlers.current.isMine(row.original) &&
         minutesLeft(row.original.locked_at) > 0 &&
         handlers.current.editingId !== row.original.id ? (
-          <Button variant="secondary" icon="pencil" onClick={() => handlers.current.startEdit(row.original)}>
-            {t('newJob.edit')}
-          </Button>
+          <>
+            <IconButton
+              variant="secondary"
+              icon="pencil"
+              label={t('newJob.edit')}
+              className="sm:hidden"
+              onClick={() => handlers.current.startEdit(row.original)}
+            />
+            <span className="hidden sm:inline-flex">
+              <Button variant="secondary" icon="pencil" onClick={() => handlers.current.startEdit(row.original)}>
+                {t('newJob.edit')}
+              </Button>
+            </span>
+          </>
         ) : null,
     }),
   ]);
@@ -207,7 +234,7 @@ function buildColumns(
  * The one column a phone drops. Date, plate, work and status are what the
  * worker came for; the brand is the one they already know by looking at the car.
  */
-const HIDE_BELOW: Record<string, 'sm' | 'md' | undefined> = { brand: 'md' };
+const HIDE_BELOW: Record<string, 'sm' | 'md' | undefined> = { brand: 'md', created_at: 'sm', status: 'sm' };
 const SORTABLE: Record<string, SortKey | undefined> = {
   created_at: 'created_at',
   plate: 'plate',

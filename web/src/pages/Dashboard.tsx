@@ -9,7 +9,7 @@ import { staffNames, useStaff } from '../lib/useStaff';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { Job } from '../lib/types';
 import Icon from '../components/Icon';
-import BillingInput from '../components/BillingInput';
+import JobCard from '../components/JobCard';
 import {
   Badge,
   EmptyState,
@@ -132,15 +132,15 @@ export default function Dashboard() {
           <IconButton icon="chevronLeft" label={t('dashboard.prevDay')} onClick={() => setDay(shiftDay(day, -1))} />
           <div className="min-w-0 text-center">
             <p className="truncate text-sm font-semibold text-ink-900">
-              {isToday
-                ? t('dashboard.today')
-                : new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  })}
+              {new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              })}
             </p>
-            {!isToday && (
+            {isToday ? (
+              <p className="text-xs font-medium text-ink-600">{t('dashboard.today')}</p>
+            ) : (
               <button
                 type="button"
                 onClick={() => setDay(todayIso())}
@@ -224,49 +224,15 @@ export default function Dashboard() {
         )}
         <div className="space-y-2">
           {filtered.map((job) => (
-            <div
+            <JobCard
               key={job.id}
-              className="rounded-xl border border-line bg-surface shadow-card transition-colors duration-150 hover:border-line-strong"
-            >
-              <Link
-                to={`/jobs/${job.id}`}
-                className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl p-4 active:bg-ink-50"
-              >
-                <div className="min-w-0">
-                  <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
-                    {job.plate ?? job.vin ?? '—'}
-                    <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
-                  </p>
-                  {/* When there's no plate, the VIN already stands in for it above —
-                      showing it again here would just repeat the line. */}
-                  {job.plate && <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>}
-                  <p className="truncate text-xs text-ink-600">
-                    {[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} ·{' '}
-                    {new Date(job.created_at).toLocaleTimeString(i18n.language)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  {job.duplicate_of_job_id && (
-                    <Badge tone="warn" icon="alertTriangle">
-                      {t('dashboard.duplicateFlag')}
-                    </Badge>
-                  )}
-                  <Icon name="chevronRight" size={18} className="text-ink-500 rtl:-scale-x-100" />
-                </div>
-              </Link>
-              {/* The manager's main job on this screen is filling this in, so it
-                  is a field on the card rather than a detail page away. */}
-              {(!job.billing_code || justSaved.has(job.id)) && (
-                <div className="flex items-center gap-3 border-t border-line px-4 py-2">
-                  <span className="text-xs font-medium text-ink-600">{t('jobs.billingCode')}</span>
-                  <BillingInput
-                    committed={job.billing_code ?? ''}
-                    resetKey={job.id}
-                    onSave={(value) => saveBillingCode(job, value)}
-                  />
-                </div>
-              )}
-            </div>
+              job={job}
+              meta={`${[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} · ${new Date(
+                job.created_at,
+              ).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}`}
+              showBilling={!job.billing_code || justSaved.has(job.id)}
+              onSaveBilling={(value) => saveBillingCode(job, value)}
+            />
           ))}
         </div>
       </Group>

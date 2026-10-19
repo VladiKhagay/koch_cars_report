@@ -21,6 +21,7 @@ export default function BillingInput({
   committed,
   resetKey,
   onSave,
+  fill,
   className = '',
 }: {
   /** The value currently stored. */
@@ -29,6 +30,8 @@ export default function BillingInput({
   resetKey: string;
   /** Resolves true when the save went through. */
   onSave: (value: string) => Promise<boolean>;
+  /** Stretch to the row (cards) instead of the fixed grid-cell width. */
+  fill?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -50,7 +53,7 @@ export default function BillingInput({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className={`flex items-center gap-2 ${fill ? 'min-w-0 flex-1' : ''}`}>
       <input
         value={value}
         aria-label={t('jobs.billingCode')}
@@ -74,7 +77,7 @@ export default function BillingInput({
             e.currentTarget.blur();
           }
         }}
-        className={`${fieldClass} h-10 w-32 px-2 font-mono text-sm ${
+        className={`${fieldClass} h-10 px-2 font-mono text-sm ${fill ? 'min-w-0 flex-1' : 'w-32'} ${
           state === 'error' ? 'border-danger-600 bg-danger-50' : ''
         } ${className}`}
       />

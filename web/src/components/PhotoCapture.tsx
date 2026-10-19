@@ -150,30 +150,32 @@ export default function PhotoCapture({
            inside a tappable tile would put controls inside a control. The
            camera keeps the visual weight — it is the path for almost every
            car, and the gallery exists for the one photographed earlier. */
-        <div
-          className={`${shell} justify-between gap-1 border-dashed border-line-strong bg-surface p-1 text-ink-900`}
-        >
+        <div className={`${shell.replace('min-h-44', 'min-h-36')} relative border-dashed border-line-strong bg-surface p-1 text-ink-900`}>
           {/* The tile itself is the camera button: one big target, no second
-              "Take photo" button to aim for. Gallery stays a small sibling —
-              it can't nest inside a button. */}
+              "Take photo" button to aim for. Content starts at the top, not the
+              middle, so two tiles side by side line up even when one label
+              wraps to two lines and the other doesn't. */}
           <button
             type="button"
             onClick={openCamera}
-            className="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg p-2 active:bg-ink-50"
+            className="flex w-full flex-1 flex-col items-center justify-start gap-2 rounded-lg px-2 pb-2 pt-5 active:bg-ink-50"
           >
             <Icon name="camera" size={32} />
-            <span className="text-center text-sm font-semibold">
+            <span className="text-balance text-center text-sm font-semibold">
               {label}
-              {optional && <span className="ms-1.5 font-medium text-ink-500">{t('common.optional')}</span>}
+              {optional && <span className="block text-xs font-medium text-ink-500">{t('common.optional')}</span>}
             </span>
           </button>
+          {/* Gallery is the rare path, so it is a corner icon rather than a
+              second line of text; it can't nest inside the camera button. */}
           <button
             type="button"
             onClick={openGallery}
-            className={`${textAction} justify-center text-ink-700`}
+            aria-label={t('newJob.uploadFromDevice')}
+            title={t('newJob.uploadFromDevice')}
+            className="absolute end-0 top-0 inline-flex size-tap items-center justify-center rounded-lg text-ink-600 active:bg-ink-100"
           >
-            <Icon name="upload" size={16} />
-            {t('newJob.uploadFromDevice')}
+            <Icon name="upload" size={18} />
           </button>
         </div>
       )}

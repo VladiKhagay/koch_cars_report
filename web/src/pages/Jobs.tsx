@@ -26,6 +26,7 @@ import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, Job, Service } from '../lib/types';
 import BillingInput from '../components/BillingInput';
+import JobCard from '../components/JobCard';
 import {
   CellMuted,
   CellTitle,
@@ -49,6 +50,7 @@ import {
   SearchField,
   Select,
   Skeleton,
+  SkeletonList,
   fieldClass,
 } from '../components/ui';
 
@@ -133,7 +135,11 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
     helper.accessor('site_id', {
       id: 'site',
       header: () => t('jobs.site'),
-      cell: ({ getValue }) => <CellMuted>{handlers.current.siteName(getValue())}</CellMuted>,
+      cell: ({ getValue }) => (
+        <span className="whitespace-nowrap">
+          <CellMuted>{handlers.current.siteName(getValue())}</CellMuted>
+        </span>
+      ),
     }),
     helper.accessor((row) => handlers.current.crewName(row), {
       id: 'worker',
@@ -146,7 +152,7 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
       // The plate is the handle on the record, so it is also the way into it.
       // A job may have no plate at all (see the vin column's own note).
       cell: ({ row, getValue }) => (
-        <Link to={`/jobs/${row.original.id}`} className="underline-offset-2 hover:underline">
+        <Link to={`/jobs/${row.original.id}`} className="whitespace-nowrap underline-offset-2 hover:underline">
           <CellTitle mono>{getValue() ?? '—'}</CellTitle>
         </Link>
       ),
@@ -428,13 +434,50 @@ export default function Jobs() {
 
   const table = useTable({ features, columns, data: rows });
 
+  /** The "is this a duplicate?" panel — shared by the table row and the phone card. */
+  const duplicatePanel = (job: JobRow) => (
+    <>
+      {original === null ? (
+        <Skeleton className="h-24 w-full" />
+      ) : original === 'missing' ? (
+        // Still offer the delete: the flag is on this row, and the
+        // manager can see the row it flags even if we can't.
+        <ConfirmPanel
+          icon="trash"
+          question={t('jobs.duplicateUnknown')}
+          confirmLabel={t('jobs.deleteCopy')}
+          onConfirm={() => void deleteCopy(job)}
+          onCancel={() => setDupeFor(null)}
+        />
+      ) : (
+        <ConfirmPanel
+          icon="trash"
+          question={t('jobs.duplicateQuestion', {
+            plate: original.plate ?? original.vin ?? '—',
+            date: new Date(original.created_at).toLocaleString(i18n.language, {
+              day: '2-digit',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            worker: original.worker?.name ?? '—',
+            service: serviceName(original),
+          })}
+          confirmLabel={t('jobs.deleteCopy')}
+          onConfirm={() => void deleteCopy(job)}
+          onCancel={() => setDupeFor(null)}
+        />
+      )}
+    </>
+  );
+
   const columnCount = columns.length;
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
   lastPageRef.current = lastPage;
   const firstShown = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const lastShown = Math.min(total, page * PAGE_SIZE + rows.length);
   const filtered = Boolean(
-    search || missingBilling || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter),
+    search || missingBilling || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter !== null && siteFilter !== siteId),
   );
 
   return (
@@ -538,6 +581,7 @@ export default function Jobs() {
             </div>
           }
         >
+          <div className="hidden md:block">
           <Table minWidth={68}>
             <THead>
               {table.getHeaderGroups().map((group) => (
@@ -577,45 +621,39 @@ export default function Jobs() {
                 </Tr>
 
                 {dupeFor === row.original.id && (
-                  <TrExpanded colSpan={columnCount}>
-                    {original === null ? (
-                      <Skeleton className="h-24 w-full" />
-                    ) : original === 'missing' ? (
-                      // Still offer the delete: the flag is on this row, and the
-                      // manager can see the row it flags even if we can't.
-                      <ConfirmPanel
-                        icon="trash"
-                        question={t('jobs.duplicateUnknown')}
-                        confirmLabel={t('jobs.deleteCopy')}
-                        onConfirm={() => void deleteCopy(row.original)}
-                        onCancel={() => setDupeFor(null)}
-                      />
-                    ) : (
-                      <ConfirmPanel
-                        icon="trash"
-                        question={t('jobs.duplicateQuestion', {
-                          plate: original.plate ?? original.vin ?? '—',
-                          date: new Date(original.created_at).toLocaleString(i18n.language, {
-                            day: '2-digit',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          }),
-                          worker: original.worker?.name ?? '—',
-                          service: serviceName(original),
-                        })}
-                        confirmLabel={t('jobs.deleteCopy')}
-                        onConfirm={() => void deleteCopy(row.original)}
-                        onCancel={() => setDupeFor(null)}
-                      />
-                    )}
-                  </TrExpanded>
+                  <TrExpanded colSpan={columnCount}>{duplicatePanel(row.original)}</TrExpanded>
                 )}
                 </Fragment>
               ))}
             </TBody>
           </Table>
+          </div>
         </TableCard>
+
+        {/* Phone: the same rows as cards, so the plate, crew and reservation field
+            are all on screen — the table pushed the field past the edge. */}
+        <div className="space-y-2 md:hidden">
+          {loading && rows.length === 0 && <SkeletonList rows={4} />}
+          {rows.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              meta={`${crewName(job)} · ${new Date(job.created_at).toLocaleString(i18n.language, {
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })} · ${serviceName(job)}`}
+              showBilling
+              onSaveBilling={(value) => saveBillingCode(job, value)}
+              onDuplicate={() => openDuplicate(job.id)}
+            >
+              {dupeFor === job.id && (
+                <div className="mt-2 rounded-xl bg-sunken p-4">{duplicatePanel(job)}</div>
+              )}
+            </JobCard>
+          ))}
+        </div>
 
         {failed && (
           <EmptyState icon="alertCircle" title={t('common.error')} action={<Button icon="sync" onClick={() => void load()}>{t('common.retry')}</Button>} />

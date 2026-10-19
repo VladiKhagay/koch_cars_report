@@ -212,7 +212,7 @@
     "coworker": "Co-worker"
   },
   "dashboard": {
-    "title": "Today",
+    "title": "Daily jobs",
     "today": "Today",
     "site": "Site",
     "flags": "Flags",
@@ -236,7 +236,7 @@
     "backToToday": "Back to today"
   },
   "jobs": {
-    "title": "Jobs",
+    "title": "All jobs",
     "onlyMissingBilling": "Missing reservation number",
     "lead": "Every job, newest first. Fill in reservation numbers here.",
     "search": "Search plate, VIN, or reservation number",
