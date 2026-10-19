@@ -210,7 +210,7 @@ export default function Export() {
     const toIso = new Date(`${to}T23:59:59.999`).toISOString();
 
     let query = supabase
-      .from('jobs')
+      .from('jobs_manager')
       .select(JOB_FIELDS)
       .is('deleted_at', null)
       .gte('created_at', fromIso)

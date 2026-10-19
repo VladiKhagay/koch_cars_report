@@ -21,7 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
-import { applyJobFilters } from '../lib/jobs';
+import { applyJobFilters, saveBilling } from '../lib/jobs';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, Job, Service } from '../lib/types';
@@ -269,7 +269,7 @@ export default function Jobs() {
 
     const q = applyJobFilters(
       supabase
-        .from('jobs')
+        .from('jobs_manager')
         .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)', {
           count: 'exact',
         })
@@ -357,7 +357,7 @@ export default function Jobs() {
     async (job: JobRow, value: string) => {
       if (!appUser) return false;
       const billing_code = value || null;
-      const { error } = await supabase.from('jobs').update({ billing_code }).eq('id', job.id);
+      const { error } = await saveBilling(job.id, { billing_code });
       if (error) return false;
       await recordAudit(job.id, appUser.id, 'update', { billing_code });
       // Patch in place instead of refetching: a reload would move the row out
@@ -386,7 +386,7 @@ export default function Jobs() {
     if (!copy?.duplicate_of_job_id) return;
     let cancelled = false;
     void supabase
-      .from('jobs')
+      .from('jobs_manager')
       .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)')
       .eq('id', copy.duplicate_of_job_id)
       .maybeSingle()

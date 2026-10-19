@@ -4,6 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
+import { saveBilling } from '../lib/jobs';
 import { recordAudit } from '../lib/audit';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
@@ -60,7 +61,7 @@ export default function JobDetail() {
 
   async function load(jobId: string) {
     setLoading(true);
-    const { data: j } = await supabase.from('jobs').select('*').eq('id', jobId).single();
+    const { data: j } = await supabase.from('jobs_manager').select('*').eq('id', jobId).single();
     if (!j) {
       setLoading(false);
       return;
@@ -103,21 +104,23 @@ export default function JobDetail() {
   async function handleSave() {
     if (!job || !appUser) return;
     setSaving(true);
-    const changes = {
-      billing_code: billingCode || null,
-      manager_note: managerNote || null,
+    const billing = { billing_code: billingCode || null, manager_note: managerNote || null };
+    const jobChanges = {
       worker_id: selectedWorkerId || job.worker_id,
       // The new submitter can't also be their own co-worker — the trigger would
       // drop them anyway; dropping them here keeps the screen honest.
       coworker_ids: coworkerIds.filter((id) => id !== (selectedWorkerId || job.worker_id)),
       site_id: siteId || job.site_id,
     };
+    const changes = { ...billing, ...jobChanges };
     /* A manager moving a job to another site can't write its audit row
        afterwards — audit_log_insert is scoped to their own site, and the job
        has just left it. So a move is audited first, while they still can. */
     const moving = changes.site_id !== job.site_id;
     if (moving) await recordAudit(job.id, appUser.id, 'update', changes);
-    const { error } = await supabase.from('jobs').update(changes).eq('id', job.id);
+    // Billing first: a manager who moves the job away loses access to its billing row.
+    const { error: billingError } = await saveBilling(job.id, billing);
+    const { error } = billingError ? { error: billingError } : await supabase.from('jobs').update(jobChanges).eq('id', job.id);
     setSaving(false);
     if (error) {
       setSaveError(true);

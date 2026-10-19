@@ -21,15 +21,24 @@ export interface QueuedJob extends NewJobPayload {
   needsAttention?: boolean;
 }
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+
 function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  dbPromise ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
     req.onupgradeneeded = () => {
       req.result.createObjectStore(STORE, { keyPath: 'queuedId' });
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      req.result.onclose = () => (dbPromise = null);
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      dbPromise = null;
+      reject(req.error);
+    };
   });
+  return dbPromise;
 }
 
 async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -104,8 +113,22 @@ export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAtte
   await refreshQueue();
 }
 
+/**
+ * The signed-in user's app id. The queue lives in the browser, not the account,
+ * so on a shared phone it can hold another person's jobs. Those are neither
+ * shown nor submitted as someone else; they wait, intact, for their owner.
+ */
+let owner: string | null = null;
+
+export function setQueueOwner(id: string | null): void {
+  if (owner === id) return;
+  owner = id;
+  void flushQueue().then(refreshQueue);
+}
+
 export async function listQueued(): Promise<QueuedJob[]> {
-  return withStore('readonly', (store) => store.getAll());
+  const all = await withStore('readonly', (store) => store.getAll());
+  return all.filter((job) => job.workerId === owner);
 }
 
 async function removeQueued(queuedId: string): Promise<void> {

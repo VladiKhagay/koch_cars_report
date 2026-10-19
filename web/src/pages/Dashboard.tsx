@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { saveBilling } from '../lib/jobs';
 import { useAuth } from '../context/AuthContext';
 import { recordAudit } from '../lib/audit';
 import { staffNames, useStaff } from '../lib/useStaff';
@@ -52,7 +53,7 @@ export default function Dashboard() {
   async function saveBillingCode(job: JobRow, value: string) {
     if (!appUser) return false;
     const billing_code = value || null;
-    const { error } = await supabase.from('jobs').update({ billing_code }).eq('id', job.id);
+    const { error } = await saveBilling(job.id, { billing_code });
     if (error) return false;
     await recordAudit(job.id, appUser.id, 'update', { billing_code });
     setJustSaved((prev) => new Set(prev).add(job.id));
@@ -72,7 +73,7 @@ export default function Dashboard() {
   async function load(site: string, isoDay: string) {
     setLoading(true);
     const { data } = await supabase
-      .from('jobs')
+      .from('jobs_manager')
       .select('*, worker:users!jobs_worker_id_fkey(name)')
       .eq('site_id', site)
       .is('deleted_at', null)

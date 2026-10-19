@@ -149,17 +149,26 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
 
   const keys = await Promise.all(uploads.map((u) => uploadPhoto(jobId, u.kind, u.blob)));
 
-  /* ponytail: a retry that got past the uploads and failed on this insert will
-     write the photo rows twice. The R2 key is derived from job id + kind, so
-     the objects themselves are overwritten rather than duplicated, and the
-     viewer fetches by kind — a duplicate row is invisible. Add a unique index
-     on (job_id, kind) and upsert here if that ever stops being true. */
+  // Unique on (job_id, kind) since 0022: a retry that already wrote these rows is a no-op.
   const { error: photoError } = await supabase
     .from('photos')
-    .insert(uploads.map((u, i) => ({ job_id: jobId, kind: u.kind, r2_key: keys[i] })));
+    .upsert(
+      uploads.map((u, i) => ({ job_id: jobId, kind: u.kind, r2_key: keys[i] })),
+      { onConflict: 'job_id,kind', ignoreDuplicates: true },
+    );
   if (photoError) throw photoError;
 
   return jobId;
+}
+
+/**
+ * Writes a job's billing code / manager note. They live in `job_billing`
+ * (migration 0023), which only the site's managers and admins can read or
+ * write — a worker's own job row never carries them. Only the fields passed
+ * are touched.
+ */
+export function saveBilling(jobId: string, fields: { billing_code?: string | null; manager_note?: string | null }) {
+  return supabase.from('job_billing').upsert({ job_id: jobId, ...fields }, { onConflict: 'job_id' });
 }
 
 /**
@@ -217,6 +226,9 @@ export interface JobFilters {
   searchColumns?: string[];
 }
 
+/** workerId goes into a PostgREST `or` string, so only a real UUID may. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const DEFAULT_SEARCH_COLUMNS = ['plate', 'vin', 'billing_code'];
 
 /**
@@ -244,7 +256,7 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
   let q = query;
   if (filters.siteId) q = q.eq('site_id', filters.siteId);
   // PostgREST ANDs separate `or` params, so this composes with the search below.
-  if (filters.workerId)
+  if (filters.workerId && UUID.test(filters.workerId))
     q = q.or(`worker_id.eq.${filters.workerId},coworker_ids.cs.{${filters.workerId}}`);
   if (filters.serviceIds?.length) q = q.in('service_id', filters.serviceIds);
 

@@ -69,6 +69,7 @@ export interface Job {
   submitter_share: number;
   coworker_share: number;
   worker_note: string | null;
+  /** Both come from `jobs_manager` and are null for anyone but the site's managers and admins (0023). */
   manager_note: string | null;
   billing_code: string | null;
   locked_at: string;

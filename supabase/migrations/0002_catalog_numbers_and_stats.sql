@@ -7,9 +7,10 @@
 alter table services add column catalog_number text;
 
 -- Backfill existing seed rows so the NOT NULL/UNIQUE constraints below can land.
-update services
-set catalog_number = 'SVC-' || lpad(row_number() over (order by sort_order)::text, 3, '0')
-where catalog_number is null;
+update services s
+set catalog_number = 'SVC-' || lpad(n.rn::text, 3, '0')
+from (select id, row_number() over (order by sort_order) as rn from services) n
+where s.id = n.id and s.catalog_number is null;
 
 alter table services alter column catalog_number set not null;
 alter table services add constraint services_catalog_number_key unique (catalog_number);

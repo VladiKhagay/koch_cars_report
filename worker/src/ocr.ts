@@ -249,6 +249,8 @@ interface OcrRequestBody {
 // this cap only exists to stop abuse of the endpoint.
 const MAX_IMAGE_BASE64_LENGTH = 6 * 1024 * 1024;
 
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
 /** Unwraps the `{ result: {...} }` envelope the AI binding actually returns. */
 function unwrap<T>(result: unknown): T {
   const r = result as { result?: T } & T;
@@ -279,7 +281,7 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Image too large' }, 413);
   }
 
-  const mimeType = body.mimeType ?? 'image/jpeg';
+  const mimeType = ALLOWED_MIME_TYPES.includes(body.mimeType ?? '') ? body.mimeType : 'image/jpeg';
   const dataUri = `data:${mimeType};base64,${body.image}`;
 
   if (body.task === 'detect') {
@@ -389,7 +391,7 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
     'OCR read',
     body.kind,
     body.image.length,
-    outcome.text ? `ok ${outcome.text}` : JSON.stringify(raw.slice(0, 120)),
+    outcome.text ? `ok len=${outcome.text.length}` : `unreadable len=${raw.length}`,
   );
   return c.json(outcome);
 }

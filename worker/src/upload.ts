@@ -146,6 +146,13 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const limited = await rateLimited(c, c.env.UPLOAD_LIMITER);
   if (limited) return limited;
 
+  // Refuse an oversized body on its declared length, before buffering any of it.
+  const isVideo = kind === 'video';
+  const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES;
+  if (Number(c.req.header('Content-Length')) > maxBytes) {
+    return c.json({ error: isVideo ? 'Video too large (max 25MB)' : 'Photo too large (max 8MB)' }, 413);
+  }
+
   // A malformed jobId makes PostgREST answer 400, which lands in the same
   // branch as an explicit `false` — the check fails closed either way.
   const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_write_job`, {
@@ -174,8 +181,7 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   // actually send". Mirrored client-side in PhotoCapture.tsx so the fallback
   // fails on the phone rather than after pushing the bytes over a yard
   // connection — a 413 there would queue for retry and never succeed.
-  const isVideo = kind === 'video';
-  if (bytes.byteLength > (isVideo ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES)) {
+  if (bytes.byteLength > maxBytes) {
     return c.json({ error: isVideo ? 'Video too large (max 25MB)' : 'Photo too large (max 8MB)' }, 413);
   }
 

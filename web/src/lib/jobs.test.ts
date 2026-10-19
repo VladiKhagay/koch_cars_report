@@ -32,6 +32,10 @@ vi.mock('./supabase', () => {
           insertedPhotos.push(...(rows as unknown[]));
           return Promise.resolve({ error: null });
         },
+        upsert: (rows: unknown) => {
+          insertedPhotos.push(...(rows as unknown[]));
+          return Promise.resolve({ error: null });
+        },
       }),
       /* Always claims a duplicate, so "no VIN means no duplicate" is a real
          assertion rather than one that passes because the stub returns null. */
@@ -289,13 +293,13 @@ describe('applyJobFilters', () => {
   it('combines the service filter with the others', () => {
     const q = applyJobFilters(recorder(), {
       siteId: 'site-1',
-      workerId: 'worker-2',
+      workerId: 'aaaaaaaa-bbbb-cccc-dddd-000000000002',
       serviceIds: ['svc-7'],
       search: '12345',
     });
     expect(q.calls).toEqual([
       ['eq', 'site_id', 'site-1'],
-      ['or', 'worker_id.eq.worker-2,coworker_ids.cs.{worker-2}'],
+      ['or', 'worker_id.eq.aaaaaaaa-bbbb-cccc-dddd-000000000002,coworker_ids.cs.{aaaaaaaa-bbbb-cccc-dddd-000000000002}'],
       ['in', 'service_id', 'svc-7'],
       ['or', 'plate.ilike.%12345%,vin.ilike.%12345%,billing_code.ilike.%12345%'],
     ]);
@@ -313,8 +317,13 @@ describe('applyJobFilters', () => {
      sheet all mean "jobs this person worked on" — submitted or not. Matching
      only worker_id would hide every shared car from the co-worker. */
   it('matches a person as submitter or co-worker', () => {
-    const q = applyJobFilters(recorder(), { workerId: 'w-9' });
-    expect(q.calls).toEqual([['or', 'worker_id.eq.w-9,coworker_ids.cs.{w-9}']]);
+    const id = '11111111-2222-3333-4444-555555555555';
+    const q = applyJobFilters(recorder(), { workerId: id });
+    expect(q.calls).toEqual([['or', `worker_id.eq.${id},coworker_ids.cs.{${id}}`]]);
+  });
+
+  it('ignores a worker id that is not a UUID rather than putting it in the filter string', () => {
+    expect(applyJobFilters(recorder(), { workerId: 'x),deleted_at.is.null' }).calls).toEqual([]);
   });
 
   it('adds nothing at all when no filter is set', () => {

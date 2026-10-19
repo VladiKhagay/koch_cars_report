@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { AppUser } from '../lib/types';
+import { setQueueOwner } from '../lib/offlineQueue';
 
 interface AuthState {
   session: Session | null;
@@ -23,27 +24,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAppUser(data ?? null);
   }
 
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session) await loadAppUser(data.session.user.id);
-      setLoading(false);
-    });
+  useEffect(() => setQueueOwner(appUser?.id ?? null), [appUser?.id]);
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      /* session and appUser must land together, same as the initial load
-         below — otherwise ProtectedRoute sees a signed-in session with no
-         appUser yet and bounces to /login while Login, seeing the same
-         session, bounces back to /, and the page goes blank until a manual
-         refresh re-runs the initial load (which does fetch both first). */
-      setLoading(true);
-      setSession(newSession);
-      if (newSession) {
-        await loadAppUser(newSession.user.id);
-      } else {
-        setAppUser(null);
+  useEffect(() => {
+    let currentUserId: string | null = null;
+
+    // session and appUser must land together, or ProtectedRoute and Login
+    // bounce a signed-in user between each other.
+    async function apply(newSession: Session | null) {
+      if (newSession?.user.id === currentUserId) {
+        setSession(newSession); // token refresh / tab refocus: same user, keep the UI mounted
+        return;
       }
+      setLoading(true);
+      currentUserId = newSession?.user.id ?? null;
+      setSession(newSession);
+      if (newSession) await loadAppUser(newSession.user.id);
+      else setAppUser(null);
       setLoading(false);
+    }
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => apply(data.session))
+      .catch(() => setLoading(false));
+
+    // Deferred: awaiting a Supabase call inside this callback can deadlock the client.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setTimeout(() => void apply(newSession), 0);
     });
 
     return () => sub.subscription.unsubscribe();
