@@ -8,6 +8,14 @@
 
 begin;
 
+-- Refuse to drop the only copy of the data: 0023 must have created job_billing.
+do $$
+begin
+  if to_regclass('public.job_billing') is null then
+    raise exception 'run 0023 first: job_billing does not exist, dropping the columns would lose billing data';
+  end if;
+end $$;
+
 drop trigger if exists jobs_mirror_billing on jobs;
 drop function if exists jobs_mirror_billing();
 
