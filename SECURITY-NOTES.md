@@ -75,10 +75,12 @@ and an applied rule are two different things.
   npx wrangler r2 bucket lifecycle list car-prep-photos
   npx wrangler r2 bucket lifecycle list car-prep-backups
   ```
-  Confirm `expire-90d` (photos) and `expire-180d` (backups) both appear.
-  If either is missing, apply it:
+  Confirm `expire-90d` (photos), `expire-video-30d` (condition videos,
+  prefix `video/`) and `expire-180d` (backups) all appear. If any is
+  missing, apply it:
   ```
   npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-days 90 --prefix ""
+  npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-video-30d --expire-days 30 --prefix "video/"
   npx wrangler r2 bucket lifecycle add car-prep-backups --id expire-180d --expire-days 180 --prefix ""
   ```
 - [ ] **Caveat before relying on this:** confirm 90-day photo retention and

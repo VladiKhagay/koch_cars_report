@@ -155,11 +155,26 @@
     "needService": "Pick the work performed",
     "jumpTo": "Go to it",
     "typeItInHint": "Couldn't read it — check and type it in",
+    "moreDetails": "More details",
+    "coworkersCount_one": "{{count}} co-worker",
+    "coworkersCount_other": "{{count}} co-workers",
     "extraPhotos": "Extra photos",
     "extraPhotosHint": "Damage, interior, anything worth a record. Up to {{count}}.",
     "extraPhoto": "Extra photo {{n}}",
     "addExtraPhoto": "Add a photo",
-    "site": "Site"
+    "site": "Site",
+    "videoSection": "Condition video",
+    "video": "Condition video",
+    "videoHint": "Walk around the finished car — up to 1 minute.",
+    "recordVideo": "Record video",
+    "recording": "Recording video",
+    "stopRecording": "Stop",
+    "videoRecorded": "Video recorded",
+    "recordAgain": "Record again",
+    "removeVideo": "Remove",
+    "video_unsupported": "This browser can't record video. You can still submit the job.",
+    "video_denied": "Camera access was refused. Allow the camera for this app in your phone settings, then try again.",
+    "video_tooLarge": "The video came out too large to upload. Record a shorter one."
   },
   "myJobs": {
     "title": "My Jobs",
@@ -421,5 +436,16 @@
     "remove": "Remove {{name}}",
     "noMatches": "Nobody matches that name.",
     "max": "That’s the most — {{max}} co-workers per job. Pay is split evenly."
+  },
+  "video": {
+    "play": "Play video",
+    "download": "Download video",
+    "loading": "Loading video…",
+    "missingTitle": "No video saved",
+    "missingBody": "Either it was never uploaded, or the job is over 30 days old and the video has been removed.",
+    "deniedTitle": "Can't open this video",
+    "deniedBody": "Your session may have expired. Sign out and back in, then try again.",
+    "failedTitle": "Couldn't load the video",
+    "failedBody": "Check your connection — the video itself is fine."
   }
 }

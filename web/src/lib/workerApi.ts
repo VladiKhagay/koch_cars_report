@@ -156,7 +156,8 @@ export type PhotoFailure =
   /** Network, or the Worker itself failed. Worth retrying. */
   | 'failed';
 
-export type PhotoResult = { url: string } | { failure: PhotoFailure };
+/** `type` is what the Worker sniffed at upload — the video download names its extension from it. */
+export type PhotoResult = { url: string; type: string } | { failure: PhotoFailure };
 
 /** Fetches a private R2 photo through the Worker and returns a local object URL. */
 export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<PhotoResult> {
@@ -172,7 +173,10 @@ export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<Pho
 
   try {
     const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, { headers: { Authorization: authorization } });
-    if (res.ok) return { url: URL.createObjectURL(await res.blob()) };
+    if (res.ok) {
+      const blob = await res.blob();
+      return { url: URL.createObjectURL(blob), type: blob.type };
+    }
     if (res.status === 404) return { failure: 'missing' };
     if (res.status === 401 || res.status === 403) return { failure: 'denied' };
     return { failure: 'failed' };
@@ -250,7 +254,8 @@ export class HttpError extends Error {
 export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob): Promise<string> {
   const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'image/jpeg', Authorization: await authHeader() },
+    // Informational only: the Worker decides the type from the bytes.
+    headers: { 'Content-Type': image.type || 'application/octet-stream', Authorization: await authHeader() },
     body: image,
   });
   if (!res.ok) throw new HttpError(res.status, `Photo upload failed (${res.status})`);

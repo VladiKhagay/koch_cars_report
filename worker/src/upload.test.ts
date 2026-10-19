@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_UPLOAD_BYTES, sniffImageType } from './upload';
+import { MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES, objectKey, sniffImageType, sniffVideoType } from './upload';
 
 /** Builds a body from leading bytes, padded so length is never what's tested. */
 function body(...head: number[]): ArrayBuffer {
@@ -53,5 +53,38 @@ describe('sniffImageType', () => {
 describe('MAX_UPLOAD_BYTES', () => {
   it('is 8MB — large enough for a phone photo, small enough to bound a retry loop', () => {
     expect(MAX_UPLOAD_BYTES).toBe(8 * 1024 * 1024);
+  });
+
+  it('allows 25MB for video — ~3x the recorder target of a 60s clip', () => {
+    expect(MAX_VIDEO_BYTES).toBe(25 * 1024 * 1024);
+  });
+});
+
+describe('sniffVideoType', () => {
+  it('accepts what phone recorders write', () => {
+    expect(sniffVideoType(body(0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('isom')))).toBe('video/mp4');
+    expect(sniffVideoType(body(0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('mp42')))).toBe('video/mp4');
+    expect(sniffVideoType(body(0, 0, 0, 0x14, ...ascii('ftyp'), ...ascii('qt  ')))).toBe('video/quicktime');
+    expect(sniffVideoType(body(0x1a, 0x45, 0xdf, 0xa3))).toBe('video/webm');
+  });
+
+  /* Each slot takes only its own kind of bytes, so a photo can't stand in for
+     the condition video and a video can't land in a photo slot. */
+  it('rejects photos, and photos reject video', () => {
+    expect(sniffVideoType(body(0xff, 0xd8, 0xff, 0xe0))).toBeNull();
+    expect(sniffVideoType(body(0, 0, 0, 0x18, ...ascii('ftyp'), ...ascii('heic')))).toBeNull();
+    expect(sniffImageType(body(0x1a, 0x45, 0xdf, 0xa3))).toBeNull();
+  });
+
+  it('rejects documents and short bodies', () => {
+    expect(sniffVideoType(body(...ascii('<!doctype html><script>')))).toBeNull();
+    expect(sniffVideoType(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]).buffer)).toBeNull();
+  });
+});
+
+describe('objectKey', () => {
+  it('puts videos under their own prefix so they can expire separately', () => {
+    expect(objectKey('job-1', 'video')).toBe('video/job-1');
+    expect(objectKey('job-1', 'plate')).toBe('job-1/plate.jpg');
   });
 });

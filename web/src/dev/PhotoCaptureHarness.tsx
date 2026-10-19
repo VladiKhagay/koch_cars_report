@@ -11,6 +11,8 @@
 import { useState } from 'react';
 import PhotoCapture from '../components/PhotoCapture';
 import PhotoViewer from '../components/PhotoViewer';
+import VideoRecorder from '../components/VideoRecorder';
+import VideoViewer from '../components/VideoViewer';
 import { Page, PageHeading } from '../components/ui';
 
 const PIXEL =
@@ -24,6 +26,7 @@ function pngBlob(): Blob {
 export default function PhotoCaptureHarness() {
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [extras, setExtras] = useState<Blob[]>([pngBlob()]);
+  const [video, setVideo] = useState<Blob | null>(null);
 
   return (
     <Page width="list" className="space-y-5">
@@ -60,6 +63,12 @@ export default function PhotoCaptureHarness() {
         {extras.length < 3 && (
           <PhotoCapture label="Add a photo" photo={null} onCapture={(b) => setExtras((e) => [...e, b])} />
         )}
+      </div>
+
+      <PageHeading>Condition video</PageHeading>
+      <div className="grid gap-3 md:grid-cols-2">
+        <VideoRecorder video={video} onRecorded={setVideo} onRemove={() => setVideo(null)} />
+        <VideoViewer jobId="missing-job" downloadName="12345678_2026-10-14" />
       </div>
     </Page>
   );

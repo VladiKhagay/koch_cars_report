@@ -58,7 +58,7 @@ describe('fetchPhotoUrl', () => {
   it('returns an object url when the Worker serves the photo', async () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: () => 'blob:photo' });
     respondWith(200);
-    await expect(fetchPhotoUrl('job-1', 'plate')).resolves.toEqual({ url: 'blob:photo' });
+    await expect(fetchPhotoUrl('job-1', 'plate')).resolves.toEqual({ url: 'blob:photo', type: '' });
   });
 
   it('reports 404 as missing, not as a connection problem', async () => {

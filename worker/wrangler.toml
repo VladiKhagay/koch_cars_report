@@ -39,14 +39,14 @@ namespace_id = "1001"
 
 # Sized for the offline queue rather than for steady use. A phone that has been
 # out of signal can flush a large backlog at once, and each queued job uploads
-# up to 5 photos in parallel — so a 20-job backlog is a legitimate ~100-request
-# burst. Anything above this is not a yard catching up.
+# up to 5 photos and a condition video in parallel — so a 20-job backlog is a
+# legitimate ~120-request burst. Anything above this is not a yard catching up.
 [[ratelimits]]
 name = "UPLOAD_LIMITER"
 namespace_id = "1002"
 
   [ratelimits.simple]
-  limit = 120
+  limit = 150
   period = 60
 
 # R2 bucket used for job photos. Create with:
@@ -93,3 +93,6 @@ APP_URL = "https://app.koch-kcx.app"
 # R2 lifecycle rule (90-day photo expiry) is configured separately via:
 #   wrangler r2 bucket lifecycle add car-prep-photos \
 #     --id expire-90d --expire-days 90 --prefix ""
+# and the 30-day condition-video rule (migration 0020):
+#   wrangler r2 bucket lifecycle add car-prep-photos \
+#     --id expire-video-30d --expire-days 30 --prefix "video/"

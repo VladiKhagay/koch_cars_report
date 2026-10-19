@@ -51,6 +51,8 @@ export interface NewJobPayload {
   vinBlob: Blob | null;
   /** Up to three optional photos — damage, interior, anything worth a record. */
   extraBlobs?: Blob[];
+  /** Optional condition video (≤60s, recorded in-app). Missing on payloads queued before it existed. */
+  videoBlob?: Blob | null;
   /**
    * ponytail: pre-0005 payloads sat in IndexedDB with a multi-service list.
    * Read once in submitJob so a job queued on a phone before this deploy still
@@ -138,7 +140,12 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
     ...(payload.plateBlob ? [{ kind: 'plate' as PhotoKind, blob: payload.plateBlob }] : []),
     ...(payload.vinBlob ? [{ kind: 'vin' as PhotoKind, blob: payload.vinBlob }] : []),
     ...extras.map((blob, i) => ({ kind: EXTRA_KINDS[i], blob })),
+    ...(payload.videoBlob ? [{ kind: 'video' as PhotoKind, blob: payload.videoBlob }] : []),
   ];
+
+  /* ponytail: a retry re-sends every upload, the ~7.5MB video included, even
+     the ones that already landed. Fine for an occasional flaky submit; skip
+     kinds already in R2 if mobile data use on the yard phones ever comes up. */
 
   const keys = await Promise.all(uploads.map((u) => uploadPhoto(jobId, u.kind, u.blob)));
 

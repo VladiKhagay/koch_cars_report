@@ -11,11 +11,21 @@ import { rateLimited } from './rateLimit';
  * would accept `extra_9` and quietly create slots the database would then
  * reject, and any loosening beyond that reaches for the key path itself.
  */
-export const PHOTO_KINDS = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3'] as const;
+export const PHOTO_KINDS = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3', 'video'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
 
 export function isPhotoKind(value: unknown): value is PhotoKind {
   return typeof value === 'string' && (PHOTO_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * Where a slot lives in R2. Videos sit under their own `video/` prefix because
+ * R2 lifecycle rules match on prefix only: photos are keyed by job id, so with
+ * videos alongside them there would be no way to expire the two separately
+ * (30 days for video, 90 for photos — see migration 0020).
+ */
+export function objectKey(jobId: string, kind: PhotoKind): string {
+  return kind === 'video' ? `video/${jobId}` : `${jobId}/${kind}.jpg`;
 }
 
 /**
@@ -24,6 +34,14 @@ export function isPhotoKind(value: unknown): value is PhotoKind {
  * so it is written down twice on purpose rather than shared through a module.
  */
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Largest condition video /upload will store. The in-app recorder targets
+ * ~7.5MB for its 60-second cap (720p at 1 Mbps); this leaves room for phones
+ * that treat the requested bitrate as a suggestion, which Safari has. Mirrored
+ * as MAX_VIDEO_BYTES in web/src/lib/video.ts, for the same reason as above.
+ */
+export const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 
 /**
  * The image formats a photo may actually be, and how to recognise one.
@@ -78,6 +96,26 @@ export function sniffImageType(body: ArrayBuffer): string | null {
   const head = new Uint8Array(body, 0, Math.min(12, body.byteLength));
   if (head.byteLength < 12) return null;
   return IMAGE_SIGNATURES.find((s) => s.match(head))?.type ?? null;
+}
+
+/** ISO-BMFF brands a phone's video recorder writes. Disjoint from the HEIC list above. */
+const MP4_BRANDS = ['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'dash'];
+
+/**
+ * The video counterpart of sniffImageType: content type from the bytes, from a
+ * closed table, or null. Kept separate rather than merged into one table so a
+ * video can never be stored in a photo slot or the other way round — each slot
+ * accepts only its own kind of bytes.
+ */
+export function sniffVideoType(body: ArrayBuffer): string | null {
+  const head = new Uint8Array(body, 0, Math.min(12, body.byteLength));
+  if (head.byteLength < 12) return null;
+  // EBML header: WebM, which is what Chrome's MediaRecorder writes on most Androids.
+  if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return 'video/webm';
+  if (ascii(head, 4, 8) !== 'ftyp') return null;
+  const brand = ascii(head, 8, 12);
+  if (brand === 'qt  ') return 'video/quicktime';
+  return MP4_BRANDS.includes(brand) ? 'video/mp4' : null;
 }
 
 /**
@@ -136,8 +174,9 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   // actually send". Mirrored client-side in PhotoCapture.tsx so the fallback
   // fails on the phone rather than after pushing the bytes over a yard
   // connection — a 413 there would queue for retry and never succeed.
-  if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-    return c.json({ error: 'Photo too large (max 8MB)' }, 413);
+  const isVideo = kind === 'video';
+  if (bytes.byteLength > (isVideo ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES)) {
+    return c.json({ error: isVideo ? 'Video too large (max 25MB)' : 'Photo too large (max 8MB)' }, 413);
   }
 
   // Content type comes from the bytes themselves, never from the client. The
@@ -148,12 +187,19 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   // image content type. sniffImageType both rejects non-images and picks the
   // type from a closed table, so the threat stays closed while HEIC/PNG from
   // the downscale-failure path are stored as what they actually are.
-  const contentType = sniffImageType(bytes);
+  const contentType = isVideo ? sniffVideoType(bytes) : sniffImageType(bytes);
   if (!contentType) {
-    return c.json({ error: 'Body is not a supported image (JPEG, PNG, WebP or HEIC)' }, 415);
+    return c.json(
+      {
+        error: isVideo
+          ? 'Body is not a supported video (MP4, MOV or WebM)'
+          : 'Body is not a supported image (JPEG, PNG, WebP or HEIC)',
+      },
+      415,
+    );
   }
 
-  const key = `${jobId}/${kind}.jpg`;
+  const key = objectKey(jobId, kind);
   await c.env.PHOTOS.put(key, bytes, { httpMetadata: { contentType } });
 
   return c.json({ key });

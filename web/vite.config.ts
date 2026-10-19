@@ -89,6 +89,10 @@ function securityHeaders() {
         "style-src 'self' 'unsafe-inline'",
         // blob: for photo object URLs (PhotoViewer, PhotoCapture previews).
         "img-src 'self' blob: data:",
+        // blob: for the condition video (VideoViewer playback, VideoRecorder
+        // preview). Without it default-src 'self' blocks every <video>. The
+        // live camera feed is a srcObject stream, which media-src does not gate.
+        "media-src 'self' blob:",
         "font-src 'self' data:",
         `connect-src ${connect.join(' ')}`,
         "worker-src 'self'",
@@ -103,9 +107,10 @@ function securityHeaders() {
         '  X-Frame-Options: DENY',
         '  Referrer-Policy: strict-origin-when-cross-origin',
         '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
-        // The camera is reached through <input capture>, which is the OS
-        // picker rather than getUserMedia, but self is allowed so that stays
-        // true if it ever changes. Everything else is off.
+        // Photos reach the camera through <input capture> (the OS picker);
+        // the condition video uses getUserMedia, which is what camera=(self)
+        // is for. It records without audio, so the microphone stays off along
+        // with everything else.
         '  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()',
         '',
       ].join('\n');

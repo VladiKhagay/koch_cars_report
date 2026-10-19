@@ -45,6 +45,9 @@ npm install
 npx wrangler login
 npx wrangler r2 bucket create car-prep-photos
 npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-days 90 --prefix ""
+# Condition videos (video/<jobId>) expire sooner. The 90-day rule above also
+# matches them; R2 deletes on whichever matching rule fires first.
+npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-video-30d --expire-days 30 --prefix "video/"
 
 # Separate bucket for nightly DB backups (see ../.github/workflows/backup.yml) —
 # kept separate so the 90-day photo lifecycle rule never touches backups.

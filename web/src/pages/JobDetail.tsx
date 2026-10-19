@@ -9,6 +9,7 @@ import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import type { Job, PhotoKind, Service } from '../lib/types';
 import PhotoViewer from '../components/PhotoViewer';
+import VideoViewer from '../components/VideoViewer';
 import CoworkerPicker from '../components/CoworkerPicker';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
@@ -45,6 +46,8 @@ export default function JobDetail() {
   /* Only the extras that exist: probing all three slots blind would render
      three 'photo unavailable' tiles on every job that has none. */
   const [extraKinds, setExtraKinds] = useState<PhotoKind[]>([]);
+  /* Same reason: the video is optional, so most jobs have none to show. */
+  const [hasVideo, setHasVideo] = useState(false);
   const [billingCode, setBillingCode] = useState('');
   const [managerNote, setManagerNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -66,13 +69,15 @@ export default function JobDetail() {
     setBillingCode(j.billing_code ?? '');
     setManagerNote(j.manager_note ?? '');
 
-    const { data: extras } = await supabase
+    const { data: slots } = await supabase
       .from('photos')
       .select('kind')
       .eq('job_id', jobId)
-      .like('kind', 'extra%')
+      .or('kind.like.extra%,kind.eq.video')
       .order('kind');
-    setExtraKinds((extras ?? []).map((p: { kind: PhotoKind }) => p.kind));
+    const kinds = (slots ?? []).map((p: { kind: PhotoKind }) => p.kind);
+    setExtraKinds(kinds.filter((k) => k.startsWith('extra')));
+    setHasVideo(kinds.includes('video'));
 
     setSelectedWorkerId(j.worker_id);
     setCoworkerIds(j.coworker_ids ?? []);
@@ -214,6 +219,13 @@ export default function JobDetail() {
               <PhotoViewer key={kind} jobId={job.id} kind={kind} label={t('newJob.extraPhoto', { n: i + 1 })} />
             ))}
           </div>
+
+          {hasVideo && (
+            <VideoViewer
+              jobId={job.id}
+              downloadName={`${job.plate ?? job.vin ?? job.id}_${job.created_at.slice(0, 10)}`}
+            />
+          )}
 
           <Card>
             <SectionHeading icon="clipboard">{t('jobDetail.details')}</SectionHeading>

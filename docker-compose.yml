@@ -1,0 +1,58 @@
+# Local stack: this checkout's web app + Worker, against the Supabase project in
+# web/.env.local (production, as configured). Photos/videos go to wrangler's
+# LOCAL R2 simulation (worker/.wrangler/state), never the real bucket.
+#
+#   docker compose up        → http://localhost:5173
+#
+# Every job submitted here is a real row in that Supabase project — it counts
+# in exports and payroll. Delete test jobs afterwards.
+#
+# node_modules live in named volumes: the host's are macOS builds, and esbuild,
+# rollup and workerd ship native binaries per platform.
+services:
+  worker:
+    image: node:22-bookworm-slim
+    working_dir: /app/worker
+    volumes:
+      - ./worker:/app/worker
+      - worker_modules:/app/worker/node_modules
+    env_file: web/.env.local
+    environment:
+      WRANGLER_SEND_METRICS: "false"
+      CI: "true"
+    # Supabase URL/anon key are the same values the web app uses. No
+    # service-role key, so /invite fails here — don't test invitations locally.
+    # --local: Workers AI can only run remotely and needs a CLOUDFLARE_API_TOKEN,
+    # so OCR is off and the app falls back to "type it in".
+    command:
+      - sh
+      - -c
+      - >-
+        npm ci --no-audit --no-fund &&
+        npx wrangler dev --local --ip 0.0.0.0 --port 8787
+        --var "SUPABASE_URL:$$VITE_SUPABASE_URL"
+        --var "SUPABASE_ANON_KEY:$$VITE_SUPABASE_ANON_KEY"
+        --var "ALLOWED_ORIGINS:http://localhost:5173"
+    ports:
+      - "8787:8787"
+
+  web:
+    image: node:22-bookworm-slim
+    working_dir: /app/web
+    volumes:
+      - ./web:/app/web
+      - web_modules:/app/web/node_modules
+    env_file: web/.env.local
+    environment:
+      # Process env beats .env.local in Vite: point the browser at the local
+      # Worker instead of the deployed one, so the new code is what runs.
+      VITE_WORKER_URL: http://localhost:8787
+    command: sh -c 'npm ci --no-audit --no-fund && npx vite --host 0.0.0.0 --port 5173'
+    ports:
+      - "5173:5173"
+    depends_on:
+      - worker
+
+volumes:
+  worker_modules:
+  web_modules:

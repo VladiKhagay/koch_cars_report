@@ -33,6 +33,7 @@ Excel.
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
 | Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
 | Photos | 2/car (plate + VIN), 90-day retention | ~6 GB rolling window. Drove the storage choice. |
+| Video | optional ≤60s walkaround/car, in-app 720p @ 1 Mbps (~7.5 MB), 30-day retention | ~10 GB rolling window. Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
 | Devices | Modern phones, decent connectivity | Mobile-first PWA is enough; no native app. |
@@ -175,7 +176,7 @@ jobs(id, site_id, worker_id, created_at, plate, vin, brand,
      locked_at,             -- created_at + 15 min
      duplicate_of_job_id,   -- soft flag, nullable
      deleted_at)
-photos(id, job_id, kind[plate|vin|extra_1..3], r2_key, expires_at)
+photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at)
 audit_log(id, job_id, user_id, action, changes_jsonb, at)
 ```
 

@@ -51,6 +51,7 @@ import {
   Upload,
   User,
   Users,
+  Video,
   WifiOff,
   X,
   type LucideIcon,
@@ -58,6 +59,7 @@ import {
 
 export type IconName =
   | 'camera'
+  | 'video'
   | 'check'
   | 'checkCircle'
   | 'alertTriangle'
@@ -95,6 +97,7 @@ export type IconName =
 
 const ICONS: Record<IconName, LucideIcon> = {
   camera: Camera,
+  video: Video,
   check: Check,
   checkCircle: CheckCircle2,
   alertTriangle: AlertTriangle,

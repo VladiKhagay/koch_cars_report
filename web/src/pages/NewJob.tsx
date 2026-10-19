@@ -10,6 +10,7 @@ import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { enqueueForRetry } from '../lib/offlineQueue';
 import PhotoCapture from '../components/PhotoCapture';
+import VideoRecorder from '../components/VideoRecorder';
 import ServiceChips from '../components/ServiceChips';
 import CoworkerPicker from '../components/CoworkerPicker';
 import Icon from '../components/Icon';
@@ -37,6 +38,8 @@ const emptyForm = {
   vinPhoto: null as Blob | null,
   /** Optional, up to MAX_EXTRA_PHOTOS. Order here is the extra_1..3 order. */
   extraPhotos: [] as Blob[],
+  /** Optional walkaround of the finished car — see VideoRecorder. */
+  video: null as Blob | null,
   /** `null` = the submitter's own site. Reset after every car, so a worker who
       helped at another yard once doesn't keep logging there by accident. */
   siteId: null as string | null,
@@ -281,6 +284,7 @@ export default function NewJob() {
       plateBlob: form.platePhoto,
       vinBlob: form.vinPhoto,
       extraBlobs: form.extraPhotos,
+      videoBlob: form.video,
     };
 
     const resetForm = () => {
@@ -354,37 +358,6 @@ export default function NewJob() {
             </div>
           </div>
 
-          {/* Optional, and stated as such before the required fields below it —
-              a worker scanning down the form must not stop here thinking there
-              is something else to take. */}
-          <section aria-labelledby="extra-photos-heading">
-            <h2 id="extra-photos-heading" className="text-sm font-semibold text-ink-900">
-              {t('newJob.extraPhotos')}
-              <span className="ms-2 font-medium text-ink-500">{t('common.optional')}</span>
-            </h2>
-            <p className="mt-0.5 text-xs text-ink-600">
-              {t('newJob.extraPhotosHint', { count: MAX_EXTRA_PHOTOS })}
-            </p>
-
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              {form.extraPhotos.map((blob, i) => (
-                <PhotoCapture
-                  key={i}
-                  label={t('newJob.extraPhoto', { n: i + 1 })}
-                  photo={blob}
-                  onCapture={(b) => replaceExtraPhoto(i, b)}
-                  onRemove={() => removeExtraPhoto(i)}
-                />
-              ))}
-              {form.extraPhotos.length < MAX_EXTRA_PHOTOS && (
-                <PhotoCapture
-                  label={t('newJob.addExtraPhoto')}
-                  photo={null}
-                  onCapture={addExtraPhoto}
-                />
-              )}
-            </div>
-          </section>
         </Group>
 
         {/* Group 2 — which car it is. */}
@@ -466,18 +439,6 @@ export default function NewJob() {
             {vinFormatValid && !vinChecksumOk && <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>}
             {duplicateWarning && <FieldNotice icon="alertCircle">{t('newJob.duplicateWarning')}</FieldNotice>}
           </Field>
-
-          <Field htmlFor="job-brand" label={t('newJob.brand')} optional>
-            <input
-              id="job-brand"
-              value={form.brand}
-              onChange={(e) => {
-                beginNextCar();
-                setForm((f) => ({ ...f, brand: e.target.value }));
-              }}
-              className={fieldClass}
-            />
-          </Field>
         </Group>
 
         {/* Group 3 — what was done to it. */}
@@ -506,6 +467,94 @@ export default function NewJob() {
             </Field>
           </div>
 
+
+          <Field htmlFor="job-brand" label={t('newJob.brand')} optional>
+            <input
+              id="job-brand"
+              value={form.brand}
+              onChange={(e) => {
+                beginNextCar();
+                setForm((f) => ({ ...f, brand: e.target.value }));
+              }}
+              className={fieldClass}
+            />
+          </Field>
+        </Group>
+
+        {/* Everything optional lives behind one row, so the common car is
+            photo → plate/VIN → service → Submit without scrolling past video,
+            notes, site and crew. The summary shows what is set inside, so a
+            non-default site or a crew is never hidden from the worker. */}
+        <details className="group rounded-xl border border-line bg-surface">
+          <summary className="flex min-h-control cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-ink-900 [&::-webkit-details-marker]:hidden">
+            <span>{t('newJob.moreDetails')}</span>
+            <span className="flex min-w-0 items-center gap-2 font-medium text-ink-600">
+              <span className="truncate">
+                {[
+                  sites.find((x) => x.id === siteId)?.name,
+                  form.coworkerIds.length > 0 && t('newJob.coworkersCount', { count: form.coworkerIds.length }),
+                  form.note && t('newJob.note'),
+                  form.extraPhotos.length > 0 && `${t('newJob.extraPhotos')} ${form.extraPhotos.length}`,
+                  form.video && t('newJob.video'),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <Icon name="chevronRight" size={16} className="shrink-0 transition-transform group-open:rotate-90 rtl:-scale-x-100" />
+            </span>
+          </summary>
+          <div className="space-y-4 border-t border-line p-4">
+        {/* Optional, and stated as such before the required fields below it —
+              a worker scanning down the form must not stop here thinking there
+              is something else to take. */}
+          <section aria-labelledby="extra-photos-heading">
+            <h2 id="extra-photos-heading" className="text-sm font-semibold text-ink-900">
+              {t('newJob.extraPhotos')}
+              <span className="ms-2 font-medium text-ink-500">{t('common.optional')}</span>
+            </h2>
+            <p className="mt-0.5 text-xs text-ink-600">
+              {t('newJob.extraPhotosHint', { count: MAX_EXTRA_PHOTOS })}
+            </p>
+
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              {form.extraPhotos.map((blob, i) => (
+                <PhotoCapture
+                  key={i}
+                  label={t('newJob.extraPhoto', { n: i + 1 })}
+                  photo={blob}
+                  onCapture={(b) => replaceExtraPhoto(i, b)}
+                  onRemove={() => removeExtraPhoto(i)}
+                />
+              ))}
+              {form.extraPhotos.length < MAX_EXTRA_PHOTOS && (
+                <PhotoCapture
+                  label={t('newJob.addExtraPhoto')}
+                  photo={null}
+                  onCapture={addExtraPhoto}
+                />
+              )}
+            </div>
+          </section>
+
+          <section aria-labelledby="video-heading">
+            <h2 id="video-heading" className="text-sm font-semibold text-ink-900">
+              {t('newJob.videoSection')}
+            </h2>
+            <div className="mt-2">
+              <VideoRecorder
+                video={form.video}
+                onRecorded={(blob) => {
+                  beginNextCar();
+                  setForm((f) => ({ ...f, video: blob }));
+                }}
+                onRemove={() => {
+                  beginNextCar();
+                  setForm((f) => ({ ...f, video: null }));
+                }}
+              />
+            </div>
+          </section>
+
           <Field htmlFor="job-note" label={t('newJob.note')} optional>
             <textarea
               id="job-note"
@@ -518,11 +567,7 @@ export default function NewJob() {
               className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
             />
           </Field>
-        </Group>
 
-        {/* Group 4 — where, and who else. Both default to "my site, just me",
-            which is most cars; only a shared or away job needs a tap here. */}
-        <Group>
           <Field htmlFor="job-site" label={t('newJob.site')}>
             <Select id="job-site" value={siteId ?? ''} onChange={(e) => void selectSite(e.target.value)}>
               {sites.map((s) => (
@@ -548,7 +593,8 @@ export default function NewJob() {
               />
             </Field>
           )}
-        </Group>
+          </div>
+        </details>
       </Page>
 
       {/*
