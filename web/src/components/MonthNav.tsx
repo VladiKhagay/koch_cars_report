@@ -3,16 +3,9 @@ import { dayKey, monthKey, shiftMonth } from '../lib/dateRange';
 import { IconButton, fieldClass } from './ui';
 
 /**
- * Step a screen through calendar months.
- *
- * Lifted out of "My Jobs" when "My Stats" needed the same control. The middle
- * element is a native month picker rather than a menu we drew — it is a real
- * month/year selector on every platform, it already speaks the worker's
- * language, and it costs no code. The arrows are what actually gets used:
- * stepping back one month is far more common than picking a date.
- *
- * The labels stay under `myJobs.*` because that is where they already exist in
- * all three locales and they read the same on either screen.
+ * Step a screen through calendar months (shared by My Jobs and My Stats). The
+ * middle element is a native month picker; the arrows are what gets used. Labels
+ * stay under `myJobs.*`, where they exist in all three locales.
  */
 export default function MonthNav({
   month,

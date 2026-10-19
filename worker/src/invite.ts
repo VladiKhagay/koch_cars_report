@@ -11,16 +11,11 @@ interface InviteBody {
 
 /**
  * Sends a Supabase email invitation and creates the matching public.users
- * profile row in one step. This is the ONLY place in the system that uses
- * the service-role key, and it's needed because:
- *  - the auth invite API requires it (anon key can't invite), and
- *  - the profile row must exist before the invitee's first login, but the
- *    invitee has no session yet and the admin's JWT can't insert a users
- *    row for a different auth account under RLS.
+ * profile. The service-role key is needed because the auth invite API requires
+ * it and the invitee has no session to insert their own profile row.
  *
- * Authorization: the caller's own JWT is forwarded to Supabase REST to read
- * their users row — only role=admin proceeds. The JWT itself was already
- * signature-verified by the jwk middleware in index.ts.
+ * Only an active admin may call it: the caller's own JWT is forwarded to read
+ * their users row.
  */
 export async function handleInvite(c: Context<{ Bindings: Env }>) {
   const body = await c.req.json<InviteBody>().catch(() => null);
@@ -47,8 +42,7 @@ export async function handleInvite(c: Context<{ Bindings: Env }>) {
     'Content-Type': 'application/json',
   };
 
-  // 1. Send the invite email. redirect_to must be allowlisted in Supabase
-  //    Auth -> URL Configuration.
+  // 1. Send the invite. redirect_to must be allowlisted in Supabase Auth -> URL Configuration.
   const redirectTo = `${c.env.APP_URL ?? ''}/welcome`;
   const inviteRes = await fetch(
     `${c.env.SUPABASE_URL}/auth/v1/invite?redirect_to=${encodeURIComponent(redirectTo)}`,
@@ -65,12 +59,8 @@ export async function handleInvite(c: Context<{ Bindings: Env }>) {
   }
   const invited = (await inviteRes.json()) as { id: string };
 
-  // 2. Create the profile row so the invitee lands fully provisioned.
-  //
-  // Inviting the same email again is how an expired invite is RESENT: Supabase
-  // re-sends to a user who never accepted (it only refuses confirmed ones). Their
-  // profile row already exists from the first invite, so a duplicate is skipped
-  // rather than failing the whole call — the existing name/role/site are kept.
+  // 2. Create the profile row. Re-inviting resends an expired invite, so a
+  //    duplicate is skipped and the existing name/role/site are kept.
   const profileRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/users?on_conflict=auth_id`, {
     method: 'POST',
     headers: { ...serviceHeaders, Prefer: 'return=minimal,resolution=ignore-duplicates' },

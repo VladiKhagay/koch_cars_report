@@ -16,11 +16,7 @@ interface LookupRow {
   service_name_he: string | null;
 }
 
-/**
- * "Has this car been done before?" for workers, across every site. Workers can
- * only read their own jobs (0003), so this goes through a security definer RPC
- * that returns only date, site, car and service — never who logged it.
- */
+/** "Has this car been done before?" across every site. Goes through a security definer RPC (workers read only their own jobs, 0003) returning date, site, car and service, never who logged it. */
 export default function VehicleLookup() {
   const { t, i18n } = useTranslation();
   const [query, setQuery] = useState('');

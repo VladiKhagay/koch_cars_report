@@ -4,18 +4,9 @@ import Icon from './Icon';
 import { Spinner, fieldClass } from './ui';
 
 /**
- * The reservation number, editable in place — on the jobs grid and on the
- * dashboard cards, so a manager enters it wherever they happen to be looking
- * at the car.
- *
- * The draft lives here, not in a map on the page: a page-level draft would
- * re-render every row on every keystroke, and this is the one field a manager
- * types into dozens of times in a sitting.
- *
- * It saves on blur and on Enter, and only when the value actually changed —
- * tabbing through a column of filled-in codes must not write 50 rows. Enter
- * also moves to the next billing field on the page, so a stack of codes can be
- * entered without leaving the keyboard.
+ * The reservation number, editable in place (grid and dashboard cards). The
+ * draft lives here so keystrokes don't re-render every row. Saves on blur or
+ * Enter, only when changed; Enter moves to the next billing field.
  */
 export default function BillingInput({
   committed,

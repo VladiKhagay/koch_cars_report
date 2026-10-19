@@ -1,16 +1,8 @@
 /**
- * My Jobs — the worker's own record of the month, as a grid.
- *
- * This used to be a stack of cards. A worker checking "did that car go in, and
- * did I put the right service on it" reads down one column; cards made that
- * twenty separate reads. It is the same shape as the manager's jobs grid
- * (pages/Jobs.tsx) and shares its table primitives, so there is one table
- * behaviour in this app rather than two.
- *
- * Like that grid, the database owns the row set: the month window, the sort and
- * the paging are all query parameters, not client-side row models. The offline
- * queue is the exception — those jobs do not exist server-side yet, so they
- * stay above the table as their own list.
+ * My Jobs: the worker's own record of the month, as a grid sharing the manager
+ * grid's table primitives. Month window, sort and paging are query parameters
+ * (the database owns the row set); queued offline jobs stay above the table
+ * because they don't exist server-side yet.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -70,12 +62,8 @@ function minutesLeft(lockedAt: string): number {
 }
 
 /**
- * How many rows one export request asks for.
- *
- * PostgREST caps a response server-side (1000 by default), so a three-month
- * window at this yard's volume comes back silently truncated if it is asked for
- * in one go — a spreadsheet missing its last two months with nothing to say so.
- * The export pages through until a short page proves it reached the end.
+ * Rows per export request. PostgREST caps a response (1000 by default), so the
+ * export pages until a short page proves it reached the end.
  */
 const EXPORT_CHUNK = 1000;
 
@@ -95,10 +83,7 @@ interface Sort {
   asc: boolean;
 }
 
-/**
- * No row models are registered: sorting and paging happen in Postgres, so a
- * client-side model would re-derive the wrong answer from the 25 rows in hand.
- */
+/** No row models: sorting and paging happen in Postgres. */
 const features = tableFeatures({});
 const helper = createColumnHelper<typeof features, Job>();
 
@@ -230,10 +215,7 @@ function buildColumns(
   ]);
 }
 
-/**
- * The one column a phone drops. Date, plate, work and status are what the
- * worker came for; the brand is the one they already know by looking at the car.
- */
+/** The one column a phone drops: the brand is what the worker already knows by looking at the car. */
 const HIDE_BELOW: Record<string, 'sm' | 'md' | undefined> = { brand: 'md', created_at: 'sm', status: 'sm' };
 const SORTABLE: Record<string, SortKey | undefined> = {
   created_at: 'created_at',
@@ -271,17 +253,8 @@ export default function MyJobs() {
 
   /* ------------------------------------------------------------- filters */
 
-  /*
-   * The filters live in the URL, not in component state. That is what makes
-   * them survive the trip into a job and back — the browser restores the query
-   * string, so a worker who taps into a car and comes back is still looking at
-   * the same window instead of at "this month" again. It also makes the view
-   * something they can send to a manager.
-   *
-   * Defaults are never written into the URL: an absent `from` means "this
-   * month", so a bare /my-jobs is the default view and "clear all" is simply
-   * dropping every parameter.
-   */
+    // Filters live in the URL so they survive the trip into a job and back, and
+    // the view is shareable. Defaults are never written: absent `from` means this month.
   const [params, setParams] = useSearchParams();
   const thisMonth = useMemo(() => rangeFor('thisMonth'), []);
   const search = params.get('q') ?? '';
@@ -335,14 +308,9 @@ export default function MyJobs() {
   const load = useCallback(async () => {
     if (!appUser) return;
     setLoading(true);
-    /* The narrowing happens in Postgres, for the same reason the manager's grid
-       does it there: a page of 25 rows filtered in the browser is the wrong 25
-       rows — the car being looked for is usually not on it.
-
-       `searchColumns` is plate-only: this view has no billing_code column, and
-       PostgREST fails the whole query when asked to filter one that isn't
-       there. The service now rides on the job row itself, so there is no second
-       round-trip to resolve links. */
+        /* Narrowed in Postgres so paging sees the right set. `searchColumns` is
+           plate-only: this view has no billing_code and PostgREST fails the whole
+           query on an unknown column. */
     const { data, count } = await applyJobFilters(
       supabase
         .from('jobs_worker_view')
@@ -431,14 +399,7 @@ export default function MyJobs() {
 
   /* ---------------------------------------------------------------- export */
 
-  /**
-   * Every job the current filters select — not the page on screen.
-   *
-   * Same query as `load`, same filters, same sort, minus the paging: a worker
-   * exporting "last 3 months" means the three months, and a file containing
-   * only the 25 rows that happened to be visible is worse than no file, because
-   * it looks complete.
-   */
+    /** Every job the current filters select, not just the visible page, so the file is never silently partial. */
   async function fetchAllFiltered(): Promise<Job[] | null> {
     const all: Job[] = [];
     for (let start = 0; ; start += EXPORT_CHUNK) {

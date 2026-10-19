@@ -1,10 +1,6 @@
 /**
- * The two spreadsheets, as data.
- *
- * Both builders are pure — they take rows and return the exact cell grid that
- * goes into the file. SheetJS is only ever handed the result. That keeps the
- * one thing worth being certain about testable: which values end up in a file
- * that leaves the building.
+ * The spreadsheets, as pure data: builders take rows and return the exact cell
+ * grid, so what ends up in a file that leaves the building is testable.
  */
 import { SHEET_HEADERS, type ColumnConfig } from './reportConfig';
 
@@ -17,10 +13,7 @@ export interface ExportJob {
   vin: string | null;
   brand: string | null;
   billing_code: string | null;
-  /**
-   * On the payment sheet: the selected person's SHARE of the job, not the
-   * job's full price — the caller resolves it (shareFor) before building.
-   */
+  /** On the payment sheet: the selected person's share of the job, resolved by the caller (shareFor). */
   worker_price: number;
   /** On the customer report: everyone on the job, already joined ("Dana, Avi"). */
   worker?: { name: string } | null;
@@ -28,11 +21,7 @@ export interface ExportJob {
   service?: { name_en: string; catalog_number: string } | null;
 }
 
-/**
- * A row of cells. Numbers stay numbers so Excel can sum and format them, and a
- * Date stays a Date so it sorts and filters as a date rather than as the text
- * of whatever locale happened to write the file.
- */
+/** Numbers and Dates stay typed so Excel can sum, sort and filter them. */
 export type Cell = string | number | Date;
 
 /* ------------------------------------------------- customer treatment report */
@@ -53,20 +42,15 @@ function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string)
       return job.service?.catalog_number ?? '';
     case 'billing_code':
       return job.billing_code ?? '';
-    // A job whose worker record is gone — a deleted user, or a row that never
-    // carried one — prints a blank cell rather than dropping the row or
-    // writing "null" into paperwork somebody reads.
+    // A missing worker record prints a blank cell, never "null".
     case 'worker':
       return job.worker?.name ?? '';
   }
 }
 
 /**
- * The sheet the importer receives.
- *
- * There is no branch here that can reach `worker_price`: the switch above is
- * exhaustive over the allowlisted keys, so the type checker rejects a future
- * key that has no case, and no case exists that reads what the yard pays.
+ * The customer report. No case reads `worker_price`, and the exhaustive switch
+ * makes the type checker reject any key without one.
  */
 export function buildCustomerReport(
   jobs: ExportJob[],
@@ -92,18 +76,9 @@ export interface MyJobsRow {
 }
 
 /**
- * The worker's own grid as a sheet: the same data columns, in the same order,
- * over whatever rows the filters currently select.
- *
- * Status and Actions are not columns of data and are not exported. One is a
- * countdown that is already stale by the time the file opens, the other is a
- * button — writing either into a spreadsheet puts a claim in a file that
- * outlives the fifteen minutes it was true for.
- *
- * The date is a Date, not a formatted string: this file is opened to be sorted
- * and totalled, and a text date sorts alphabetically. The headers are passed in
- * because they are the table's own headers — the sheet says what the screen
- * said, in the language the worker is reading it in.
+ * The worker's own grid as a sheet. Status and Actions are not exported (stale
+ * the moment the file opens). Dates stay Dates so the file sorts; headers are
+ * the table's own, in the reader's language.
  */
 export function buildMyJobsSheet(rows: MyJobsRow[], headers: string[]): Cell[][] {
   return [
@@ -123,23 +98,11 @@ export const PAYMENT_SUMMARY_HEADERS = ['Summary', 'Work performed', 'Jobs', 'Am
 const NO_SERVICE = '—';
 
 /**
- * The internal payroll sheet for ONE worker over one date range: their jobs
- * oldest first, then a summary of what that adds up to per service.
- *
- * It used to be every worker at the site in one file, one block each. That is
- * the wrong shape for what it is used for — payroll is settled with one person
- * at a time, and a sheet you have to scroll past four colleagues' pay to reach
- * yours is not one you can hand over. The caller now picks the worker, and the
- * query is filtered to them, so this builder never sees anybody else's rows.
- *
- * Laid out as a cell grid rather than a list of objects because the totals are
- * not records — a row of objects cannot express "subtotal under this group",
- * and a payroll sheet without visible subtotals is one somebody re-adds by hand.
- *
- * Every figure is summed from the rows printed above it, so the sheet always
- * adds up to what is on it. Nothing is priced here: `worker_price` is the
- * catalog price snapshotted onto the job when it was logged (migration 0005),
- * which is why re-pricing a service next month cannot rewrite this month's pay.
+ * The internal payroll sheet for one worker over a date range: their jobs
+ * oldest first, then a per-service summary. A cell grid, not objects, so
+ * subtotals are expressible. Every figure is summed from the rows above it, and
+ * `worker_price` is the price snapshotted when the job was logged (0005), so
+ * re-pricing a service never rewrites past pay.
  */
 export function buildWorkerPaymentReport(
   jobs: ExportJob[],
@@ -192,13 +155,9 @@ export function buildWorkerPaymentReport(
 }
 
 /**
- * Money as whole cents.
- *
- * Prices are `numeric` in Postgres and arrive here as JS numbers, so adding
- * them up directly reintroduces the binary-fraction error the column type
- * exists to avoid: 0.1 + 0.2 is 0.30000000000000004, and a payroll sheet whose
- * subtotals do not add to its total is one nobody signs. Every amount is
- * converted once at the edge, summed as integers, and converted back once.
+ * Money as whole cents: summing JS floats (0.1 + 0.2) would leave a payroll
+ * sheet whose subtotals don't add to its total. Convert once at the edge, sum
+ * integers, convert back once.
  */
 function toCents(amount: number | null | undefined): number {
   return Math.round((amount ?? 0) * 100);

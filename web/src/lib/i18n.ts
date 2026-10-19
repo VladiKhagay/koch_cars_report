@@ -4,11 +4,7 @@ import en from '../locales/en.json';
 import ru from '../locales/ru.json';
 import he from '../locales/he.json';
 
-/**
- * The languages the product ships in, in the order the switcher shows them.
- * Each is labelled in its own script — a list written in the language you
- * can't read is a coin flip.
- */
+/** The languages the product ships in, in switcher order, each labelled in its own script. */
 export const LANGUAGES = [
   { code: 'en', label: 'English', short: 'EN' },
   { code: 'ru', label: 'Русский', short: 'RU' },
@@ -24,12 +20,8 @@ function isLang(value: string | null): value is Lang {
 }
 
 /**
- * Direction lives on <html>, not in a React state atom.
- *
- * Everything downstream keys off it for free: Tailwind's `rtl:` variant, the
- * logical `ms-/me-/ps-/pe-/start-/end-` utilities the components are written
- * in, native form controls, and text selection. `lang` moves with it so the
- * browser picks the right font and hyphenation for Hebrew.
+ * Direction lives on <html>, not React state, so Tailwind's `rtl:` variant, the
+ * logical utilities and native controls follow it. `lang` moves with it.
  */
 function applyDirection(lang: string) {
   const root = document.documentElement;

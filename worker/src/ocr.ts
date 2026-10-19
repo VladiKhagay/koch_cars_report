@@ -3,53 +3,26 @@ import type { Env } from './index';
 import { getActiveAppUser } from './appUser';
 import { rateLimited } from './rateLimit';
 
-// Kept as a fixed set so the frontend can translate the reason instead of
-// showing raw English model output. The VLM is no longer asked to classify
-// *why* a read failed — it cannot do that reliably — so the backend now only
-// ever emits 'not_in_frame', meaning "no usable value came back". The wider
-// union stays for wire compatibility with the deployed frontend.
+// Fixed set so the frontend can translate the reason. The backend only ever
+// emits 'not_in_frame'; the wider union is kept for the deployed frontend.
 export const OCR_REASONS = ['blurry', 'glare', 'dark', 'angle', 'obstructed', 'not_in_frame'] as const;
 export type OcrReason = (typeof OCR_REASONS)[number];
 
 const DEFAULT_MODEL = '@cf/moondream/moondream3.1-9B-A2B';
 
-// Moondream is the only model in the Workers AI catalogue exposing a `detect`
-// task, so detection stays pinned to it. The read step is swappable via the
-// OCR_MODEL var (e.g. @cf/meta/llama-3.2-11b-vision-instruct) so accuracy can
-// be compared on real photos without a code change — no catalogue model is
-// OCR-specialised, so which VLM reads small text best is an empirical question.
+// Moondream is the only catalogue model with a `detect` task. The read model
+// is swappable via OCR_MODEL.
 const DETECT_MODEL = DEFAULT_MODEL;
 
-// Transcription-biased prompts. The old prompts offered `UNREADABLE <reason>`
-// as an explicit escape hatch and the model took it on nearly every whole-car
-// photo. Validation below decides what counts as a usable read; the model's
-// only job is to transcribe.
+// Transcription-biased prompts: the model only transcribes, validation below
+// decides what counts as a usable read. The plate is requested as printed
+// (dashes included) because that measured best and normalizePlate handles it.
 const PROMPTS: Record<'plate' | 'vin', string> = {
-  /*
-   * Ask for the plate AS PRINTED, separators and all. The previous prompt named
-   * the digit count and banned separators — "Israeli plates are 8 digits …
-   * return ONLY the 8 plate digits, no hyphens" — and both halves cost reads.
-   * Naming the count makes the model pad to reach it; banning the dashes takes
-   * away the 3-2-3 grouping it uses to keep its place, which is how a plate
-   * comes back a digit short. Measured against a real production photo
-   * (816-78-404), two runs per cell at temperature 0:
-   *
-   *                    full frame       crop
-   *   old prompt       81678404   ok    8174804     wrong
-   *   "digits only"    816-78-404 ok    816784      wrong
-   *   as printed       816-78-404 ok    816-78-404  ok
-   *
-   * normalizePlate already joins digit runs across separators — '123-45-678'
-   * is in its tests — so the printed spelling is the form it handles best. The
-   * old prompt forbade precisely that.
-   */
   plate:
     'Read the license plate in this image. ' +
     'Answer with the characters exactly as printed, keeping the dashes. ' +
     'No explanations or any other text.',
-  // The VIN plate sits under the windscreen, so nearly every real photo has
-  // reflections across it. Naming that in the prompt stops the model treating
-  // the glare as the subject and answering about it.
+  // VINs are photographed through glass, so the prompt names the reflections.
   vin:
     'Read the 17-character VIN in this image. ' +
     'The VIN is photographed through glass, so ignore reflections and glare and read the characters underneath. ' +
@@ -65,12 +38,8 @@ const DETECT_TARGETS: Record<'plate' | 'vin', string> = {
 };
 
 /**
- * Bounding box in whatever coordinate space the model returned. Moondream's
- * documented schema (verified against the live model-schema API) is
- * x_min/y_min/x_max/y_max, but does not state whether values are normalised
- * 0..1 or absolute pixels — so the box is passed through untouched and the
- * client, which knows the real image dimensions, decides. See
- * `boxToCropRect()` in the frontend.
+ * Bounding box in the model's own coordinate space (normalised or pixels —
+ * unspecified), passed through untouched; the client knows the image size.
  */
 export interface OcrBox {
   x0: number;
@@ -91,7 +60,7 @@ export function parseDetectObjects(objects: unknown): OcrBox | null {
     const nums = [o.x_min, o.y_min, o.x_max, o.y_max];
     if (!nums.every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
 
-    // Tolerate a model that emits the corners in either order.
+    // Tolerate corners in either order.
     const x0 = Math.min(o.x_min as number, o.x_max as number);
     const x1 = Math.max(o.x_min as number, o.x_max as number);
     const y0 = Math.min(o.y_min as number, o.y_max as number);
@@ -99,12 +68,11 @@ export function parseDetectObjects(objects: unknown): OcrBox | null {
 
     const w = x1 - x0;
     const h = y1 - y0;
-    if (w <= 0 || h <= 0) continue; // zero-size / negative
-    if (x0 < 0 || y0 < 0) continue; // outside the frame
+    if (w <= 0 || h <= 0) continue;
+    if (x0 < 0 || y0 < 0) continue;
 
-    // A box covering essentially the whole frame carries no information — it
-    // would crop to the original image. Only meaningful for normalised coords;
-    // pixel-space boxes are filtered client-side where the dimensions are known.
+    // A near-full-frame box crops to the original image. Pixel-space boxes are
+    // filtered client-side, where the dimensions are known.
     const normalised = x1 <= 1.5 && y1 <= 1.5;
     if (normalised && w * h > 0.9) continue;
 
@@ -122,10 +90,8 @@ export interface OcrOutcome {
   reason: OcrReason | null;
 }
 
-// Israeli civilian plates are digits only (verified: 8-digit XXX-XX-XXX since
-// July 2017, 7-digit XX-XXX-XX from 1980-2017, plus older 5- and 6-digit
-// plates still in service). Any letter in a plate read is therefore an OCR
-// error, which makes these substitutions safe *inside a mostly-numeric token*.
+// Israeli plates are digits only, so any letter in a read is an OCR error and
+// these substitutions are safe inside a mostly-numeric token.
 const DIGIT_CONFUSIONS: Record<string, string> = {
   O: '0',
   D: '0',
@@ -141,18 +107,12 @@ const DIGIT_CONFUSIONS: Record<string, string> = {
 const PLATE_LENGTH = 8;
 
 /**
- * Extracts an Israeli plate from free model text.
- *
- * Works on digit *runs* rather than stripping all non-digits globally, so
- * "123-45-678 on a 2019 Toyota" yields 12345678 and not 123456782019.
- *
- * Only a full 8-digit read counts: a partial read is worse than no read, since
- * it looks authoritative in the field and gets submitted unchecked. Digits are
- * returned unformatted — plates are stored and shown without separators.
+ * Extracts an 8-digit Israeli plate from free model text, working on digit
+ * runs so "123-45-678 on a 2019 Toyota" yields 12345678. A partial read is
+ * rejected: it looks authoritative and gets submitted unchecked.
  */
 export function normalizePlate(raw: string): string | null {
-  // Repair digit-confusions only within tokens that are already mostly
-  // numeric, so prose ("visible", "plate") is never mangled into digits.
+  // Repair digit confusions only in mostly-numeric tokens, never in prose.
   const repaired = raw
     .toUpperCase()
     .split(/\s+/)
@@ -163,24 +123,8 @@ export function normalizePlate(raw: string): string | null {
     })
     .join(' ');
 
-  /*
-   * Join separators that sit *between* digits, so a printed "123-45-678"
-   * becomes one run while unrelated numbers stay separate.
-   *
-   * The middle dot (U+00B7) is in here because it is what Israeli plates are
-   * actually printed with, and the prompt now asks the model to answer as
-   * printed — so it dutifully returns "344·48·104", which this class used to
-   * leave as three runs and reject. That was a correct read, correctly
-   * transcribed, thrown away on a punctuation mark: the worker saw "couldn't
-   * read it" and blamed the camera. It stayed invisible until the prompt was
-   * fixed, because the old one banned separators outright.
-   *
-   * A digit is required on both sides, so what breaks a run is prose: "123-45-678
-   * on a 2019 Toyota" keeps the year out because "on a" is not in this class.
-   * Two bare numbers separated only by punctuation DO weld — that was already
-   * true of the space, dot and hyphen, and the middle dot inherits it. It has
-   * never mattered, because the length check downstream rejects the result.
-   */
+  // Join separators between digits (including the middle dot plates are
+  // printed with); the length check below rejects accidental welds.
   const joined = repaired.replace(/(\d)[\s.·•–-]+(?=\d)/g, '$1');
 
   const runs = joined.match(/\d+/g);
@@ -189,25 +133,20 @@ export function normalizePlate(raw: string): string | null {
   return runs.find((r) => r.length === PLATE_LENGTH) ?? null;
 }
 
-// I, O and Q are not valid VIN characters, so mapping them onto the digits
-// they are misread as is lossless — a VIN can never legitimately contain them.
-// No other substitutions are applied: 5/S and 8/B are both legal in a VIN, so
-// "correcting" those would silently corrupt valid values.
+// I, O and Q are never valid in a VIN, so mapping them to digits is lossless.
+// No other substitutions: 5/S and 8/B are both legal.
 const VIN_CONFUSIONS: Record<string, string> = { I: '1', O: '0', Q: '0' };
 
 export function normalizeVin(raw: string): string | null {
-  // Work on tokens, never on the whole string: stripping every non-alphanumeric
-  // globally welds prose into a false positive — "I can see a car but no VIN
-  // sticker" collapses to a 17-character run that looks exactly like a VIN.
+  // Work on tokens: stripping the whole string would weld prose into a
+  // false-positive 17-character run.
   const tokens = raw
     .toUpperCase()
     .split(/\s+/)
     .map((t) => t.replace(/[^A-Z0-9]/g, ''))
     .filter(Boolean);
 
-  // A printed VIN is sometimes read back in space-separated groups, so join
-  // neighbouring tokens — but only when both contain a digit, which prose
-  // words never do.
+  // Join neighbouring tokens only when both contain a digit (prose never does).
   const candidates: string[] = [];
   for (const token of tokens) {
     const hasDigit = /\d/.test(token);
@@ -229,8 +168,7 @@ export function parseOcrAnswer(raw: string, kind: 'plate' | 'vin'): OcrOutcome {
   const answer = raw.trim();
   if (!answer) return { text: null, reason: 'not_in_frame' };
 
-  // Older deployments (and the occasional stubborn model) still emit
-  // "UNREADABLE <something>"; drop the keyword and read whatever follows.
+  // Older deployments still emit "UNREADABLE <something>"; read what follows.
   const body = answer.replace(/^unreadable\b[\s:,-]*/i, '');
 
   const text = kind === 'plate' ? normalizePlate(body) : normalizeVin(body);
@@ -245,27 +183,20 @@ interface OcrRequestBody {
   task?: 'query' | 'detect';
 }
 
-// ~6MB of base64 ≈ 4.5MB image — well above the ~1920px JPEGs the app sends;
-// this cap only exists to stop abuse of the endpoint.
+// Abuse cap: ~6MB of base64 is ~4.5MB of image.
 const MAX_IMAGE_BASE64_LENGTH = 6 * 1024 * 1024;
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-/** Unwraps the `{ result: {...} }` envelope the AI binding actually returns. */
+/** Unwraps the `{ result: {...} }` envelope the AI binding returns. */
 function unwrap<T>(result: unknown): T {
   const r = result as { result?: T } & T;
   return (r?.result ?? r) as T;
 }
 
 export async function handleOcr(c: Context<{ Bindings: Env }>) {
-  /*
-   * The only route that reads nothing from Postgres, and therefore the only
-   * one that inherits no authorization from RLS. Everything else here ends in
-   * a query whose policies run through current_app_user() and fail closed for
-   * a deactivated account; this one would otherwise run a 9B vision model on
-   * the strength of a valid signature alone — which a former employee's
-   * auto-refreshing token keeps producing indefinitely.
-   */
+  // The only route that reads nothing from Postgres, so it inherits no RLS
+  // check: without this, a deactivated user's still-valid JWT could run the model.
   const limited = await rateLimited(c, c.env.OCR_LIMITER);
   if (limited) return limited;
 
@@ -286,20 +217,7 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
 
   if (body.task === 'detect') {
     try {
-      /*
-       * `stream: false` is REQUIRED here, and the reasoning it replaces was
-       * backwards. The old comment read "`detect` does not support streaming,
-       * so no `stream` flag is sent" — true premise, wrong conclusion. Omitting
-       * the flag makes the binding answer with an empty object: no `objects`,
-       * no `metrics`, no `finish_reason`. Verified against the live model on
-       * this account, same image, same target:
-       *   no flag      -> {}
-       *   stream:false -> { objects: [{ x_min… }], metrics: {…} }
-       * With it missing, detection returned nothing on every request ever made,
-       * the client silently skipped the crop, and every read ran on the whole
-       * frame — which is why a plate photographed from a few steps back came
-       * back with invented digits while a close-up read fine.
-       */
+      // `stream: false` is required: without it the binding answers with {}.
       const result = await c.env.AI.run(DETECT_MODEL, {
         task: 'detect',
         image: dataUri,
@@ -309,24 +227,8 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
       });
       const { objects } = unwrap<{ objects?: unknown }>(result);
       const box = parseDetectObjects(objects);
-      /*
-       * Whether a box comes back decides which image the read runs on — a tight
-       * crop upscaled to 1024px, or the whole frame with the plate perhaps
-       * 190px wide — and that was invisible from outside. A misread could not
-       * be told apart from a read that never got usable pixels to begin with.
-       * The raw objects are logged when nothing survived parsing, because "the
-       * model detected nothing" and "it detected something we rejected" are
-       * different problems with different fixes.
-       */
-      /*
-       * When nothing survives, the RAW response is what matters — not the
-       * `objects` field we failed to find in it. Logging only that field
-       * cannot tell "the model found no plate" (objects: []) from "the boxes
-       * are not under that key at all", and those want opposite fixes: a
-       * different target or detector, versus a field-name correction. Three
-       * attempts in production logged `none null`, meaning the key was absent
-       * entirely, so the response itself is the thing to look at.
-       */
+      // Log the raw response when nothing parses: "no plate found" and "boxes
+      // under a different key" need different fixes.
       console.log(
         'OCR detect',
         body.kind,
@@ -353,40 +255,15 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
     });
     raw = unwrap<{ answer?: string }>(result).answer ?? '';
   } catch (err) {
-    // OCR is an accelerator, not a dependency — surface a clean failure so
-    // the client falls back to manual entry rather than retry-looping.
+    // OCR is an accelerator, not a dependency: fail cleanly so the client
+    // falls back to manual entry.
     console.error('Workers AI OCR error', err);
     return c.json({ error: 'ocr_unavailable' }, 502);
   }
 
   const outcome = parseOcrAnswer(raw, body.kind);
-  /*
-   * The one failure that used to leave no trace anywhere. An exception is
-   * logged above, but the common case is quieter: the model answers, the
-   * answer does not survive normalisation, and the worker is told "couldn't
-   * read it" while nothing records WHAT came back — so "it didn't read the
-   * plate" could not be diagnosed from the logs at all. A plate that arrives
-   * one digit short, or carrying a letter the confusion table does not cover,
-   * looks identical from outside to a photo the model never saw.
-   *
-   * Failures only, and only the first 120 characters: the value is a plate or
-   * a VIN, which is already stored in Postgres, and this is the shortest thing
-   * that makes the next report answerable.
-   */
-  /*
-   * Every read, not only the failures: the base64 length is the one clue to
-   * WHICH image the model was given. A crop is a few hundred KB, a whole
-   * uncropped frame is megabytes — so paired with the detect line above, this
-   * says whether a misread happened on good pixels or bad ones. Successes are
-   * logged too, so the two can be compared when the read model is swapped.
-   */
-  /*
-   * The parsed value, not just "ok": a read that parses is not the same as a
-   * read that is RIGHT. Eight digits in the correct shape can still be the
-   * wrong eight, and that is the failure nobody catches — it fills the field,
-   * marks itself auto-filled, and gets submitted. Logging the value is what
-   * lets a reported plate be checked against what the model actually said.
-   */
+  // Length only, never the plate/VIN. The image size shows whether the model
+  // got a crop (hundreds of KB) or the whole frame (megabytes).
   console.log(
     'OCR read',
     body.kind,

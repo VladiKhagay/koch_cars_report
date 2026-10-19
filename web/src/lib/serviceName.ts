@@ -1,18 +1,7 @@
 /**
- * Which name to show for a catalog service, in the language being read.
- *
- * This lived inline in six places as `language === 'ru' && name_ru ? … : name_en`,
- * which had two consequences worth naming:
- *
- *  - Hebrew shipped as a full locale, but every one of those six branches asks
- *    only about Russian, so a Hebrew user gets a Hebrew interface and English
- *    service names — on the most-tapped control in the product.
- *  - Adding a locale meant finding all six. One of them (Job Detail) had
- *    already been missed once and rendered name_en to everybody.
- *
- * `name_he` landed in migration 0012. It stays optional in both senses: the
- * column is nullable, and a service with no Hebrew name falls back to English
- * rather than rendering blank.
+ * Which name to show for a catalog service in the language being read: Hebrew
+ * (`name_he`, 0012) or Russian when present, else English. One place, so adding
+ * a locale doesn't mean finding every inline branch.
  */
 
 /** Any row carrying the catalog's localized names — the full Service, or a join. */

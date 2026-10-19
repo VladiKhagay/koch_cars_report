@@ -1,20 +1,8 @@
 /**
- * The management tables.
- *
- * Users, services and sites are records an owner edits at a desk, in bulk. A
- * stack of cards forces you to scroll to compare two rows that differ in one
- * field; a table puts every row's role, site and status in the same column, so
- * scanning twenty people is one pass down a column instead of twenty reads.
- *
- * Below `md` the table scrolls sideways rather than reflowing into cards. One
- * layout means one set of behaviours to reason about, and a column stays where
- * the manager last saw it. Columns that can be dropped on a narrow screen say
- * so themselves via `hideBelow`.
- *
- * Rows are compact, because a manager scanning fifty of them is at a desk with
- * a mouse. The 44px tap floor is not abandoned, only made conditional: at a
- * coarse pointer `.table-dense` (in index.css) puts every inline control back
- * to full size, since these screens are used on a phone too.
+ * The management tables (users, services, sites): edited in bulk at a desk, so
+ * a table beats cards for scanning. Below `md` it scrolls sideways rather than
+ * reflowing; `hideBelow` drops columns on a narrow screen. Rows are compact, but
+ * at a coarse pointer `.table-dense` (index.css) restores the 44px tap floor.
  */
 import type { CSSProperties, ReactNode } from 'react';
 
@@ -49,12 +37,7 @@ export function TableCard({
   );
 }
 
-/**
- * `minWidth` is the width the *full* column set needs, so it only applies from
- * `sm` up — the first breakpoint at which `hideBelow` columns come back. Below
- * it the table is whatever its two or three visible columns actually need, and
- * a phone gets no sideways scroll for columns it isn't being shown.
- */
+/** `minWidth` is the full column set's width, applied from `sm` up where `hideBelow` columns return; a phone gets no sideways scroll for hidden columns. */
 export function Table({ children, minWidth = 44 }: { children: ReactNode; minWidth?: number }) {
   return (
     <table
@@ -168,11 +151,7 @@ export function TdActions({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * A full-width panel under its row — edit forms that don't fit a cell,
- * confirmations, danger zones. Kept inside the table so the row it belongs to
- * stays adjacent and the columns don't shift.
- */
+/** A full-width panel under its row (edit forms, confirmations), kept inside the table so columns don't shift. */
 export function TrExpanded({ colSpan, children }: { colSpan: number; children: ReactNode }) {
   return (
     <tr className="border-b border-line last:border-b-0">
@@ -190,12 +169,7 @@ export function CellTitle({ children, mono }: { children: ReactNode; mono?: bool
   );
 }
 
-/**
- * `mono` is not styling — it is what marks a Latin-script identifier, and the
- * base layer pins those `direction: ltr; unicode-bidi: isolate`. CellTitle has
- * always had it; CellMuted did not, so the VIN column was the one identifier in
- * the app that a Hebrew page could re-sequence.
- */
+/** `mono` marks a Latin-script identifier: the base layer pins it `direction: ltr; unicode-bidi: isolate` so a Hebrew page can't re-sequence it. */
 export function CellMuted({
   children,
   lang,

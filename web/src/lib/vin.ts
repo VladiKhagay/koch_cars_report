@@ -1,19 +1,10 @@
 /**
- * VIN and plate validation.
+ * VIN and plate validation. The ISO 3779 check digit is only mandatory for
+ * North American VINs, so a failed checksum is a soft warning; format (17 chars,
+ * no I/O/Q) is enforced when a VIN is present. The VIN is optional.
  *
- * The ISO 3779 check digit is only mandatory for North American VINs — many
- * imported vehicles legitimately fail it, so `checksumValid` is surfaced as
- * a soft warning in the UI, never a hard block. Format validity (17 chars,
- * no I/O/Q) IS enforced when a VIN is present, since that's a universal rule.
- * The VIN itself is optional: a car with no readable VIN is logged without one.
- *
- * Nothing here reads meaning OUT of a VIN. A WMI→brand table used to live in
- * this file and fill the brand field from the first three characters; it is
- * gone deliberately. The WMI identifies a manufacturer, not a model, the table
- * could only ever cover the prefixes somebody had thought to add, and a guess
- * that lands in a form field is indistinguishable from something the worker
- * checked. Brand is typed by a person or it is empty. Do not reintroduce
- * inference here, from a table or from a decoding service.
+ * Nothing here infers meaning from a VIN (no WMI->brand table): a guess in a
+ * form field looks like something the worker checked. Do not reintroduce inference.
  */
 
 const VIN_CHARS = /^[A-HJ-NPR-Z0-9]{17}$/;
@@ -45,10 +36,7 @@ export function vinChecksumValid(vin: string): boolean {
   return v[8] === expected;
 }
 
-// Israeli plates are stored bare: 8 digits, no separators. They are *printed*
-// as 123-45-678, so anything typed, pasted or OCR'd is stripped down to the
-// digits first — the plate on the car and the value in the database are the
-// same plate, and validation must not reject the printed spelling.
+// Plates are stored bare (8 digits, no separators) but printed 123-45-678, so input is stripped to digits first.
 const PLATE_REGEX = /^\d{8}$/;
 
 export function stripPlate(plate: string): string {

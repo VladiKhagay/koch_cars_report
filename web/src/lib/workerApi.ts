@@ -28,11 +28,8 @@ export interface OcrOutcome {
 }
 
 /**
- * OCR is an accelerator, never a dependency: any failure (network, quota)
- * resolves to a null result so the caller falls back to manual entry
- * instead of blocking the worker's submission. When Gemini itself could
- * read the photo but the text wasn't legible, `reason` carries why, so the
- * UI can say something more useful than silently leaving the field blank.
+ * OCR is an accelerator, never a dependency: any failure resolves to a null
+ * result so the caller falls back to manual entry. `reason` says why a read failed.
  */
 async function postOcr(image: Blob, kind: 'plate' | 'vin', task: 'query' | 'detect'): Promise<unknown> {
   const base64 = await blobToBase64(image);
@@ -46,18 +43,9 @@ async function postOcr(image: Blob, kind: 'plate' | 'vin', task: 'query' | 'dete
 }
 
 /**
- * Largest encoded image the Worker's /ocr will take.
- *
- * Its own cap is 6MB of base64 (~4.5MB of image) and was sized when reads ran
- * on the 1920px upload copy. Reads now run on the camera original, which on a
- * current phone is regularly bigger than that — so the read came back 413 and
- * resolved to no value at all. It bites the plate hardest: a VIN sticker is a
- * small object, so detection crops it to ~1024px, while a plate fills its
- * frame, the box is rejected as uninformative, and the full-size original is
- * what gets sent.
- *
- * 2560px still puts far more pixels on the plate than the upload copy the
- * reads used to run on, which is the whole point of reading the original.
+ * Largest encoded image sent to /ocr (the Worker caps at ~4.5MB of image).
+ * Reads run on the camera original, which can exceed that, so it is downscaled
+ * to 2560px first - still far more pixels on the plate than the upload copy.
  */
 const MAX_OCR_BYTES = 4 * 1024 * 1024;
 
@@ -81,15 +69,9 @@ async function readOcr(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> 
 }
 
 /**
- * Reads a plate or VIN out of a captured photo.
- *
- * `image` should be the highest-resolution copy available — the camera original,
- * not the downscaled upload. A plate is ~190px wide in a whole-car shot at
- * 4000px, and half that once the photo has been shrunk for upload; those are the
- * pixels the whole crop-and-read detour exists to keep. Detection itself runs on
- * a small copy, since locating a plate needs far less resolution than reading
- * one, and uploading the original twice over mobile data is what the field
- * actually feels.
+ * Reads a plate or VIN out of a captured photo. Pass the highest-resolution
+ * copy (the camera original): a plate is ~190px wide in a whole-car shot.
+ * Detection runs on a small copy, since locating needs less resolution than reading.
  */
 export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrOutcome> {
   try {
@@ -108,46 +90,28 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
     const first = await readOcr(target, kind);
     if (first.text) return first;
 
-    // Nothing came back. A VIN under the windscreen is usually dark glyphs in a
-    // reflected wash, and a plate in direct sun is the same problem inverted —
-    // both survive a levels stretch. Only worth a second call when the stretch
-    // actually changed something.
+    // Nothing came back. A levels stretch helps glare and reflections; only worth a call if it changed something.
     const enhanced = await enhanceForOcr(target);
     if (enhanced !== target) {
       const second = await readOcr(enhanced, kind);
       if (second.text) return second;
     }
 
-    /*
-     * Last rung: the uncropped frame. Both attempts above read the same pixels
-     * — a levels stretch of a crop is still that crop — so a crop that loses a
-     * digit loses it twice, which is exactly what production showed: 344-48-104
-     * came back as "34-48-104" from the crop, twice over. The full frame is
-     * genuinely different input, and it measured 3/3 correct on the photo whose
-     * crop was misreading. Runs only on a photo that has already failed, and
-     * can only turn a rejection into a read.
-     */
+    // Last rung: the uncropped frame. A crop that loses a digit loses it on both
+    // attempts above, so the full frame is the only genuinely different input.
     if (target !== image) {
       const third = await readOcr(image, kind);
       if (third.text) return third;
     }
     return first;
   } catch {
-    /* A read that never completed — 413, 429, a dropped connection — used to
-       resolve to no text AND no reason, and the capture tile renders exactly
-       that as a plain success: a green tick over an empty field, with nothing
-       telling the worker to type the value in. It is an unusable read, which
-       is what 'not_in_frame' means here (see OCR_REASONS in worker/src/ocr.ts:
-       "no usable value came back"). */
+    // A read that never completed (413, 429, dropped connection) is an unusable
+    // read: without a reason the capture tile shows a green tick over an empty field.
     return { text: null, reason: 'not_in_frame' };
   }
 }
 
-/**
- * Why a photo could not be shown. The viewer used to be told only "no url",
- * so its one empty state blamed the 90-day expiry for everything — including
- * photos that were never uploaded and sessions that had simply expired.
- */
+/** Why a photo could not be shown, so the viewer doesn't blame the 90-day expiry for everything. */
 export type PhotoFailure =
   /** The Worker has no object at this key: never uploaded, or expired. */
   | 'missing'
@@ -161,9 +125,7 @@ export type PhotoResult = { url: string; type: string } | { failure: PhotoFailur
 
 /** Fetches a private R2 photo through the Worker and returns a local object URL. */
 export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<PhotoResult> {
-  // Resolved separately from the request: authHeader() throws when there is no
-  // session, and folding that into the network catch below would tell someone
-  // whose login had lapsed to go and check their connection.
+  // Separate from the request: a lapsed login must not read as a network problem.
   let authorization: string;
   try {
     authorization = await authHeader();
@@ -207,17 +169,10 @@ export async function inviteUser(input: {
 }
 
 /**
- * Activates or deactivates a user.
- *
- * Goes through the Worker rather than calling set_user_active directly,
- * because deactivating has to reach two places: the `active` column that RLS
- * reads, and the Supabase auth account itself. Without the second, a former
- * employee keeps a refresh token that renews forever — locked out of the data,
- * but still holding a valid token. The Worker calls the same RPC with this
- * caller's JWT, so who may deactivate whom is still decided in Postgres.
- *
- * `sessionRevoked: false` means the profile change landed but the auth account
- * was not banned — worth surfacing, since the user can still authenticate.
+ * Activates or deactivates a user via the Worker, which also bans the Supabase
+ * auth account so a former employee's refresh token stops working. Who may
+ * deactivate whom is still decided in Postgres. `sessionRevoked: false` means
+ * the profile changed but the user can still authenticate.
  */
 export async function setUserActive(
   userId: string,
@@ -237,12 +192,7 @@ export async function setUserActive(
   }
 }
 
-/**
- * Thrown by uploadPhoto so callers can tell a permanent rejection (4xx — the
- * request itself is invalid/forbidden, retrying it unchanged will never
- * succeed) from a transient one (network failure, 5xx) without parsing
- * message text. See isPermanentError in jobs.ts.
- */
+/** Thrown by uploadPhoto so callers can tell a permanent 4xx from a transient failure. See isPermanentError in jobs.ts. */
 export class HttpError extends Error {
   status: number;
   constructor(status: number, message: string) {

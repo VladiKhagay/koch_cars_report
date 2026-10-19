@@ -12,23 +12,11 @@ interface Props {
 }
 
 /**
- * The most-tapped control in the product — one tap per car, hundreds of times a
- * day, one-handed, next to a vehicle.
- *
- * Single-select since migration 0005: a job carries exactly one service. It is
- * a real radio group rather than a row of buttons with one highlighted, so a
- * screen reader announces "3 of 7" and arrow keys move between options — the
- * behaviour a sighted user already infers from the shape.
- *
- * Two properties are operational rather than decorative:
- *  - chips clear the 44px touch floor
- *  - selection is marked by a check glyph AND a filled near-black field, not by
- *    colour alone. A sun-hit phone screen washes out hue long before it washes
- *    out a shape, and "which service did I tap" is not a question the worker
- *    can afford to get wrong.
- *
- * There is no way to clear a selection: the field is required, and an empty
- * state is only reachable before the first tap.
+ * The most-tapped control: one tap per car, one-handed. A real radio group
+ * (single-select since migration 0005) so screen readers announce position and
+ * arrows move between options. Chips clear the 44px touch floor, and selection
+ * is a check glyph plus a filled field, not colour alone. No way to clear: the
+ * field is required.
  */
 export default function ServiceChips({ services, selected, onSelect, label }: Props) {
   const { i18n } = useTranslation();
@@ -44,10 +32,8 @@ export default function ServiceChips({ services, selected, onSelect, label }: Pr
             type="button"
             role="radio"
             aria-checked={active}
-            /* Only the active option stays in the tab order; arrow keys move
-               within the group. Roving tabindex is what a radio group is
-               supposed to do, and it stops a 20-service catalog from costing
-               20 tab stops on the way to the note field. */
+                        /* Roving tabindex: only the active option is a tab stop, so 20 services
+                           don't cost 20 tab stops. */
             tabIndex={active || (!selected && services[0]?.id === service.id) ? 0 : -1}
             onClick={() => onSelect(service.id)}
             onKeyDown={(e) => {

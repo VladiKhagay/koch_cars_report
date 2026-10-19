@@ -1,15 +1,7 @@
 /**
- * The app's shared control vocabulary.
- *
- * One button shape, one field shape, one badge shape, one confirmation
- * pattern — used on every screen. In Operate mode consistency is the feature:
- * a manager who learned "Save" on Job Detail should not have to re-learn it on
- * Services.
- *
- * Sizing is not decoration here. Every interactive element defaults to at
- * least `min-h-tap` (44px) because the primary user is holding a phone in one
- * hand next to a car; the `tap` / `control` spacing tokens make that floor
- * visible in the markup instead of buried in a padding value.
+ * The app's shared controls: one button, field, badge and confirmation shape on
+ * every screen. Interactive elements default to at least `min-h-tap` (44px)
+ * because the primary user holds a phone in one hand next to a car.
  */
 import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { useState } from 'react';
@@ -21,26 +13,10 @@ import { PAGE_WIDTH, type PageWidth } from '../lib/pageWidth';
 /* ------------------------------------------------------------------ layout */
 
 /**
- * The single page container: one max-width source (see lib/pageWidth) and the
- * page's vertical rhythm, which it owns so no screen has to repeat a spacing
- * class.
- *
- * There are exactly three intervals in this app, and the contrast between them
- * is what makes a screen scannable at a glance:
- *
- *   section  24 / 32px   the gap between subjects — this container. A page's
- *                        direct children are the questions the screen answers,
- *                        and the title is one of them, so it gets the same
- *                        generous break and finally reads as owning what
- *                        follows rather than as another slab in the stack.
- *   group    16px        {@link Group}: blocks that answer the SAME question —
- *                        a day stepper and the flags for that day, a stat trio
- *                        and its chart, a table and its pager.
- *   tight     8px        `space-y-2`: rows of one list.
- *
- * Everything used to be 20px, which is none of these: with one interval
- * repeated, proximity carried no meaning and grouping fell to drawing a card
- * around things.
+ * The single page container: one max-width source (lib/pageWidth) and the
+ * page's vertical rhythm. Three intervals only: section (24/32px, between
+ * subjects, this container), group (16px, {@link Group}) and tight (8px,
+ * `space-y-2`, rows of one list).
  */
 export function Page({
   width = 'form',
@@ -58,11 +34,7 @@ export function Page({
   );
 }
 
-/**
- * Blocks that answer the same question as each other, held closer together
- * than the sections around them. Proximity does the grouping, so the parts
- * don't each need a container to look related.
- */
+/** Blocks that answer the same question, held closer together than the sections around them. */
 export function Group({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`space-y-4 ${className}`}>{children}</div>;
 }
@@ -92,14 +64,8 @@ export function PageHeading({
 }
 
 /**
- * The card owns its own padding.
- *
- * It used to ship with none, so all eleven call sites invented one: six chose
- * 16px and five chose 20px — a value that is not on the spacing scale at all.
- * A shared primitive that leaves its most-used decision to the caller is how a
- * system drifts one screen at a time, so the default is now the documented
- * 16px. `padding={false}` is for the cards whose children own the edges (a
- * table, a list that draws its own dividers).
+ * The card owns its padding (16px) so screens don't each invent one.
+ * `padding={false}` is for cards whose children own the edges (a table, a list).
  */
 export function Card({
   children,
@@ -117,13 +83,7 @@ export function Card({
   );
 }
 
-/**
- * Heading for a card-level section. More space above than below, per house
- * rhythm. Sentence case rather than the letterspaced all-caps micro-label the
- * first pass used — that treatment is the single most dated thing a modern
- * product interface can wear, and it reads as a system label rather than as
- * the heading of the thing beneath it.
- */
+/** Heading for a card-level section: more space above than below, sentence case. */
 export function SectionHeading({ icon, children }: { icon?: IconName; children: ReactNode }) {
   return (
     <h2 className="mb-3 flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900">
@@ -134,15 +94,8 @@ export function SectionHeading({ icon, children }: { icon?: IconName; children: 
 }
 
 /**
- * The signed-out shell: sign-in and the invite landing page.
- *
- * These are the first two screens anyone sees, and a small form floating in
- * the middle of an empty viewport is what makes a product read as unfinished.
- * So the composition changes with the device rather than scaling one box:
- *  - phone: the page IS the form. Full-bleed paper, real page padding, content
- *    anchored near the top where a thumb and the keyboard both expect it.
- *  - ≥640px: the form becomes an elevated panel on the sunken canvas, which is
- *    where the depth in the token set finally has something to do.
+ * The signed-out shell (sign-in and invite landing). Phone: the page is the
+ * form, anchored near the top. 640px and up: an elevated panel on the canvas.
  */
 export function AuthShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
@@ -168,14 +121,8 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
 }
 
 /**
- * Language switch. Both options are always visible and labelled in their own
- * language — a single toggle showing the *other* language is a coin flip for
- * someone who can't read the current one.
- *
- * This is the only way to change language in the app, so it is not decoration:
- * it appears on the signed-out screens (a Russian-speaking worker meets the
- * sign-in form before they have an account to carry a preference) and in
- * Profile.
+ * Language switch, the only way to change language. Both options are always
+ * shown in their own language, and it appears on signed-out screens too.
  */
 function currentLang(resolved: string): Lang {
   return (LANGUAGES.find((l) => resolved.startsWith(l.code))?.code ?? 'en') as Lang;
@@ -212,10 +159,7 @@ export function LanguageToggle({ compact, block }: { compact?: boolean; block?: 
   );
 }
 
-/**
- * Label + value pairs that are read, not edited (account email, role, site).
- * A real `dl` so a screen reader announces the pairing.
- */
+/** Label + value pairs that are read, not edited. A real `dl` for screen readers. */
 export function DataList({ items }: { items: { label: string; value: ReactNode }[] }) {
   return (
     <dl className="divide-y divide-line">
@@ -284,10 +228,7 @@ export function Button({
   );
 }
 
-/**
- * Square icon-only control. Always takes an `label`, which becomes both the
- * accessible name and the tooltip — an icon never stands alone unnamed.
- */
+/** Square icon-only control. `label` is both the accessible name and the tooltip. */
 export function IconButton({
   icon,
   label,
@@ -323,10 +264,8 @@ export function Spinner({ size = 18 }: { size?: number }) {
 /* ------------------------------------------------------------ destructive */
 
 /**
- * The app's ONE destructive pattern. Tapping the trigger swaps it for an
- * explicit "are you sure" row; nothing destructive ever fires on first tap.
- * Job delete, service delete and user deactivation all route through this, so
- * the interaction is identical wherever a manager meets it.
+ * The app's one destructive pattern: the trigger swaps for an explicit
+ * "are you sure" row, so nothing destructive fires on first tap.
  */
 export function ConfirmAction({
   trigger,
@@ -378,14 +317,7 @@ export function ConfirmAction({
   );
 }
 
-/**
- * The armed half of {@link ConfirmAction}, on its own.
- *
- * The table rows arm from an icon button in the actions column and ask the
- * question in a panel beneath the row, so the trigger and the question can't
- * live in the same component — but the question itself must look and behave
- * identically wherever it appears.
- */
+/** The armed half of {@link ConfirmAction}, for table rows that ask in a panel beneath the row. */
 export function ConfirmPanel({
   question,
   confirmLabel,
@@ -433,11 +365,7 @@ export function ConfirmPanel({
   );
 }
 
-/**
- * Search box with the magnifier inside the field. Used by every screen that
- * filters a list, so the control a manager learns on the dashboard is the same
- * one they meet on the user table.
- */
+/** Search box with the magnifier inside the field; used by every filtered list. */
 export function SearchField({
   value,
   onChange,
@@ -472,13 +400,9 @@ export function SearchField({
 /* ------------------------------------------------------------------ fields */
 
 /**
- * Everything a field looks like except how tall it is. Split out because the
- * select wants a different height on a phone and two competing `h-*` utilities
- * in one class string resolve by stylesheet order, not by the order they were
- * written — a coin flip, not a decision.
- *
- * Type stays at 1rem in every field, at every width. Anything smaller triggers
- * iOS zoom-on-focus, which is a broken form on a phone.
+ * Everything a field looks like except height (two competing `h-*` classes
+ * resolve by stylesheet order). Type stays 1rem at every width: smaller
+ * triggers iOS zoom-on-focus.
  */
 const fieldBase =
   'w-full rounded-lg border border-line-strong bg-surface px-3.5 text-base text-ink-900 transition-colors duration-150 focus:border-ink-900';
@@ -488,23 +412,10 @@ export const fieldClass = `h-control ${fieldBase}`;
 export const fieldErrorClass = 'border-danger-600 bg-danger-50';
 
 /**
- * Native <select> with the platform arrow replaced.
- *
- * `fieldClass` alone is wrong for a select: the browser draws its own arrow
- * at a position we don't control and the symmetric padding lets long option
- * text slide underneath it. So the native affordance is switched off and one
- * chevron is drawn at a known offset, with inline-end padding reserved for it —
- * logical, so it lands on the left of the field in Hebrew without a second rule.
- *
- * The chevron is `pointer-events-none` so the whole control still opens the
- * native picker — which is what we want on a phone.
- *
- * Height is the one place a select parts company with the text fields. Filter
- * screens stack four or five of these, and a select is a one-tap control that
- * opens a native picker — nobody types into it — so it sits at the 44px tap
- * floor on a phone and returns to the 48px control height from `sm` up, where
- * the extra weight costs nothing. Text fields keep 48px everywhere: they are
- * aimed at while the keyboard is open.
+ * Native <select> with the platform arrow replaced by one chevron at a known
+ * offset (inline-end padding, so it flips in Hebrew). `pointer-events-none` on
+ * the chevron keeps the whole control opening the native picker. Sits at the
+ * 44px tap floor on a phone and 48px from `sm` up; text fields stay 48px.
  */
 export function Select({
   className = '',
@@ -593,13 +504,8 @@ const BADGE_TONE: Record<Tone, string> = {
 };
 
 /**
- * A read-only status marker. Deliberately NOT a button and never wired to an
- * action — the old UI used one element as both the "Active" badge and the
- * deactivate control, which is how a manager locks out a worker mid-shift by
- * tapping what looks like a label.
- *
- * Always renders an icon AND a word, so state survives both colour-blindness
- * and a phone screen in direct sun.
+ * A read-only status marker, deliberately not a button. Always an icon and a
+ * word, so state survives colour-blindness and direct sun.
  */
 export function Badge({ tone = 'neutral', icon, children }: { tone?: Tone; icon?: IconName; children: ReactNode }) {
   return (
@@ -642,10 +548,7 @@ export function LoadingRegion({ label, rows = 3 }: { label: string; rows?: numbe
   );
 }
 
-/**
- * Empty states say what the screen is for and what to do next — "nothing here"
- * is indistinguishable from "this is broken" on a flaky yard connection.
- */
+/** Empty states say what the screen is for and what to do next: "nothing here" reads as broken on a flaky connection. */
 export function EmptyState({
   icon,
   title,

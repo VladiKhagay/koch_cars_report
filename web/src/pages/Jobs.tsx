@@ -1,17 +1,7 @@
 /**
- * The jobs grid — the screen that replaces the office spreadsheet.
- *
- * The Dashboard answers "what happened today"; this answers "find me that car
- * and put its reservation number in". Those are different jobs, so this is a
- * different screen rather than a mode of the first one: dense rows, a page at a
- * time, filters that persist while you work down a stack of paperwork.
- *
- * Everything that narrows the list — search, filters, paging — happens in
- * Postgres, not in the browser. At ~3,000 jobs a month, shipping the year to
- * the client to filter it there would be the one decision that makes this
- * screen unusable on the phone a manager actually carries. TanStack Table is
- * therefore in `manual` territory throughout: it owns the column model and
- * rendering, the database owns the row set.
+ * The jobs grid, the screen that replaces the office spreadsheet. Search,
+ * filters and paging all happen in Postgres (~3,000 jobs a month); TanStack
+ * Table owns the column model and rendering, the database owns the row set.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -65,22 +55,10 @@ interface JobRow extends Job {
 /** Stable identity: a fresh `[]` fallback would invalidate the table's models. */
 const NO_ROWS: JobRow[] = [];
 
-/**
- * The filter labels above the toolbar's controls.
- *
- * These are `<label>`-wrapped rather than `Field`-wrapped — the toolbar wants
- * the controls in one wrapping flex row, not in Field's block — but they are
- * the same role, so they carry the same type as every other field label in the
- * app. They used to sit a step smaller and a shade lighter, which is how a
- * system ends up with two label sizes and no rule that says which is which.
- */
+/** Filter labels above the toolbar; same type as every other field label (`<label>`, not `Field`, to keep one flex row). */
 const filterLabelClass = 'mb-2 block text-sm font-medium text-ink-700';
 
-/**
- * No row models are registered. Sorting, filtering and pagination are all
- * server-side, so asking the table for client-side versions of them would
- * quietly re-derive the wrong answer from the 50 rows currently in memory.
- */
+/** No row models: sorting, filtering and paging are server-side. */
 const features = tableFeatures({});
 const helper = createColumnHelper<typeof features, JobRow>();
 
@@ -110,10 +88,8 @@ function BillingCell({ job, handlers }: { job: JobRow; handlers: React.RefObject
 /* ----------------------------------------------------------------- columns */
 
 function buildColumns(t: (key: string) => string, handlers: React.RefObject<Handlers>, showSite: boolean) {
-  /* `helper.columns` is what keeps each column's value type attached to its own
-     cell renderer — building a plain array widens them all to `unknown` and the
-     definitions stop type-checking against each other. So the full set is
-     declared as one tuple and the optional column is dropped afterwards. */
+    /* `helper.columns` keeps each column's value type attached to its renderer;
+       a plain array widens them to `unknown`. The optional column is dropped afterwards. */
   const cols = helper.columns([
     helper.accessor('created_at', {
       id: 'date',
@@ -262,13 +238,8 @@ export default function Jobs() {
 
   /* --------------------------------------------------------------- loading */
 
-  /*
-   * Deliberately not gated on the site list having loaded. RLS already scopes a
-   * manager to their own site, so an unscoped first query returns the same rows
-   * the filter would; an admin gets one extra query on mount, which the debounce
-   * below usually swallows. The alternative — waiting for a site id — leaves the
-   * grid on a skeleton forever for anyone with no site assigned.
-   */
+    /* Deliberately not gated on the site list: RLS already scopes a manager, and
+       waiting for a site id would leave a user with no site on a skeleton forever. */
   const load = useCallback(async () => {
     setLoading(true);
     setFailed(false);
@@ -322,15 +293,8 @@ export default function Jobs() {
     void q.then(({ data }) => setWorkers(data ?? []));
   }, [effectiveSite]);
 
-  /*
-   * The service filter reads the same catalog the job form writes from — there
-   * is no second list of service names anywhere in this app.
-   *
-   * Retired services are included (only soft-deleted ones are dropped): this
-   * grid is mostly read backwards through history, and a service switched off
-   * last month is exactly the one a manager needs to filter by when they are
-   * reconciling last month.
-   */
+    /* The service filter reads the same catalog the job form writes. Retired
+       services are included: this grid is mostly read backwards through history. */
   useEffect(() => {
     void supabase
       .from('services')
@@ -379,14 +343,9 @@ export default function Jobs() {
     setDupeFor((current) => (current === jobId ? null : jobId));
   }, []);
 
-  /*
-   * Fetch the job this one duplicates, only once its panel is opened.
-   *
-   * The original may be unreadable — soft-deleted already, or at a site this
-   * manager has no RLS access to. That resolves to `missing` rather than being
-   * left as `null`, because the two look identical to the skeleton and one of
-   * them never ends.
-   */
+    /* Fetch the duplicated job when its panel opens. It may be unreadable
+       (soft-deleted, or at a site this manager can't see); that resolves to
+       `missing` rather than `null`, which would look like loading forever. */
   useEffect(() => {
     const copy = rows.find((r) => r.id === dupeFor);
     if (!copy?.duplicate_of_job_id) return;

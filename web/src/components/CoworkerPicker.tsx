@@ -5,15 +5,10 @@ import { MAX_COWORKERS } from '../lib/jobs';
 import { IconButton, SearchField, Select } from './ui';
 
 /**
- * Up to MAX_COWORKERS people who worked the car with the submitter.
- *
- * Same "search narrows a native select" shape as the payment-sheet worker
- * picker (Export.tsx): the thing you finally tap is still the platform picker on
- * a phone. Staff from every site are offered — people help at other yards — so
- * each option carries its site to tell two Avis apart.
- *
- * Only active staff can be ADDED. Someone already on the job stays listed even
- * if deactivated since; removing them is still allowed.
+ * Up to MAX_COWORKERS people who worked the car with the submitter. A search
+ * narrows a native select (as in Export.tsx); staff from every site are offered,
+ * each option carrying its site. Only active staff can be added, but someone
+ * already on the job stays listed and removable.
  */
 export default function CoworkerPicker({
   id,

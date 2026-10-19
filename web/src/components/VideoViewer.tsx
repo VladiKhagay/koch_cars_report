@@ -6,15 +6,10 @@ import Icon from './Icon';
 import { Spinner } from './ui';
 
 /**
- * The job's condition video, fetched only when asked for.
- *
- * A clip is ~7.5MB against a photo's few hundred KB, so opening a job must not
- * pull it on the way past. It comes through the same authorised /photo route as
- * the photos and plays from a local blob URL: a plain <video src> could not
- * send the Authorization header, and a blob seeks without any range support.
- *
- * Download is an explicit link rather than the player's own menu, which only
- * desktop Chrome offers — on an iPhone this opens the share sheet.
+ * The job's condition video, fetched only on request (~7.5MB vs a few hundred
+ * KB for a photo) through the authorised /photo route and played from a blob
+ * URL, since <video src> can't send the Authorization header. Download is an
+ * explicit link (opens the share sheet on iPhone).
  */
 export default function VideoViewer({ jobId, downloadName }: { jobId: string; downloadName: string }) {
   const { t } = useTranslation();

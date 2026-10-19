@@ -8,14 +8,7 @@ import { navItemsFor, type NavItem } from '../lib/nav';
 import Icon from './Icon';
 import Logo from './Logo';
 
-/**
- * Pending-sync indicator.
- *
- * Queued work is as real as submitted work, so it is shown in the shell rather
- * than on the one screen that created it. Near-black on white: it must not
- * read as an error (nothing is wrong) and must survive a phone screen in
- * direct sun, which is where hue goes first.
- */
+/** Pending-sync indicator, shown in the shell. Near-black on white so it reads as neither an error nor a success, and survives direct sun. */
 function QueueIndicator({ compact }: { compact?: boolean }) {
   const { t } = useTranslation();
   const count = useQueuedCount();
@@ -52,12 +45,8 @@ export default function Layout() {
   useEffect(() => startQueueSync(), []);
 
   return (
-    /* App shell, not a document: the frame is exactly one viewport tall
-       (`dvh`, so a phone's collapsing address bar is accounted for) and the
-       only thing that scrolls is <main>. That is what pins the tab bar — it is
-       a flex sibling of the scroller, so it cannot float up on a short page,
-       cannot be pushed down by a long one, and needs no content padding to
-       keep from covering what it sits over. */
+        /* App shell: exactly one viewport tall (`dvh`) with only <main> scrolling,
+           so the tab bar stays pinned without content padding. */
     <div className="flex h-dvh flex-col bg-sunken md:flex-row">
       {/* The nav is the same five-to-seven stops on every page. Without this a
           keyboard user tabs through all of them before reaching the form they

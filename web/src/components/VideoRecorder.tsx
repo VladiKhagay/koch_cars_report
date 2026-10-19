@@ -4,15 +4,9 @@ import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS, VIDEO_BITRATE, pickVideoMimeType, s
 import Icon from './Icon';
 
 /**
- * Condition-video slot on New Job: empty → recording (full screen) → recorded.
- *
- * Records in-app with MediaRecorder rather than handing off to the phone's
- * camera app, because only an in-app recording has a bitrate we choose — see
- * lib/video.ts. No audio: smaller files, no yard conversations on record, and
- * the app's Permissions-Policy keeps the microphone off entirely.
- *
- * Every failure leaves the job submittable: the video is optional, and a
- * phone that cannot record must not cost the worker the car.
+ * Condition-video slot on New Job: empty, recording (full screen), recorded.
+ * Records in-app so the bitrate is ours to choose (lib/video.ts), without audio.
+ * Every failure leaves the job submittable: the video is optional.
  */
 interface Props {
   video: Blob | null;

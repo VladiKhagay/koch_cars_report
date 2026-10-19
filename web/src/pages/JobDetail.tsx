@@ -90,10 +90,7 @@ export default function JobDetail() {
         .select('*')
         .eq('id', j.service_id)
         .single<Service>();
-      // Honour the Russian service name, the way the worker's own chip list
-      // does. This screen was the only place in the app that always rendered
-      // name_en, so a Russian-speaking manager saw English service names here
-      // and nowhere else.
+            // Honour the Russian service name, as the worker's chip list does.
       setServiceName(localizedServiceName(svc, i18n.language) ?? '');
     } else {
       setServiceName('');

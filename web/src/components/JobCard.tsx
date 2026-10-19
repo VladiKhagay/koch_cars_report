@@ -5,14 +5,7 @@ import Icon from './Icon';
 import BillingInput from './BillingInput';
 import { Badge } from './ui';
 
-/**
- * One job as a card — the phone layout for the manager's lists.
- *
- * A table is the right shape at a desk, but on a 390px screen it pushes the one
- * column a manager came to fill in (the reservation number) off the edge and
- * wraps every plate across three lines. A card keeps the plate, the crew and
- * the reservation field together and always in view.
- */
+/** One job as a card, the phone layout for manager lists: keeps the plate, crew and reservation field in view where a table would push them off-screen. */
 export interface JobCardData {
   id: string;
   plate: string | null;

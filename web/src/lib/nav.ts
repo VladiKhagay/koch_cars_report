@@ -8,14 +8,9 @@ export interface NavItem {
 }
 
 /**
- * A role's destinations, split by how often they are reached.
- *
- * `primary` is what the bottom tab bar shows. Five is the ceiling: at 375px a
- * sixth tab leaves each one about 62px, which is under the touch target the
- * rest of the app holds itself to and turns the labels into two-line stubs.
- * `secondary` is everything a manager visits weekly rather than hourly — it
- * still sits directly in the desktop sidebar, which has the room, and collapses
- * behind one "More" tab on a phone.
+ * A role's destinations by frequency. `primary` is the bottom tab bar, capped at
+ * five (a sixth drops below the touch target at 375px). `secondary` sits in the
+ * desktop sidebar and behind one "More" tab on a phone.
  */
 export interface Nav {
   primary: NavItem[];

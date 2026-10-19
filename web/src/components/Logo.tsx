@@ -1,33 +1,14 @@
 /**
- * Koch-Chemie wordmark, inlined.
- *
- * Generated from src/assets/brand/koch-chemie-wordmark.svg (286×58). The
- * supplied file is two monochrome paths — #1e1e1e and #919396. Both fills are
- * replaced here by token references so the mark follows the palette instead of
- * pinning two more hex values into the app:
- *   - the primary path takes `currentColor`, so the mark inherits the colour of
- *     whatever it sits in (near-black on white today, white on ink if a dark
- *     surface ever needs it)
- *   - the secondary path takes --logo-secondary, defaulting to the brand grey
- *     token; a dark surface overrides that one variable.
- *
- * Inlined rather than linked so it renders offline and costs no request — the
- * PWA has a strict CSP and an offline requirement, and workers are on mobile
- * data.
- *
- * DO NOT hand-edit. Re-run the generator in the redesign notes if the supplied
- * asset changes.
+ * Koch-Chemie wordmark, inlined (renders offline, no request). Generated from
+ * src/assets/brand/koch-chemie-wordmark.svg (286x58); the primary path uses
+ * `currentColor` and the secondary --logo-secondary. Do not hand-edit.
  */
 
 interface Props {
   /** Rendered height in px; width follows the 286:58 aspect ratio. */
   height?: number;
   className?: string;
-  /**
-   * Accessible name. The wordmark IS the product name on the sign-in screen, so
-   * it needs one there; inside the shell the name is already announced by the
-   * page heading, so pass `decorative`.
-   */
+    /** Accessible name, needed on sign-in where the wordmark is the product name; pass `decorative` inside the shell. */
   title?: string;
   decorative?: boolean;
 }

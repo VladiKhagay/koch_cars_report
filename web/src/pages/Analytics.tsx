@@ -19,10 +19,9 @@ function monthKey(dayIso: string) {
 }
 
 /**
- * Analytics for managers (locked to their own site) and admins (site picker,
- * plus all-sites export). All aggregation reads job_daily_stats — a
- * security_invoker view, so RLS decides what each role can see; the filters
- * here only narrow, never widen.
+ * Analytics for managers (own site) and admins (site picker, all-sites export).
+ * Reads job_daily_stats, a security_invoker view: RLS decides what each role
+ * sees and the filters only narrow.
  */
 export default function Analytics() {
   const { t, i18n } = useTranslation();
@@ -36,15 +35,9 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  /**
-   * Filter options come from the site's roster and the service catalog, NOT
-   * from whatever rows the current date range happened to return.
-   *
-   * The old behaviour rebuilt both lists from the loaded stats, so narrowing
-   * the range could delete the currently-selected worker from the options: the
-   * select went blank and the numbers on screen silently reverted to
-   * all-workers figures that an admin would read as one worker's output.
-   */
+    /* Filter options come from the site's roster and the service catalog, not
+       from the loaded rows: otherwise narrowing the date range could drop the
+       selected worker and silently revert to all-worker figures. */
   const [workerOptions, setWorkerOptions] = useState<{ id: string; name: string }[]>([]);
   const [serviceOptions, setServiceOptions] = useState<{ id: string; label: string }[]>([]);
   /** Display names for anything the stats reference, deleted rows included. */
@@ -70,10 +63,7 @@ export default function Analytics() {
       .order('sort_order')
       .then(({ data }) =>
         setServiceOptions(
-          // Name only. The catalog number is an accounting key for the exported
-          // report — it means nothing to a manager reading a chart, and
-          // prefixing every label with it pushed the actual service name out
-          // of the visible width on a phone.
+                    // Name only: the catalog number is an accounting key that crowds the label on a phone.
           (data ?? []).map((s) => ({
             id: s.id,
             label: serviceName(s, i18n.language) ?? '',
@@ -134,12 +124,9 @@ export default function Analytics() {
     [rows, workerFilter, serviceFilter],
   );
 
-  /*
-   * The view has one row per PERSON on a job (0019), so a car worked by two
-   * people is in it twice. Site-wide figures count cars (`car_count`, the
-   * submitter's row only); once a worker is picked, the question is "how many
-   * jobs did they work on", which is their `job_count`, shared ones included.
-   */
+    /* The view has one row per person on a job (0019), so a shared car appears
+       twice. Site-wide figures count cars (`car_count`, the submitter's row);
+       with a worker picked it is their `job_count`, shared jobs included. */
   const countOf = (r: JobDailyStat) => (workerFilter ? r.job_count : r.car_count);
   const total = useMemo(
     () => filtered.reduce((sum, r) => sum + countOf(r), 0),
@@ -228,11 +215,8 @@ export default function Analytics() {
               aria-label={t('dashboard.site')}
               value={siteId ?? ''}
               onChange={(e) => setSiteId(e.target.value)}
-              /* Sized to its own content so it doesn't eat the heading row, but
-                 capped on a phone — a site name is free-text and long enough
-                 ones pushed the control past the viewport. The type stays at
-                 the field size; this used to override to 14px and was the only
-                 dropdown in the app at a different size from the rest. */
+                            /* Sized to its content but capped on a phone: a free-text site name
+                               could push the control past the viewport. Keeps the field type size. */
               className="w-auto max-w-44 sm:max-w-none"
             >
               {sites.map((s) => (

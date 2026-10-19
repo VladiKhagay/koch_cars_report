@@ -38,12 +38,7 @@ import {
 /** Catalog, name, two translations, status, order, actions — plus price for admins. */
 const BASE_COLUMNS = 7;
 
-/**
- * What a worker is paid for one job of this service. Admin-only, and not just
- * in the markup: migration 0006 reverts any non-admin write to this column, so
- * hiding the input removes the affordance rather than pretending to remove the
- * capability.
- */
+/** Pay per job of this service. Admin-only, enforced by migration 0006 (non-admin writes are reverted), not just hidden in the markup. */
 function parsePrice(raw: string): number | null {
   const n = Number(raw.trim());
   return Number.isFinite(n) && n >= 0 ? n : null;
@@ -53,9 +48,8 @@ function parsePrice(raw: string): number | null {
 type Expanded = { id: string; mode: 'edit' | 'deactivate' } | null;
 
 /**
- * Service catalog management, shared by managers and admins (RLS allows
- * both to insert/update; hard DELETE isn't granted to anyone — "delete"
- * sets deleted_at, so historical jobs keep their service references).
+ * Service catalog management for managers and admins. "Delete" sets deleted_at
+ * (no hard DELETE is granted), so historical jobs keep their service.
  */
 export default function Services() {
   const { t } = useTranslation();
@@ -149,10 +143,8 @@ export default function Services() {
   async function saveEdit(serviceId: string) {
     setError('');
 
-    /* The price is left out of a manager's payload rather than sent unchanged.
-       The draft holds a value they never saw and cannot have meant, and 0006
-       would revert it anyway — sending it would only make the request lie about
-       what was being asked for. */
+        /* The price is left out of a manager's payload: the draft holds a value they
+           never saw, and 0006 would revert it anyway. */
     let price: number | undefined;
     if (isAdmin) {
       const parsed = parsePrice(editDraft.worker_price);
@@ -196,12 +188,8 @@ export default function Services() {
     void load();
   }
 
-  /**
-   * Reordering swaps `sort_order` with the neighbour, so it only makes sense
-   * against the full catalog. While a search is narrowing the table the arrows
-   * are hidden rather than left to move a row past a neighbour the manager
-   * can't see.
-   */
+    /* Reordering swaps `sort_order` with the neighbour, so the arrows are hidden
+       while a search narrows the table (they'd move past a hidden row). */
   async function move(service: Service, direction: -1 | 1) {
     const idx = services.findIndex((s) => s.id === service.id);
     const swapWith = services[idx + direction];

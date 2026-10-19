@@ -48,26 +48,12 @@ type FetchedJob = ExportJob & {
 
 type ReportKind = 'customer' | 'payments';
 
-/**
- * The outcome of the last export, tagged with which button produced it.
- *
- * The tag exists so the banner can be rendered under that button. There are
- * two export actions on this page and one shared date range; an unattributed
- * "Downloaded …" floating near the dates is the kind of feedback a manager
- * reads as belonging to whichever report they were looking at.
- */
+/** The last export's outcome, tagged with its button so the banner renders under the right report. */
 type Result = ({ kind: 'empty' } | { kind: 'done'; file: string } | { kind: 'error' }) & {
   for: ReportKind;
 };
 
-/**
- * The span a report is about to cover, stated directly above its own download
- * button — "whose jobs, over which dates".
- *
- * Weighted as a statement of configuration rather than as muted help text: it
- * is the answer to "what am I about to download?", and it is the thing that
- * visibly changes when the period above is edited.
- */
+/** The span a report will cover, stated above its download button; weighted as configuration, not help text. */
 function PeriodLine({ children }: { children: ReactNode }) {
   return (
     <p className="flex items-start gap-2 rounded-lg bg-ink-50 px-3 py-2 text-sm font-medium text-ink-700">
@@ -106,11 +92,7 @@ export default function Export() {
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
   const [busy, setBusy] = useState<ReportKind | null>(null);
-  /**
-   * Distinguishable outcomes instead of one silent button. A manager who cannot
-   * tell whether the file was produced taps again and ends up with three copies
-   * in Downloads — or assumes it worked when it did not.
-   */
+    /** Distinguishable outcomes instead of one silent button, so nobody taps again for three copies. */
   const [result, setResult] = useState<Result | null>(null);
 
   // Report layout
@@ -119,12 +101,8 @@ export default function Export() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [configResult, setConfigResult] = useState<'saved' | 'error' | null>(null);
 
-  /**
-   * Worker pay is admin-only on the Services screen, so the sheet listing it
-   * per job is too. Flip this to `canManage` if managers are meant to run
-   * payroll — but see the note in the RLS review: a manager can still read
-   * `jobs.worker_price` through the API, so the UI is the softer half of that.
-   */
+    /* Worker pay is admin-only on the Services screen, so this sheet is too. Note
+       a manager can still read `jobs.worker_price` via the API; the UI is the softer half. */
   const canSeePay = appUser?.role === 'admin';
 
   /* Who the payment sheet is for. Empty until picked — the report is per
@@ -134,15 +112,8 @@ export default function Export() {
   const [workerId, setWorkerId] = useState('');
   const [workerSearch, setWorkerSearch] = useState('');
 
-  /*
-   * Everyone on staff, every site. The payment sheet is per PERSON across all
-   * sites (0019): pay follows the person, and someone who helped at another yard
-   * would otherwise be missing from both yards' lists. Only an admin reaches
-   * this card, and admins read every user.
-   *
-   * Inactive staff are deliberately included: somebody who left mid-month is
-   * still owed for the jobs they worked before they did.
-   */
+    /* Everyone on staff, every site: the payment sheet is per person across sites
+       (0019). Inactive staff are included; they are still owed for earlier jobs. */
   const staff = useStaff();
   useEffect(() => {
     if (!canSeePay) return;
@@ -160,10 +131,7 @@ export default function Export() {
     };
   }, [canSeePay]);
 
-  /* A yard can carry a long staff list, and a native select is a scroll with no
-     way to type at it. The search narrows the options rather than replacing the
-     control — so the thing you finally tap is still the same picker, and on a
-     phone still the native one. */
+    /* The search narrows a native select (a long list can't be typed at) instead of replacing it. */
   const matchingWorkers = workers.filter((w) =>
     w.name.toLowerCase().includes(workerSearch.trim().toLowerCase()),
   );
@@ -192,19 +160,12 @@ export default function Export() {
     };
   }, [siteId]);
 
-  /**
-   * The jobs both reports are built from.
-   *
-   * `forWorkerId` narrows to one person in Postgres rather than filtering the
-   * rows afterwards: the payment sheet must not be able to contain somebody
-   * else's job even for a moment, and a client-side filter over a query that
-   * fetched the whole site is one forgotten line away from doing exactly that.
-   * It matches jobs they submitted OR co-worked, at ANY site — the site filter
-   * only applies to the customer report.
-   *
-   * Both date bounds are inclusive local calendar days — the same widening the
-   * jobs grid does, so "1st to 31st" means the same span on both screens.
-   */
+    /**
+     * The jobs both reports are built from. `forWorkerId` narrows in Postgres so
+     * the payment sheet can never hold somebody else's job; it matches submitted
+     * OR co-worked jobs at any site (the site filter is for the customer report).
+     * Both bounds are inclusive local calendar days, as in the jobs grid.
+     */
   async function fetchJobs(forWorkerId?: string): Promise<FetchedJob[] | null> {
     const fromIso = new Date(`${from}T00:00:00`).toISOString();
     const toIso = new Date(`${to}T23:59:59.999`).toISOString();
@@ -305,10 +266,8 @@ export default function Export() {
 
   const visibleCount = columns?.filter((c) => c.visible).length ?? 0;
 
-  /* A date input can be cleared. Both reports then build an ISO bound out of
-     `new Date('T00:00:00')`, which is an Invalid Date and throws on
-     `.toISOString()` — leaving the button spinning with no error. Every export
-     action is gated on having both ends of the period. */
+    /* A cleared date input makes `new Date('T00:00:00')` invalid and
+       `.toISOString()` throw, so every export is gated on both ends. */
   const periodComplete = Boolean(from && to);
 
   /** The period as a person reads it, in their own locale. */

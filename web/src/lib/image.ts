@@ -1,23 +1,14 @@
 /**
- * Largest photo the Worker's /upload will accept.
- *
- * Must match MAX_UPLOAD_BYTES in worker/src/upload.ts. The two packages deploy
- * separately and share no module, so the number is written down twice on
- * purpose — but only the Worker's copy is a security control. This one exists
- * so the downscale-failure path fails on the phone instead of uploading bytes
- * that are certain to be rejected.
+ * Largest photo the Worker's /upload accepts. Must match MAX_UPLOAD_BYTES in
+ * worker/src/upload.ts (separate packages); only the Worker's copy is a security
+ * control. This one fails oversized fallbacks on the phone.
  */
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 /**
  * `name` of the error `downscaleImage` throws when the browser has no decoder
- * for the file at all — an iPhone HEIC opened in desktop Chrome, most often.
- *
- * Worth telling apart from every other failure in here: a canvas or encoder
- * quirk leaves the original file perfectly good to upload and to read, while
- * an undecodable one is useless to everything downstream — the crop, the OCR
- * model (which is handed it labelled image/jpeg) and the photo viewer alike.
- * It has to be refused at the capture rather than carried forward.
+ * (an iPhone HEIC in desktop Chrome). Unlike a canvas quirk, an undecodable
+ * file is useless downstream, so it is refused at capture.
  */
 export const UNDECODABLE_IMAGE = 'UndecodableImage';
 
@@ -68,15 +59,9 @@ export interface CropRect {
 }
 
 /**
- * Turns a detected box into a padded, in-bounds pixel crop rect.
- *
- * Moondream's schema does not state whether coordinates are normalised or
- * absolute, so both are accepted: anything within 0..1.5 is treated as
- * normalised, larger values as pixels.
- *
- * Padding is asymmetric — more vertically than horizontally, as a plate is a
- * wide, short strip whose top and bottom characters sit close to the border.
- * Too tight a crop clips the glyphs that touch the plate frame.
+ * Turns a detected box into a padded, in-bounds pixel crop. Coordinates in
+ * 0..1.5 are treated as normalised, larger as pixels. Padding is greater
+ * vertically: a plate is a wide, short strip whose glyphs touch the border.
  */
 export function boxToCropRect(
   box: DetectBox,
@@ -107,23 +92,13 @@ export function boxToCropRect(
   return { sx, sy, sw, sh };
 }
 
-/**
- * Rewrites a box into 0..1 fractions of its own source image.
- *
- * Detection runs on a small copy of the photo (fast to upload) while the crop
- * is taken from the full-resolution original. A normalised box survives that
- * change of resolution; a pixel-space one would land somewhere else entirely.
- */
+/** Rewrites a box into 0..1 fractions, so it survives the resolution change between the small detection copy and the original. */
 export function normalizeBox(box: DetectBox, srcW: number, srcH: number): DetectBox {
   if (box.x1 <= 1.5 && box.y1 <= 1.5) return box;
   return { x0: box.x0 / srcW, y0: box.y0 / srcH, x1: box.x1 / srcW, y1: box.y1 / srcH };
 }
 
-/**
- * Crops to the detected box and upscales, so the plate fills the frame the
- * model sees. A plate is only ~190px wide in a whole-car shot; cropping to it
- * is what makes OCR viable at all.
- */
+/** Crops to the detected box and upscales so the plate fills the model's frame. */
 export async function cropToBox(file: File | Blob, box: DetectBox, outWidth = 1024): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const rect = boxToCropRect(box, bitmap.width, bitmap.height);
@@ -147,17 +122,9 @@ export async function cropToBox(file: File | Blob, box: DetectBox, outWidth = 10
 }
 
 /**
- * Black/white points that put most of a histogram's mass across the full range.
- *
- * A VIN photographed through the windscreen comes back as dark characters in a
- * bright reflected wash — the glyphs are still there, but squeezed into a
- * narrow band of the range, which is exactly what a vision model loses. The
- * percentiles are deliberately loose: a glare highlight is a real part of the
- * image, and clipping it away is the point.
- *
- * `histogram` is 256 luminance bucket counts. Returns null when there is
- * nothing to gain (already full-range, or a flat frame that stretching would
- * only amplify noise in).
+ * Black/white points that stretch most of a histogram across the full range
+ * (windscreen VINs are dark glyphs in a bright wash). Percentiles are loose on
+ * purpose. `histogram` is 256 luminance counts; null when there is nothing to gain.
  */
 export function levelRange(histogram: ArrayLike<number>, lowPct = 0.02, highPct = 0.98): [number, number] | null {
   let total = 0;
@@ -188,12 +155,7 @@ export function levelRange(histogram: ArrayLike<number>, lowPct = 0.02, highPct 
   return [low, high];
 }
 
-/**
- * Grayscale + levels stretch, as a second chance for a read the model failed.
- *
- * Returns the input untouched when there is no headroom, so the caller can
- * skip a pointless second model call by comparing identity.
- */
+/** Grayscale + levels stretch as a second chance for a failed read. Returns the input untouched when there is no headroom, so callers can compare identity. */
 export async function enhanceForOcr(blob: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(blob);
   const canvas = document.createElement('canvas');

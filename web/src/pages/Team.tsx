@@ -6,11 +6,7 @@ import { setUserActive } from '../lib/workerApi';
 import type { AppUser } from '../lib/types';
 import { Badge, Card, ConfirmAction, EmptyState, LoadingRegion, Page, PageHeading } from '../components/ui';
 
-/**
- * Manager view of their site's team. Managers can only activate/deactivate
- * worker-role users at their own site — enforced by the set_user_active
- * security definer function (migration 0004), not just by this UI.
- */
+/** Manager view of their site's team. Activate/deactivate of workers at their site is enforced by set_user_active (0004), not just this UI. */
 export default function Team() {
   const { t } = useTranslation();
   const { appUser } = useAuth();

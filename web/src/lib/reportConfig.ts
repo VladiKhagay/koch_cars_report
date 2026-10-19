@@ -1,22 +1,9 @@
 /**
- * The customer treatment report's column set.
- *
- * This report leaves the building — it goes to the importer. `worker_price`
- * must never appear in it at any visibility: what the yard pays its staff is
- * nobody else's business. `worker` was held to the same rule until 0013, when
- * the yard decided the importer should see who did the work. The name is now
- * an allowed column; the pay is still not.
- *
- * `sites.customer_report_config` is a jsonb blob that a manager writes through
- * an RPC, which makes it *data*, and a privacy rule enforced only by data is a
- * privacy rule one bad row away from being off. So the set of columns the
- * report may contain lives here, in code, and the stored config can only order
- * and toggle within it.
- *
- * Migration 0013 validates the same list at the write boundary. Both layers
- * are deliberate: the database stops a bad value being stored, this stops a
- * bad value being rendered if one ever is — by a direct SQL edit, a restored
- * backup, or a future migration that reintroduces a key.
+ * The customer treatment report's column set. This report goes to the importer,
+ * so `worker_price` must never appear in it; `worker` (the name) became allowed
+ * in 0013. The site's stored config is data, so the allowed columns live here in
+ * code and the config can only order and toggle within them. Migration 0013
+ * validates the same list at write time; both layers are deliberate.
  */
 export const CUSTOMER_COLUMNS = [
   'date',
@@ -36,14 +23,7 @@ export interface ColumnConfig {
   visible: boolean;
 }
 
-/**
- * Header text written into the spreadsheet.
- *
- * Fixed, English, and NOT translated: the office matches on these strings, so
- * a Hebrew-speaking manager exporting the same report must produce a file the
- * same downstream process can read. The configuration screen shows localized
- * names beside them so the manager can still tell which column is which.
- */
+/** Header text in the spreadsheet: fixed English and not translated, because the office matches on these strings. */
 export const SHEET_HEADERS: Record<CustomerColumnKey, string> = {
   date: 'Date',
   brand: 'Vehicle brand',
@@ -60,14 +40,9 @@ function isCustomerColumn(value: unknown): value is CustomerColumnKey {
 }
 
 /**
- * Turns whatever is stored on the site row into an ordered, safe column list.
- *
- * Unknown keys are dropped rather than rejected: a config carrying
- * `worker_price` must not produce an error the manager can't act on, and must
- * not block the export either — it should just quietly not have that column.
- * Allowlisted
- * keys the config omits are appended HIDDEN, so a column added to the product
- * later never starts appearing in customer paperwork on its own.
+ * Turns the stored site config into an ordered, safe column list. Unknown keys
+ * (e.g. `worker_price`) are dropped quietly, and allowlisted keys the config
+ * omits are appended hidden, so a new column never appears in paperwork alone.
  */
 export function resolveCustomerColumns(raw: unknown): ColumnConfig[] {
   const stored = raw as { columns?: unknown } | null | undefined;

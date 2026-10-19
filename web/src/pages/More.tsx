@@ -6,19 +6,9 @@ import Icon from '../components/Icon';
 import { Page, PageHeading } from '../components/ui';
 
 /**
- * Secondary navigation, on a phone.
- *
- * The bottom tab bar caps at five, so a manager's weekly screens live one tap
- * behind here rather than crowding the four they use hourly.
- *
- * It is a route, not a drawer. A drawer means an overlay, a focus trap, escape
- * handling and scroll locking to be accessible, and the app has no other modal
- * anywhere — even destructive confirmation is an inline panel. A page gets the
- * back button, deep links and focus management for free, and matches the
- * pattern already in the product.
- *
- * On desktop it is unreachable by design: the sidebar already lists these, so
- * anyone arriving here with a wide window is sent home.
+ * Secondary navigation on a phone: the weekly screens one tap behind the five
+ * tabs. A route, not a drawer (no overlay, focus trap or scroll lock; back
+ * button and deep links come free). Unreachable on desktop, where the sidebar lists these.
  */
 export default function More() {
   const { t } = useTranslation();

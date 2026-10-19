@@ -1,13 +1,4 @@
-/**
- * Dev-only harness for PhotoCapture.
- *
- * The component only appears on /new, which needs a signed-in worker. This
- * mounts every state side by side so the tile can be checked — including the
- * two file inputs, whose `capture` attribute is the whole point of the change
- * and is invisible in a screenshot.
- *
- * Reachable at /dev/photo in `npm run dev` only; App.tsx does not route to it.
- */
+/** Dev-only harness mounting every PhotoCapture state side by side, at /dev/photo in `npm run dev` (App.tsx doesn't route to it otherwise). */
 import { useState } from 'react';
 import PhotoCapture from '../components/PhotoCapture';
 import PhotoViewer from '../components/PhotoViewer';

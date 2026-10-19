@@ -22,17 +22,9 @@ const SLOT_PADDING = 18;
 const MAX_LABEL_CHARS = 11;
 
 /**
- * Hand-rolled SVG chart — there is no charting library here and adding one is
- * not worth the payload for three bar charts on a low-traffic screen.
- *
- * Every colour is a Tailwind utility resolving to a theme token rather than a
- * hex literal, so a palette swap reaches the charts. The old implementation
- * painted bars, gridlines, axis labels and the tooltip with five hardcoded hex
- * values, which meant a brand change would have left every chart on the
- * previous blue.
- *
- * Labels are 12px in ink-700 (about 8.6:1 on white) rather than 10px in a
- * mid-grey at roughly 3:1 — a manager may be reading this outdoors.
+ * Hand-rolled SVG chart (a charting library isn't worth the payload for three
+ * charts). Colours are theme-token utilities, not hex, so a palette swap reaches
+ * them. Labels are 12px ink-700 (~8.6:1) for outdoor reading.
  */
 export default function BarChart({ title, data, valueLabel }: Props) {
   const { t } = useTranslation();

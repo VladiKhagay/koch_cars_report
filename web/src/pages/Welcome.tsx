@@ -14,12 +14,7 @@ import {
   fieldErrorClass,
 } from '../components/ui';
 
-/**
- * Landing page for Supabase invite links. The link carries a one-time token
- * in the URL hash; supabase-js exchanges it for a session automatically on
- * load. Registration is complete only after the invitee sets a password
- * here — there is no self-signup path anywhere in the app.
- */
+/** Landing page for invite links: supabase-js exchanges the URL-hash token for a session, and registration completes when the invitee sets a password. No self-signup exists. */
 export default function Welcome() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -64,12 +59,7 @@ export default function Welcome() {
     navigate('/', { replace: true });
   }
 
-  /*
-    The token exchange takes a moment on a yard connection. Rendering nothing
-    meant a person who had just tapped a link from their email watched a blank
-    white screen and could not tell the difference between "working" and
-    "broken" — on the one screen where giving up costs them their account.
-  */
+    /* The token exchange takes a moment on a yard connection; show a skeleton, not a blank screen. */
   if (!ready) {
     return (
       <AuthShell>

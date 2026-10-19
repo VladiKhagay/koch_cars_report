@@ -9,12 +9,9 @@ export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
 export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
 
 /**
- * True when retrying `submitJob` with the SAME payload can never succeed —
- * a 4xx from the Worker (uploadPhoto's HttpError), or a Postgres RLS/
- * permission rejection (error code 42501) from the `jobs`/`photos` insert.
- * Anything else (a network failure, a 5xx, an unrecognised error shape) is
- * treated as transient so a real outage never gets mistaken for a permanent
- * failure and drops data.
+ * True when retrying `submitJob` with the same payload can never succeed: a
+ * 4xx from the Worker, or a Postgres RLS rejection (42501). Anything else is
+ * treated as transient so an outage never drops data.
  */
 export function isPermanentError(err: unknown): boolean {
   if (err instanceof HttpError) return err.status >= 400 && err.status < 500;
@@ -32,80 +29,45 @@ export interface NewJobPayload {
   brand: string | null;
   workerNote: string | null;
   serviceId: string;
-  /**
-   * Up to two people who worked the car too. Optional only because payloads
-   * queued before migration 0019 don't carry it — absent means "nobody else".
-   */
+  /** Up to two co-workers. Absent on payloads queued before migration 0019. */
   coworkerIds?: string[];
-  /**
-   * Optional, for the same reason the VIN photo is: a car with no plate has
-   * no photo to take of it. `null` means no plate photo was taken.
-   */
+  /** `null` when no plate photo was taken (e.g. the car has no plate). */
   plateBlob: Blob | null;
-  /**
-   * Optional, for the same reason the VIN itself is: the plate under the
-   * windscreen is regularly unreadable or absent, and a photo requirement the
-   * car cannot satisfy is a gate on recording the car at all. `null` means no
-   * VIN photo was taken — the viewer already reports a missing one as missing.
-   */
+  /** `null` when no VIN photo was taken; the VIN is often unreadable, so it can't be required. */
   vinBlob: Blob | null;
   /** Up to three optional photos — damage, interior, anything worth a record. */
   extraBlobs?: Blob[];
   /** Optional condition video (≤60s, recorded in-app). Missing on payloads queued before it existed. */
   videoBlob?: Blob | null;
   /**
-   * ponytail: pre-0005 payloads sat in IndexedDB with a multi-service list.
-   * Read once in submitJob so a job queued on a phone before this deploy still
-   * lands with its service. Delete this field once every device has flushed —
-   * the queue drains on the next connection, so a week is generous.
+   * Legacy: pre-0005 payloads queued a multi-service list. Read once in
+   * submitJob; delete once every device has flushed its queue.
    */
   serviceIds?: string[];
-  /**
-   * Set by submitJob once the row exists, so a retry after a failed UPLOAD
-   * resumes instead of inserting the job a second time. See the note below.
-   */
+  /** Set once the row exists, so a retry after a failed upload resumes instead of inserting a second job. */
   jobId?: string;
 }
 
 /**
- * Creates a job row, then uploads its photos. Photos go up AFTER the row
- * exists (the Worker's /upload endpoint checks visibility by asking Supabase
- * "can this caller see job <id>?" — see worker/src/upload.ts — so the job must
- * exist first).
- *
- * That ordering has a consequence worth stating: if the insert succeeds and an
- * upload then fails, the caller queues the payload and retries. Without the
- * `jobId` carried on the payload, that retry would insert a SECOND job for the
- * same car — inflating the day's count, the export and the payroll sheet, with
- * nothing on screen to suggest it happened. Three optional photos make that
- * path considerably more likely than two required ones did, so the id is
- * recorded on the payload before any upload starts.
+ * Creates a job row, then uploads its photos (the Worker's /upload checks the
+ * job exists). `jobId` is recorded on the payload before any upload starts so
+ * a retry never inserts a second job for the same car.
  */
 export async function submitJob(payload: NewJobPayload): Promise<string> {
-  /* An absent plate or VIN is stored as NULL, never as '' — an empty string is
-     a value, and it would collide with every other blank one in the duplicate
-     check and sort into the middle of the index as if it were a real value. */
+  /* An absent plate or VIN is NULL, never '': an empty string would collide in the duplicate check. */
   const plate = payload.plate?.toUpperCase().trim() || null;
   const vin = payload.vin?.toUpperCase().trim() || null;
 
-  // A job needs something to identify the car by. The form already blocks
-  // this case; guarded here too so a retry-queue payload or a future direct
-  // caller can't insert a row the DB constraint would reject with an opaque
-  // error.
+  // A job needs a plate or a VIN; guarded here for retry-queue payloads and direct callers.
   if (!plate && !vin) throw new Error('Job requires a plate or a VIN');
 
   let jobId = payload.jobId;
 
   if (!jobId) {
-    // Computed here (not just as a UI hint) so it's also correct for jobs that
-    // were queued offline and submitted later by the retry queue, which never
-    // ran the interactive duplicate check at capture time. With no VIN there is
-    // nothing to match on, so no duplicate is claimed.
+    // Computed here so jobs queued offline get it too. No VIN, nothing to match.
     const duplicateOfJobId = vin ? await findRecentDuplicate(payload.siteId, vin) : null;
 
-    // worker_price is deliberately absent: a database trigger stamps it from the
-    // service catalog (migration 0005). Sending it from here would be ignored for
-    // the worker role anyway, and would read as if the client set the pay.
+    // worker_price is absent on purpose: a trigger stamps it from the service catalog (0005).
     const { data: job, error } = await supabase
       .from('jobs')
       .insert({
@@ -143,9 +105,7 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
     ...(payload.videoBlob ? [{ kind: 'video' as PhotoKind, blob: payload.videoBlob }] : []),
   ];
 
-  /* ponytail: a retry re-sends every upload, the ~7.5MB video included, even
-     the ones that already landed. Fine for an occasional flaky submit; skip
-     kinds already in R2 if mobile data use on the yard phones ever comes up. */
+  /* ponytail: a retry re-sends every upload, even ones that landed. Skip kinds already in R2 if mobile data becomes a concern. */
 
   const keys = await Promise.all(uploads.map((u) => uploadPhoto(jobId, u.kind, u.blob)));
 
@@ -162,20 +122,16 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
 }
 
 /**
- * Writes a job's billing code / manager note. They live in `job_billing`
- * (migration 0023), which only the site's managers and admins can read or
- * write — a worker's own job row never carries them. Only the fields passed
- * are touched.
+ * Writes a job's billing code / manager note to `job_billing` (migration 0023),
+ * which only the site's managers and admins can access. Only passed fields change.
  */
 export function saveBilling(jobId: string, fields: { billing_code?: string | null; manager_note?: string | null }) {
   return supabase.from('job_billing').upsert({ job_id: jobId, ...fields }, { onConflict: 'job_id' });
 }
 
 /**
- * Flags jobs with the same VIN at the same site in the last 7 days.
- * Goes through a security definer RPC because workers can no longer SELECT
- * other workers' job rows directly (migration 0003) — the function returns
- * only a job id, never the row.
+ * Flags jobs with the same VIN at the same site in the last 7 days. A security
+ * definer RPC returns only a job id, since workers can't SELECT others' jobs (0003).
  */
 export async function findRecentDuplicate(siteId: string, vin: string): Promise<string | null> {
   const { data } = await supabase.rpc('find_recent_duplicate', { p_site_id: siteId, p_vin: vin });
@@ -217,11 +173,9 @@ export interface JobFilters {
   /** Only jobs still waiting for their reservation number. */
   missingBilling?: boolean;
   /**
-   * Which columns the term is matched against. The default is what the
-   * manager's grid can read; the worker screen queries `jobs_worker_view`,
-   * which deliberately has no billing_code column — and PostgREST fails the
-   * whole query, not just that clause, when asked to filter a column that
-   * isn't there. So the caller names its own columns.
+   * Columns the term is matched against. The worker screen queries
+   * `jobs_worker_view`, which has no billing_code, and PostgREST fails the whole
+   * query on an unknown column, so the caller names its own.
    */
   searchColumns?: string[];
 }
@@ -231,12 +185,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const DEFAULT_SEARCH_COLUMNS = ['plate', 'vin', 'billing_code'];
 
-/**
- * The chain of `PostgrestFilterBuilder` methods this narrowing uses. Declared
- * structurally so the composition can be exercised against a recorder in a
- * test — the alternative is discovering a dropped `.eq` when a payroll figure
- * comes out wrong.
- */
+/** The query-builder methods used here, declared structurally so tests can use a recorder. */
 interface JobQuery<Q> {
   eq(column: string, value: string): Q;
   in(column: string, values: string[]): Q;
@@ -245,13 +194,7 @@ interface JobQuery<Q> {
   or(filter: string): Q;
 }
 
-/**
- * Applies the grid's filters to a jobs query, in Postgres.
- *
- * All of it is server-side on purpose: at ~3,000 jobs a month, narrowing a
- * page of 50 rows that the database already chose would be filtering the
- * wrong set — the row you are looking for is usually not on it.
- */
+/** Applies the grid's filters to a jobs query, server-side so paging sees the right set. */
 export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFilters): Q {
   let q = query;
   if (filters.siteId) q = q.eq('site_id', filters.siteId);
@@ -267,9 +210,7 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
   if (filters.from) q = q.gte('created_at', new Date(`${filters.from}T00:00:00`).toISOString());
   if (filters.to) q = q.lte('created_at', new Date(`${filters.to}T23:59:59.999`).toISOString());
 
-  /* A job with no VIN simply doesn't match a VIN search: `ilike` against NULL
-     is NULL, not a match, which is the right answer — a blank field is not a
-     hit for every query. */
+  /* A NULL column never matches `ilike`, which is right: a blank field is not a hit. */
   const term = searchTerm(filters.search ?? '');
   const columns = filters.searchColumns ?? DEFAULT_SEARCH_COLUMNS;
   if (term) q = q.or(columns.map((c) => `${c}.ilike.%${term}%`).join(','));

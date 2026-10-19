@@ -13,11 +13,7 @@ export interface QueuedJob extends NewJobPayload {
   queuedAt: string;
   /** Failed submit attempts so far. Missing on jobs queued before this field existed — treat as 0. */
   attempts?: number;
-  /**
-   * Set once retrying stopped making sense (a permanent error, or the
-   * attempts/age bound above) — the job stays in the queue, visible, but
-   * flushQueue skips it until a human deals with it.
-   */
+    /** Set once retrying stopped making sense (permanent error, or the attempts/age bound); flushQueue skips it. */
   needsAttention?: boolean;
 }
 
@@ -51,15 +47,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   });
 }
 
-/* --------------------------------------------------------------------------
- * Shared queue state
- *
- * The queue used to be readable only by New Job, which meant a worker standing
- * on My Jobs had no way to know anything was pending — and the cars at risk
- * were precisely the ones missing from their own record. The store below is a
- * plain external store so the app shell, New Job and My Jobs all read the same
- * snapshot, and it updates the moment a job is enqueued or flushed.
- * -------------------------------------------------------------------------- */
+/* Shared queue state: a plain external store so every screen reads the same pending snapshot. */
 
 let snapshot: QueuedJob[] = [];
 const listeners = new Set<() => void>();
@@ -92,14 +80,9 @@ export async function refreshQueue(): Promise<QueuedJob[]> {
 }
 
 /**
- * Called when a submission fails (offline, flaky signal, Worker down, or a
- * permanent rejection). The payload is never lost — it's persisted locally
- * either way, so a captured photo is never silently dropped.
- *
- * `needsAttention: true` is for a failure already known to be permanent (see
- * isPermanentError in jobs.ts) — it's stored straight into the terminal
- * state instead of being auto-retried first, since retrying it unchanged
- * cannot succeed.
+ * Called when a submission fails. The payload is persisted locally so a
+ * captured photo is never dropped. `needsAttention` skips auto-retry for a
+ * failure already known to be permanent (see isPermanentError).
  */
 export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAttention?: boolean }): Promise<void> {
   const queued: QueuedJob = {
@@ -114,9 +97,8 @@ export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAtte
 }
 
 /**
- * The signed-in user's app id. The queue lives in the browser, not the account,
- * so on a shared phone it can hold another person's jobs. Those are neither
- * shown nor submitted as someone else; they wait, intact, for their owner.
+ * The signed-in user's app id. On a shared phone the queue can hold another
+ * person's jobs; those are neither shown nor submitted, and wait for their owner.
  */
 let owner: string | null = null;
 
@@ -138,12 +120,9 @@ async function removeQueued(queuedId: string): Promise<void> {
 let flushing = false;
 
 /**
- * Retries every queued submission in order. A transient failure (still
- * offline, still 5xx) stops the run there so ordering is preserved and it's
- * retried in full next time. A permanent failure, or one that's exhausted
- * its attempts/age budget, is flagged `needsAttention` and skipped — it does
- * NOT block the rest of the queue, since one broken item has no bearing on
- * whether the next one can succeed.
+ * Retries every queued submission in order. A transient failure stops the run
+ * so ordering is kept. A permanent failure, or one past its attempts/age budget,
+ * is flagged `needsAttention` and skipped without blocking the rest.
  */
 export async function flushQueue(onProgress?: (remaining: number) => void): Promise<void> {
   if (flushing || !navigator.onLine) return;
@@ -185,12 +164,7 @@ export function watchConnectivity(onFlushed?: () => void): () => void {
   return () => window.removeEventListener('online', handler);
 }
 
-/**
- * Mounted once by the app shell. Keeps the shared snapshot current and retries
- * the queue whenever the device comes back online, so the pending count is
- * correct on every screen rather than only where New Job happened to refresh
- * it.
- */
+/** Mounted once by the app shell: keeps the snapshot current and retries when back online. */
 export function startQueueSync(): () => void {
   void refreshQueue();
   const stop = watchConnectivity(() => void refreshQueue());

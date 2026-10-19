@@ -1,15 +1,8 @@
 /**
- * Calendar arithmetic for the date window on "My Jobs".
- *
- * Everything here works in `yyyy-mm-dd` local calendar days, which is what
- * `<input type="date">` speaks and what `applyJobFilters` widens into a
- * timestamptz span. Nothing here touches UTC on purpose: a worker asking for
- * "this month" means the month on the wall, and the first hours of the 1st are
- * still in the previous UTC month.
- *
- * The month a range covers is derived from the range, never stored beside it.
- * A second copy of "which month am I looking at" is the kind of state that
- * drifts out of step with the rows on screen.
+ * Calendar arithmetic for the My Jobs date window, in `yyyy-mm-dd` local days
+ * (what `<input type="date">` speaks and `applyJobFilters` widens). Never UTC:
+ * "this month" is the month on the wall. The month is derived from the range,
+ * never stored beside it.
  */
 
 /** The four windows the quick-select offers. `custom` is "none of the above". */

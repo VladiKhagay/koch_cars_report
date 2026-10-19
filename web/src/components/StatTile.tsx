@@ -1,9 +1,4 @@
-/**
- * A counted quantity and the thing it counts.
- *
- * The label used to be 12px in a mid-grey — the number was legible and what it
- * measured was not, which on an analytics screen is the half that matters.
- */
+/** A counted quantity and the thing it counts; the label must be as legible as the number. */
 export default function StatTile({ label, value }: { label: string; value: string | number }) {
   return (
     /* These sit three across on the worker's own phone, so the padding gives

@@ -1,14 +1,7 @@
 /**
- * The New Job form, kept across tab switches and page reloads.
- *
- * Opening the camera can make a low-memory phone reload the page, and switching
- * to My Jobs and back unmounts the form — either way the photos taken so far
- * (and the video) used to be gone. Blobs survive IndexedDB's structured clone,
- * so the whole form is stored as it stands and put back on the next visit.
- *
- * Everything here is best-effort: private windows and full disks make IndexedDB
- * throw, and a draft that can't be saved must never get in the way of a job
- * that can still be submitted.
+ * The New Job form, kept across tab switches and reloads (opening the camera
+ * can reload a low-memory phone). Blobs survive IndexedDB's structured clone.
+ * Best-effort: a draft that can't be saved must never block a submit.
  */
 const DB_NAME = 'car-prep-draft';
 const STORE = 'draft';

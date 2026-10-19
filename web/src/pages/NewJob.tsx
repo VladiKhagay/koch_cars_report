@@ -127,12 +127,7 @@ export default function NewJob() {
       });
   }, []);
 
-  /**
-   * The confirmation must never outlive the car it refers to. It clears on a
-   * timer AND on the first touch of the next car's form — a stale "Job
-   * submitted" banner sitting above a half-filled form is the most direct
-   * route to a duplicate or a skipped submission.
-   */
+    /** The confirmation clears on a timer and on the next car's first touch, so a stale banner never sits above a half-filled form. */
   useEffect(() => {
     if (status === 'idle') return;
     const timer = setTimeout(() => setStatus('idle'), SUCCESS_TTL_MS);
@@ -170,10 +165,8 @@ export default function NewJob() {
     const { text, reason } = await ocrPhoto(original, 'vin');
     setOcrBusy((b) => ({ ...b, vin: false }));
     if (text) {
-      /* Only the VIN is filled in: it is what the photo shows. The brand is
-         NOT derived from it — a WMI prefix names a manufacturer, not the car,
-         and a guessed value in a filled field is indistinguishable from one
-         somebody read off the vehicle. Brand stays whatever a person typed. */
+            /* Only the VIN is filled in. The brand is not derived from it: a WMI prefix
+               names a manufacturer, not the car, and a guess looks like a real read. */
       setForm((f) => ({ ...f, vin: text }));
       setAutoFilled((a) => ({ ...a, vin: true }));
       if (siteId && isValidVinFormat(text)) {
@@ -247,12 +240,7 @@ export default function NewJob() {
      each be missing on their own, just not both at once. */
   const hasIdentifier = form.plate.length > 0 || form.vin.length > 0;
 
-  /**
-   * Everything standing between this car and a submitted record, in the order
-   * the worker meets it on screen. Tapping Submit with any of these open used
-   * to set a flag and return silently, leaving the primary button looking live
-   * and doing nothing — the single worst failure this screen had.
-   */
+    /** Everything blocking submission, in on-screen order, so Submit never silently does nothing. */
   const problems: { id: ProblemId; label: string; focus: () => void }[] = [];
   if (!hasIdentifier)
     problems.push({
@@ -340,13 +328,9 @@ export default function NewJob() {
       resetForm();
       setStatus('success');
     } catch (err) {
-      /*
-       * Either way the payload is persisted — never discarded on a permanent
-       * error, since the plate/VIN photos only exist in memory here and a
-       * job row may already have been created (see submitJob's jobId note).
-       * A permanent failure just skips auto-retry (it cannot succeed
-       * unchanged) and is flagged for a human instead — see MyJobs.tsx.
-       */
+            /* The payload is persisted either way: the photos exist only in memory here
+               and a job row may already exist (submitJob's jobId). A permanent failure
+               skips auto-retry and is flagged for a human (MyJobs.tsx). */
       const permanent = isPermanentError(err);
       await enqueueForRetry(payload, { needsAttention: permanent });
       resetForm();
@@ -454,10 +438,8 @@ export default function NewJob() {
           <Field
             htmlFor="job-vin"
             label={t('newJob.vin')}
-            /* Marked optional rather than silently accepting a blank: a VIN
-               plate is regularly unreadable, and a worker who believes the
-               field is required either stalls on it or types something to get
-               past it. Both are worse than a recorded gap. */
+                        /* Marked optional rather than accepting a blank: a VIN plate is often
+                           unreadable, and a required field makes people stall or type filler. */
             optional
             hint={
               autoFilled.vin && (

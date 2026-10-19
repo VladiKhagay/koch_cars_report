@@ -2,16 +2,9 @@ import type { ReactNode } from 'react';
 import Icon, { type IconName } from './Icon';
 
 /**
- * The app's one inline status block.
- *
- * Every tone carries an icon as well as a hue, and the icon differs per tone —
- * not just the colour. Two reasons, both operational rather than cosmetic:
- * colour-vision deficiency, and the fact that hue discrimination is the first
- * thing to fail on a phone screen in direct sunlight, which is exactly where
- * "did that submit?" gets asked.
- *
- * Tone names are unchanged from the previous implementation because the
- * design-sync preview set references them (web/.design-sync/previews).
+ * The app's one inline status block. Every tone has its own icon as well as a
+ * hue (hue is the first thing to fail in direct sun). Tone names are referenced
+ * by the design-sync previews (web/.design-sync/previews).
  */
 type Tone = 'info' | 'warning' | 'error' | 'success' | 'pending';
 
@@ -20,10 +13,7 @@ const TONES: Record<Tone, { box: string; icon: IconName }> = {
   warning: { box: 'border-warn-200 bg-warn-50 text-warn-700', icon: 'alertTriangle' },
   error: { box: 'border-danger-200 bg-danger-50 text-danger-700', icon: 'alertCircle' },
   success: { box: 'border-ok-200 bg-ok-50 text-ok-700', icon: 'checkCircle' },
-  // Queued-offline work. Monochrome and inverted on purpose: it must not read
-  // as a warning (nothing is wrong) and it must not read as success (nothing
-  // has been recorded yet). Near-black on white is also the most legible thing
-  // this palette can produce outdoors.
+    // Queued-offline work: monochrome on purpose, neither a warning (nothing is wrong) nor a success (not recorded yet).
   pending: { box: 'border-ink-900 bg-ink-900 text-surface', icon: 'sync' },
 };
 

@@ -10,34 +10,25 @@ import { handleGetPhoto } from './photo';
 import { handleInvite } from './invite';
 import { handleUserActive } from './userActive';
 
-/**
- * The rate-limit binding, typed here rather than pulled from
- * @cloudflare/workers-types for the same reason `AI` is below: a minimal
- * structural type cannot be broken by a types-package bump.
- */
+/** Typed minimally so a workers-types bump can't break it. */
 export interface RateLimiter {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 export interface Env {
   PHOTOS: R2Bucket;
-  // Per-user rate limits keyed on the JWT `sub`. See wrangler.toml for how the
-  // two limits were sized and what they can and cannot be trusted to do.
+  // Per-user rate limits keyed on the JWT `sub`; sizing is in wrangler.toml.
   OCR_LIMITER: RateLimiter;
   UPLOAD_LIMITER: RateLimiter;
-  // Workers AI binding (OCR). Typed minimally rather than with the versioned
-  // AiModels map so bumping @cloudflare/workers-types is never forced by a
-  // model change.
+  // Workers AI binding (OCR), typed minimally.
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  // Service role key — used ONLY by /invite (see invite.ts for why).
+  // Service role key — used only by /invite and /user-active.
   SUPABASE_SERVICE_ROLE_KEY: string;
   // Public URL of the deployed frontend; invite emails redirect to APP_URL/welcome.
   APP_URL?: string;
-  // Optional override for the OCR *read* model, so alternatives can be trialled
-  // on real photos without a deploy. Detection stays on Moondream (only model
-  // in the catalogue with a `detect` task).
+  // Optional override for the OCR read model. Detection stays on Moondream.
   OCR_MODEL?: string;
   // Comma-separated list of allowed origins, e.g. the Cloudflare Pages URL(s).
   ALLOWED_ORIGINS?: string;
@@ -50,10 +41,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use('*', async (c, next) => {
   const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   return cors({
-    // Unset ALLOWED_ORIGINS denies every cross-origin caller rather than
-    // allowing all of them. The old '*' fallback was inert in production —
-    // the var is set in wrangler.toml — but it meant a typo or a fresh
-    // environment failed open, silently, in the direction nobody checks.
+    // Unset ALLOWED_ORIGINS denies cross-origin callers (fail closed).
     origin: allowed.length > 0 ? allowed : () => null,
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['Authorization', 'Content-Type'],
@@ -62,21 +50,10 @@ app.use('*', async (c, next) => {
 
 app.get('/health', (c) => c.json({ ok: true }));
 
-// Every route below requires a valid Supabase-issued JWT. Supabase signs
-// access tokens with its project JWT Signing Key (ES256, asymmetric) rather
-// than a static shared secret these days, so we verify against Supabase's
-// published JWKS instead of holding a secret ourselves. This also means key
-// rotation on the Supabase side (Settings -> JWT Keys -> Create Standby Key)
-// never requires touching this Worker.
-// `verification.iss` only accepts a string/RegExp, not a per-request
-// function, so it can't be set inside the options object above the way
-// `jwks_uri` is (that one takes `(c) => ...` and is resolved lazily per
-// request). Wrapping `jwk()` in a plain middleware lets us build the options
-// object at request time instead, so `iss` can be pinned to this project's
-// own SUPABASE_URL rather than accepting a token issued by *any* Supabase
-// project whose JWKS happened to validate the signature. `aud` is pinned to
-// Supabase's fixed 'authenticated' audience for signed-in users for the same
-// reason: reject anything not meant for this class of caller.
+// Every route below requires a valid Supabase JWT, verified against the
+// project's JWKS so key rotation needs no change here. Built per request so
+// `iss` can be pinned to this project's SUPABASE_URL; `aud` is Supabase's
+// fixed 'authenticated'.
 const requireAuth = (c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) =>
   jwk({
     jwks_uri: `${c.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
@@ -99,14 +76,7 @@ app.post('/invite', handleInvite);
 app.post('/user-active', handleUserActive);
 
 app.onError((err, c) => {
-  /*
-   * A rejected token is the caller's problem, not a server fault. The previous
-   * version matched on `err.message === 'Unauthorized'`, which the jwk
-   * middleware never produces — it throws an HTTPException — so every expired
-   * session, every missing header and every bad signature came back as
-   * 500 "Internal error". That reads as an outage, hides the one action that
-   * fixes it (sign in again), and buries real 500s in the same bucket.
-   */
+  // A rejected token is the caller's problem (401), not a server fault.
   if (err instanceof HTTPException) {
     return c.json({ error: err.status === 401 ? 'Unauthorized' : err.message }, err.status);
   }

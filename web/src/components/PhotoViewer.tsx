@@ -5,15 +5,7 @@ import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import { Skeleton } from './ui';
 
-/**
- * Loading and "gone" are now different pictures.
- *
- * Photos expire after 90 days by R2 lifecycle rule, so the failed state is a
- * routine, recurring condition rather than an edge case — and the previous
- * treatment rendered it as the character "—" in grey, one character away from
- * the loading state's "…". A manager could not tell whether to wait or to stop
- * waiting.
- */
+/** Loading and "gone" are different pictures: photos expire after 90 days (R2 lifecycle), so the failed state is routine and must not look like loading. */
 export default function PhotoViewer({ jobId, kind, label }: { jobId: string; kind: PhotoKind; label: string }) {
   const { t } = useTranslation();
   const [url, setUrl] = useState<string | null>(null);

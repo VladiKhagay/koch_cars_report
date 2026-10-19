@@ -5,16 +5,9 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 /**
- * Read a brand value out of the token source at build time.
- *
- * src/index.css claims to be the ONLY place a brand-carrying value is written
- * down. Until now that was not true of the shell: the manifest and the
- * theme-color meta tag each carried their own hardcoded #0f172a, so the install
- * splash flashed near-black before a white app — and anyone grepping for a hex
- * found none and trusted the comment.
- *
- * Throws rather than falling back: a wrong splash colour is invisible in review
- * and permanent on someone's home screen. A failed build is the cheaper failure.
+ * Read a brand value from src/index.css (the one place brand values live) at
+ * build time. Throws rather than falling back: a wrong splash colour is
+ * invisible in review and permanent on a home screen.
  */
 function brandToken(name: string): string {
   const css = readFileSync(new URL('./src/index.css', import.meta.url), 'utf8');
@@ -27,14 +20,9 @@ function brandToken(name: string): string {
 const SURFACE = brandToken('--color-surface');
 
 /**
- * Origin of a configured URL, for use in a CSP source list.
- *
- * Returns null when the variable is absent, which happens in the CI build (the
- * Supabase/Worker values are deploy-time secrets and that job only checks the
- * build compiles). Missing values are warned about rather than thrown on: an
- * app built without them cannot reach Supabase at all — createClient throws on
- * boot — so the CSP is never the thing that breaks first, and failing the
- * build here would only break CI to restate that.
+ * Origin of a configured URL for the CSP. Null when unset (the CI build has no
+ * deploy-time secrets); warned about, not thrown, since the app can't boot
+ * without them anyway.
  */
 function originOf(url: string | undefined, name: string): string | null {
   if (!url) {
@@ -49,12 +37,8 @@ function originOf(url: string | undefined, name: string): string | null {
 }
 
 /**
- * Emits the Cloudflare `_headers` file for the static-assets deployment.
- *
- * Generated rather than committed to public/ because connect-src has to name
- * the Supabase and Worker origins, and those are build-time env vars. A static
- * file would silently drift the moment either moved, and a CSP that is wrong
- * in that direction fails closed — the whole app stops talking to its backend.
+ * Emits the Cloudflare `_headers` file. Generated, not committed, because
+ * connect-src must name the build-time Supabase and Worker origins.
  */
 function securityHeaders() {
   let headers = '';
@@ -74,24 +58,18 @@ function securityHeaders() {
         "default-src 'self'",
         "base-uri 'none'",
         "object-src 'none'",
-        // The app is never legitimately framed. frame-ancestors is the modern
-        // control; X-Frame-Options below is its pre-CSP equivalent, kept for
-        // the browsers that still only read that one.
+                // Never legitimately framed. X-Frame-Options below is the pre-CSP equivalent.
         "frame-ancestors 'none'",
         "form-action 'self'",
-        // No inline scripts: the built index.html loads both the bundle and
-        // registerSW.js as external files, so this stays strict. This is the
-        // directive that actually matters — session tokens live in
-        // localStorage, so script injection is account takeover.
+                // No inline scripts: session tokens live in localStorage, so script
+                // injection is account takeover. This is the directive that matters.
         "script-src 'self'",
         // Inline styles are required: React style={{…}} attributes compile to
         // style attributes, which style-src governs.
         "style-src 'self' 'unsafe-inline'",
         // blob: for photo object URLs (PhotoViewer, PhotoCapture previews).
         "img-src 'self' blob: data:",
-        // blob: for the condition video (VideoViewer playback, VideoRecorder
-        // preview). Without it default-src 'self' blocks every <video>. The
-        // live camera feed is a srcObject stream, which media-src does not gate.
+                // blob: for condition-video playback and preview (a live srcObject stream isn't gated by media-src).
         "media-src 'self' blob:",
         "font-src 'self' data:",
         `connect-src ${connect.join(' ')}`,
@@ -107,10 +85,8 @@ function securityHeaders() {
         '  X-Frame-Options: DENY',
         '  Referrer-Policy: strict-origin-when-cross-origin',
         '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
-        // Photos reach the camera through <input capture> (the OS picker);
-        // the condition video uses getUserMedia, which is what camera=(self)
-        // is for. It records without audio, so the microphone stays off along
-        // with everything else.
+                // Photos use <input capture>; the condition video uses getUserMedia
+                // (camera=(self)). It records without audio, so the microphone stays off.
         '  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()',
         '',
       ].join('\n');
@@ -150,9 +126,7 @@ export default defineConfig({
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          // Its own file, drawn with the mark inside the inner 60%. The mark is
-          // a bordered square, so reusing the full-bleed icon here would let a
-          // circular launcher mask slice the frame off.
+                    // Own file with the mark in the inner 60%, so a circular launcher mask doesn't slice the frame.
           {
             src: '/icons/icon-512-maskable.png',
             sizes: '512x512',
@@ -162,10 +136,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App-shell caching only. Job data always goes straight to Supabase —
-        // we do NOT cache API responses, so managers/workers never see stale
-        // records. The offline submit queue (see src/lib/offlineQueue.ts)
-        // handles connectivity gaps at the data layer instead.
+                // App-shell caching only. API responses are never cached, so nobody sees
+                // stale records; the offline queue covers connectivity gaps.
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
       },
     }),

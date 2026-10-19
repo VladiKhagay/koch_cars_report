@@ -1,21 +1,9 @@
 /**
- * The app's icon set, backed by lucide-react.
- *
- * The indirection is deliberate: pages reference icons by an app-level name
- * (`'camera'`, `'sync'`, …), not by a lucide export. That keeps ~20 call
- * sites free of the icon vendor, so swapping or extending the set is a change
- * to this file alone.
- *
- * House rules, enforced by construction:
- *  - one 24×24 grid, 1.75 stroke, round caps/joins, `currentColor` only, so an
- *    icon takes the colour of the text beside it
- *  - `aria-hidden` by default: an icon never carries meaning alone. Either it
- *    sits next to a visible label, or its parent control has an `aria-label`.
- *    Pass `title` only for the rare standalone case.
- *  - icons name a thing or an action; no decorative icons, and no
- *    icon-tile-above-a-heading anywhere in the app.
- *
- * lucide-react is tree-shaken, so only the icons mapped below ship.
+ * The app's icon set, backed by lucide-react. Pages use app-level names
+ * (`'camera'`, `'sync'`), so swapping the vendor is a change to this file alone.
+ * One 24x24 grid, 1.75 stroke, `currentColor` only; `aria-hidden` by default
+ * (an icon never carries meaning alone, pass `title` for the rare standalone
+ * case). Only the icons mapped below ship.
  */
 import {
   AlertCircle,
@@ -135,12 +123,8 @@ const ICONS: Record<IconName, LucideIcon> = {
 };
 
 /**
- * Icons that point along the reading direction — "back", "forward", "the next
- * day", "there's more this way". Under `dir="rtl"` they are mirrored here, at
- * the one place that knows an icon's meaning, rather than at ~10 call sites
- * that would each have to remember. Vertical arrows (`arrowUp`/`arrowDown`,
- * the select chevron) mean the same thing in both directions and are left
- * alone.
+ * Icons that point along the reading direction (back, forward, next). They are
+ * mirrored under `dir="rtl"` here, in one place. Vertical arrows are left alone.
  */
 const FLIP_IN_RTL: ReadonlySet<IconName> = new Set(['chevronLeft', 'chevronRight']);
 

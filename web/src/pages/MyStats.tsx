@@ -60,10 +60,8 @@ export default function MyStats() {
       });
   }, [appUser]);
 
-  /* The service catalog, including anything soft-deleted: a month from last
-     spring can reference a service that has since been retired, and dropping
-     it would silently shrink that month's breakdown rather than show what was
-     actually done. Names only — the catalog number means nothing on a chart. */
+    /* The catalog including soft-deleted services, so an old month's breakdown
+       isn't silently shrunk. Names only. */
   useEffect(() => {
     supabase
       .from('services')
@@ -216,12 +214,8 @@ export default function MyStats() {
 }
 
 /**
- * This month against last, in words.
- *
- * Deliberately not green-up / red-down: a quieter month is usually fewer cars
- * arriving, not a failing worker, and painting it in the same red the app uses
- * for errors makes the workshop's weather look like the worker's fault. The
- * arrow carries the direction; only the increase gets colour.
+ * This month against last, in words. Not green-up/red-down: a quieter month is
+ * usually fewer cars, not a failing worker. The arrow carries direction; only increases get colour.
  */
 function ChangeNote({ change, previous, prevMonth }: { change: number | null; previous: number; prevMonth: string }) {
   const { t, i18n } = useTranslation();
@@ -258,13 +252,8 @@ function ChangeNote({ change, previous, prevMonth }: { change: number | null; pr
 const SHADES = ['bg-ink-900', 'bg-ink-800', 'bg-ink-700', 'bg-ink-600', 'bg-ink-500', 'bg-ink-400'];
 
 /**
- * Jobs by service for the selected month.
- *
- * A horizontal bar per service rather than a pie: this is read on a phone, the
- * labels sit next to their own bars instead of in a legend that has to be
- * matched back by colour, and comparing lengths beats comparing wedges. Every
- * bar carries its exact count and its share as text, so the graphic is a
- * second reading of the numbers rather than the only one.
+ * Jobs by service for the selected month: horizontal bars, not a pie, so labels
+ * sit beside their bars on a phone. Each carries exact count and share as text.
  */
 function ServiceBreakdown({
   title,

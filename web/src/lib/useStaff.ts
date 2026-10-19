@@ -3,12 +3,10 @@ import { supabase } from './supabase';
 import type { StaffMember } from './types';
 
 /**
- * Everyone on staff, every site, deactivated included — through `list_staff()`
- * (migration 0019), because workers can't read the `users` table and still need
- * colleagues' names for the co-worker picker and "with Dana".
+ * Everyone on staff, every site, deactivated included, via `list_staff()` (0019):
+ * workers can't read `users` but need colleagues' names.
  *
- * ponytail: fetched once per page load and shared. A colleague added mid-shift
- * shows up after a reload; refetch on mount if that ever matters.
+ * ponytail: fetched once per page load; refetch on mount if mid-shift additions matter.
  */
 let pending: Promise<StaffMember[]> | null = null;
 

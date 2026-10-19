@@ -1,11 +1,7 @@
 /**
- * What this phone's worker picks most, remembered on the phone.
- *
- * Per device on purpose: a worker is on one phone, and a shared server-side
- * ranking would reorder the chips under everybody whenever anyone submits.
- * Services are ranked by how often they're used (a stable order beats a
- * most-recent one — chips that jump around cause mis-taps); brands are the
- * last few, because the cars that follow each other tend to be the same make.
+ * What this phone's worker picks most, remembered per device (a shared ranking
+ * would reorder chips under everybody). Services rank by frequency, since a
+ * stable order avoids mis-taps; brands are the last few used.
  */
 function read<T>(key: string, fallback: T): T {
   try {
