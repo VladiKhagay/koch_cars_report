@@ -166,7 +166,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `relative flex min-h-control-lg min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-[11px] font-semibold leading-[1.15] active:bg-ink-50 ${
+                `relative flex min-h-control-lg min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-xs font-semibold leading-[1.15] active:bg-ink-50 ${
                   isActive ? 'text-ink-900' : 'text-ink-500'
                 }`
               }

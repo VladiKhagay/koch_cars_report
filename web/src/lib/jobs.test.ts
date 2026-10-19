@@ -268,6 +268,11 @@ function recorder() {
 }
 
 describe('applyJobFilters', () => {
+  it('asks the database for jobs with no reservation number', () => {
+    const q = applyJobFilters(recorder(), { missingBilling: true });
+    expect(q.calls).toEqual([['or', 'billing_code.is.null']]);
+  });
+
   it('narrows by service in the query, not afterwards', () => {
     const q = applyJobFilters(recorder(), { serviceIds: ['svc-7'] });
     expect(q.calls).toEqual([['in', 'service_id', 'svc-7']]);

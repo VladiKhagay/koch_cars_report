@@ -14,7 +14,7 @@
  * rendering, the database owns the row set.
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
 import { useAuth } from '../context/AuthContext';
@@ -25,7 +25,7 @@ import { applyJobFilters } from '../lib/jobs';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, Job, Service } from '../lib/types';
-import Icon from '../components/Icon';
+import BillingInput from '../components/BillingInput';
 import {
   CellMuted,
   CellTitle,
@@ -49,7 +49,6 @@ import {
   SearchField,
   Select,
   Skeleton,
-  Spinner,
   fieldClass,
 } from '../components/ui';
 
@@ -96,69 +95,13 @@ interface Handlers {
 
 /* ------------------------------------------------------------------- cells */
 
-/**
- * The reservation number, editable in place.
- *
- * The draft lives in the cell, not in a map on the page: a page-level draft
- * would re-render all 50 rows on every keystroke, and this is the one field a
- * manager types into dozens of times in a sitting.
- *
- * It saves on blur and on Enter, and only when the value actually changed —
- * tabbing through a column of filled-in codes must not write 50 rows.
- */
 function BillingCell({ job, handlers }: { job: JobRow; handlers: React.RefObject<Handlers> }) {
-  const { t } = useTranslation();
-  const committed = job.billing_code ?? '';
-  const [value, setValue] = useState(committed);
-  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-
-  // Re-seed when the row is replaced under us (page change, filter change).
-  useEffect(() => {
-    setValue(committed);
-    setState('idle');
-  }, [committed, job.id]);
-
-  async function commit() {
-    const next = value.trim();
-    if (next === committed) return;
-    setState('saving');
-    const ok = await handlers.current.saveBillingCode(job, next);
-    setState(ok ? 'saved' : 'error');
-    if (ok) setTimeout(() => setState('idle'), 2000);
-  }
-
   return (
-    <div className="flex items-center gap-2">
-      <input
-        value={value}
-        aria-label={t('jobs.billingCode')}
-        placeholder="—"
-        onChange={(e) => {
-          setValue(e.target.value);
-          if (state !== 'idle') setState('idle');
-        }}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') {
-            setValue(committed);
-            e.currentTarget.blur();
-          }
-        }}
-        className={`${fieldClass} h-10 w-32 px-2 font-mono text-sm ${
-          state === 'error' ? 'border-danger-600 bg-danger-50' : ''
-        }`}
-      />
-      {/* Status is a word for a screen reader and a glyph for everyone else —
-          this cell is 32px wide and cannot carry a sentence. */}
-      <span role="status" aria-live="polite" className="w-5 shrink-0">
-        {state === 'saving' && <Spinner size={16} />}
-        {state === 'saved' && <Icon name="checkCircle" size={16} className="text-ok-700" title={t('jobs.saved')} />}
-        {state === 'error' && (
-          <Icon name="alertCircle" size={16} className="text-danger-700" title={t('jobs.saveFailed')} />
-        )}
-      </span>
-    </div>
+    <BillingInput
+      committed={job.billing_code ?? ''}
+      resetKey={job.id}
+      onSave={(value) => handlers.current.saveBillingCode(job, value)}
+    />
   );
 }
 
@@ -271,12 +214,16 @@ export default function Jobs() {
   const [services, setServices] = useState<Pick<Service, 'id' | 'name_en' | 'name_ru' | 'name_he'>[]>([]);
 
   // Filters. `site` is '' for "every site", which only an admin can choose.
-  const [search, setSearch] = useState('');
+  // Seeded from the URL so the dashboard can link straight to "this day's jobs
+  // without a reservation number" or "this plate, any date".
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get('q') ?? '');
+  const [missingBilling, setMissingBilling] = useState(params.get('billing') === 'missing');
   const [siteFilter, setSiteFilter] = useState<string | null>(null);
   const [workerFilter, setWorkerFilter] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(params.get('from') ?? '');
+  const [to, setTo] = useState(params.get('to') ?? '');
 
   // The duplicate panel: which row is open, and the job it is a duplicate of.
   const [dupeFor, setDupeFor] = useState<string | null>(null);
@@ -289,6 +236,23 @@ export default function Jobs() {
   }, [siteId, siteFilter]);
 
   const effectiveSite = canSwitch ? siteFilter : siteId;
+
+  /* Keyboard: `/` jumps to search, `[` and `]` page. Ignored while typing, so a
+     plate with none of these in it is never interrupted. */
+  const lastPageRef = useRef(0);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || e.altKey || el.matches('input, textarea, select, [contenteditable]')) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>('main input[type="search"]')?.focus();
+      } else if (e.key === '[') goToPage((p) => Math.max(0, p - 1));
+      else if (e.key === ']') goToPage((p) => Math.min(lastPageRef.current, p + 1));
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goToPage]);
 
   /* --------------------------------------------------------------- loading */
 
@@ -319,6 +283,7 @@ export default function Jobs() {
         from,
         to,
         search,
+        missingBilling,
       },
     );
 
@@ -331,7 +296,7 @@ export default function Jobs() {
       setTotal(count ?? 0);
     }
     setLoading(false);
-  }, [page, effectiveSite, workerFilter, serviceFilter, from, to, search]);
+  }, [page, effectiveSite, workerFilter, serviceFilter, from, to, search, missingBilling]);
 
   // Debounced so typing a plate doesn't fire a query per keystroke.
   useEffect(() => {
@@ -342,7 +307,7 @@ export default function Jobs() {
   // Any change to the filters invalidates the page number.
   useEffect(() => {
     setPage(0);
-  }, [effectiveSite, workerFilter, serviceFilter, from, to, search]);
+  }, [effectiveSite, workerFilter, serviceFilter, from, to, search, missingBilling]);
 
   // The worker filter lists the people who can appear in the current scope.
   useEffect(() => {
@@ -465,19 +430,21 @@ export default function Jobs() {
 
   const columnCount = columns.length;
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  lastPageRef.current = lastPage;
   const firstShown = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const lastShown = Math.min(total, page * PAGE_SIZE + rows.length);
   const filtered = Boolean(
-    search || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter),
+    search || missingBilling || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter),
   );
 
   return (
-    <Page width="wide">
+    <Page width="full">
       <PageHeading lead={t('jobs.lead')}>{t('jobs.title')}</PageHeading>
 
       {/* The table, the states it can be in, and its pager. */}
       <Group>
         <TableCard
+          stickyHeader
           toolbar={
             <div className="space-y-2">
               <SearchField value={search} onChange={setSearch} label={t('jobs.search')} />
@@ -539,12 +506,24 @@ export default function Jobs() {
                   <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
                 </label>
 
+                {/* The dashboard's "missing reservation number" badge lands here. */}
+                <label className="inline-flex min-h-control items-center gap-2 text-sm font-medium text-ink-700">
+                  <input
+                    type="checkbox"
+                    checked={missingBilling}
+                    onChange={(e) => setMissingBilling(e.target.checked)}
+                    className="size-5 accent-ink-900"
+                  />
+                  {t('jobs.onlyMissingBilling')}
+                </label>
+
                 {filtered && (
                   <Button
                     variant="secondary"
                     icon="x"
                     onClick={() => {
                       setSearch('');
+                      setMissingBilling(false);
                       setWorkerFilter('');
                       setServiceFilter('');
                       setFrom('');

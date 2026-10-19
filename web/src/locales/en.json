@@ -16,8 +16,8 @@
     "newJob": "New Job",
     "myJobs": "My Jobs",
     "myStats": "My Stats",
-    "dashboard": "Dashboard",
-    "jobs": "Jobs",
+    "dashboard": "Today",
+    "jobs": "All jobs",
     "analytics": "Analytics",
     "team": "Team",
     "services": "Services",
@@ -212,7 +212,7 @@
     "coworker": "Co-worker"
   },
   "dashboard": {
-    "title": "Dashboard",
+    "title": "Today",
     "today": "Today",
     "site": "Site",
     "flags": "Flags",
@@ -222,6 +222,7 @@
     "missingBilling_other": "{{count}} missing reservation numbers",
     "allClear": "No flags today",
     "search": "Search today — plate, VIN, or worker",
+    "searchAll": "Search \"{{q}}\" in all dates",
     "scopeNote": "Search covers the day shown above.",
     "noResults": "No jobs today match that search. Only today's jobs are searchable here.",
     "emptyTitle": "No jobs logged today yet",
@@ -236,6 +237,7 @@
   },
   "jobs": {
     "title": "Jobs",
+    "onlyMissingBilling": "Missing reservation number",
     "lead": "Every job, newest first. Fill in reservation numbers here.",
     "search": "Search plate, VIN, or reservation number",
     "date": "Date",

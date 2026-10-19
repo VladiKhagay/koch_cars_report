@@ -19,10 +19,12 @@
  * rendering stale UI. The plain string exports (`fieldClass`) are fine to keep
  * there; it is specifically the object that has to live somewhere else.
  */
-export type PageWidth = 'form' | 'list' | 'wide';
+export type PageWidth = 'form' | 'list' | 'wide' | 'full';
 
 export const PAGE_WIDTH: Record<PageWidth, string> = {
   form: 'max-w-md md:max-w-xl',
   list: 'max-w-2xl md:max-w-3xl lg:max-w-5xl',
   wide: 'max-w-2xl md:max-w-4xl lg:max-w-6xl',
+  /** The jobs grid: a spreadsheet replacement should use the screen it is on. */
+  full: 'max-w-2xl md:max-w-4xl lg:max-w-6xl 2xl:max-w-[110rem]',
 };

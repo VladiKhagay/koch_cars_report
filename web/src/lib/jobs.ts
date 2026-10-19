@@ -205,6 +205,8 @@ export interface JobFilters {
   to?: string;
   /** Raw box contents — sanitised here, never interpolated as typed. */
   search?: string;
+  /** Only jobs still waiting for their reservation number. */
+  missingBilling?: boolean;
   /**
    * Which columns the term is matched against. The default is what the
    * manager's grid can read; the worker screen queries `jobs_worker_view`,
@@ -245,6 +247,8 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
   if (filters.workerId)
     q = q.or(`worker_id.eq.${filters.workerId},coworker_ids.cs.{${filters.workerId}}`);
   if (filters.serviceIds?.length) q = q.in('service_id', filters.serviceIds);
+
+  if (filters.missingBilling) q = q.or('billing_code.is.null');
 
   // Dates are local calendar days; the column is a timestamptz, so each day is
   // widened to its full local span rather than compared against midnight UTC.

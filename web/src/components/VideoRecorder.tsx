@@ -154,24 +154,21 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
       )}
 
       {!video && (
-        <div
-          className={`${shell} items-center justify-center gap-2 border-dashed border-line-strong bg-surface text-ink-900`}
+        /* One full-width row, the whole thing a button: recording the finished
+           car is a step on every job, so it must be a single big tap right under
+           the photos, not a 176px tile to scroll past. */
+        <button
+          type="button"
+          onClick={() => void start()}
+          className="flex min-h-control-lg w-full items-center gap-3 rounded-xl border-2 border-ink-900 bg-surface px-4 py-3 text-start text-ink-900 active:bg-ink-50"
         >
-          <Icon name="video" size={28} />
-          <span className="text-center text-sm font-semibold">
-            {t('newJob.video')}
-            <span className="ms-1.5 font-medium text-ink-500">{t('common.optional')}</span>
+          <Icon name="video" size={28} className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold">{t('newJob.recordVideo')}</span>
+            <span className="block text-xs text-ink-600">{t('newJob.videoHint')}</span>
           </span>
-          <span className="text-center text-xs text-ink-600">{t('newJob.videoHint')}</span>
-          <button
-            type="button"
-            onClick={() => void start()}
-            className="mt-1 inline-flex min-h-tap w-full items-center justify-center gap-1.5 rounded-lg bg-ink-900 px-3 text-sm font-semibold text-surface"
-          >
-            <Icon name="video" size={16} />
-            {t('newJob.recordVideo')}
-          </button>
-        </div>
+          <Icon name="chevronRight" size={18} className="shrink-0 text-ink-500 rtl:-scale-x-100" />
+        </button>
       )}
 
       {video && (

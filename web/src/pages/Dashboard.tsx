@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { recordAudit } from '../lib/audit';
 import { staffNames, useStaff } from '../lib/useStaff';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { Job } from '../lib/types';
 import Icon from '../components/Icon';
+import BillingInput from '../components/BillingInput';
 import {
   Badge,
   EmptyState,
@@ -41,6 +44,21 @@ export default function Dashboard() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const staff = useStaff();
+  const { appUser } = useAuth();
+  /** Cards that just got a number stay put for the session of the day view, so
+   *  the field a manager is typing in doesn't vanish under them. */
+  const [justSaved, setJustSaved] = useState<Set<string>>(new Set());
+
+  async function saveBillingCode(job: JobRow, value: string) {
+    if (!appUser) return false;
+    const billing_code = value || null;
+    const { error } = await supabase.from('jobs').update({ billing_code }).eq('id', job.id);
+    if (error) return false;
+    await recordAudit(job.id, appUser.id, 'update', { billing_code });
+    setJustSaved((prev) => new Set(prev).add(job.id));
+    setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, billing_code } : j)));
+    return true;
+  }
   /** The day being viewed. Managers fill in billing codes that arrive a day or
    *  two late, so "today only" made yesterday's unfinished work unreachable. */
   const [day, setDay] = useState(todayIso());
@@ -156,9 +174,15 @@ export default function Dashboard() {
               </Badge>
             )}
             {missingBillingCount > 0 && (
-              <Badge tone="info" icon="tag">
-                {t('dashboard.missingBilling', { count: missingBillingCount })}
-              </Badge>
+              <Link
+                to={`/jobs?billing=missing&from=${day}&to=${day}`}
+                className="inline-flex min-h-tap items-center"
+              >
+                <Badge tone="info" icon="tag">
+                  {t('dashboard.missingBilling', { count: missingBillingCount })}
+                  <Icon name="chevronRight" size={14} className="rtl:-scale-x-100" />
+                </Badge>
+              </Link>
             )}
             {duplicateCount === 0 && missingBillingCount === 0 && jobs.length > 0 && (
               <Badge tone="ok" icon="checkCircle">
@@ -175,7 +199,17 @@ export default function Dashboard() {
           <SearchField value={search} onChange={setSearch} label={t('dashboard.search')} />
           {/* The query is scoped to today. The copy now says so, instead of
               promising a general search and reporting a car as never logged. */}
-          <p className="mt-1.5 text-xs text-ink-600">{t('dashboard.scopeNote')}</p>
+          {search.trim() ? (
+            <Link
+              to={`/jobs?q=${encodeURIComponent(search.trim())}`}
+              className="mt-1.5 inline-flex min-h-tap items-center gap-1 text-sm font-semibold text-ink-900 underline underline-offset-2"
+            >
+              {t('dashboard.searchAll', { q: search.trim() })}
+              <Icon name="chevronRight" size={16} className="rtl:-scale-x-100" />
+            </Link>
+          ) : (
+            <p className="mt-1.5 text-xs text-ink-600">{t('dashboard.scopeNote')}</p>
+          )}
         </div>
 
         {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
@@ -189,38 +223,49 @@ export default function Dashboard() {
         )}
         <div className="space-y-2">
           {filtered.map((job) => (
-            <Link
+            <div
               key={job.id}
-              to={`/jobs/${job.id}`}
-              className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-line-strong active:bg-ink-50"
+              className="rounded-xl border border-line bg-surface shadow-card transition-colors duration-150 hover:border-line-strong"
             >
-              <div className="min-w-0">
-                <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
-                  {job.plate ?? job.vin ?? '—'}
-                  <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
-                </p>
-                {/* When there's no plate, the VIN already stands in for it above —
-                    showing it again here would just repeat the line. */}
-                {job.plate && <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>}
-                <p className="truncate text-xs text-ink-600">
-                  {[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} ·{' '}
-                  {new Date(job.created_at).toLocaleTimeString(i18n.language)}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                {job.duplicate_of_job_id && (
-                  <Badge tone="warn" icon="alertTriangle">
-                    {t('dashboard.duplicateFlag')}
-                  </Badge>
-                )}
-                {!job.billing_code && (
-                  <Badge tone="neutral" icon="tag">
-                    {t('dashboard.noBillingCode')}
-                  </Badge>
-                )}
-                <Icon name="chevronRight" size={18} className="text-ink-500" />
-              </div>
-            </Link>
+              <Link
+                to={`/jobs/${job.id}`}
+                className="flex min-h-control-lg items-center justify-between gap-3 rounded-xl p-4 active:bg-ink-50"
+              >
+                <div className="min-w-0">
+                  <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
+                    {job.plate ?? job.vin ?? '—'}
+                    <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand ?? '—'}</span>
+                  </p>
+                  {/* When there's no plate, the VIN already stands in for it above —
+                      showing it again here would just repeat the line. */}
+                  {job.plate && <p className="truncate font-mono text-xs text-ink-600">{job.vin ?? '—'}</p>}
+                  <p className="truncate text-xs text-ink-600">
+                    {[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} ·{' '}
+                    {new Date(job.created_at).toLocaleTimeString(i18n.language)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {job.duplicate_of_job_id && (
+                    <Badge tone="warn" icon="alertTriangle">
+                      {t('dashboard.duplicateFlag')}
+                    </Badge>
+                  )}
+                  <Icon name="chevronRight" size={18} className="text-ink-500 rtl:-scale-x-100" />
+                </div>
+              </Link>
+              {/* The manager's main job on this screen is filling this in, so it
+                  is a field on the card rather than a detail page away. */}
+              {(!job.billing_code || justSaved.has(job.id)) && (
+                <div className="flex items-center gap-3 border-t border-line px-4 py-2">
+                  <span className="text-xs font-medium text-ink-600">{t('jobs.billingCode')}</span>
+                  <BillingInput
+                    committed={job.billing_code ?? ''}
+                    resetKey={job.id}
+                    onSave={(value) => saveBillingCode(job, value)}
+                  />
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </Group>

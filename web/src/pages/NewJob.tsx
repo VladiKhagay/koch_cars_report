@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -9,6 +10,8 @@ import { submitJob, findRecentDuplicate, isPermanentError, MAX_EXTRA_PHOTOS } fr
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { enqueueForRetry } from '../lib/offlineQueue';
+import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
+import { bumpService, pushBrand, recentBrands, serviceUseCounts } from '../lib/recent';
 import PhotoCapture from '../components/PhotoCapture';
 import VideoRecorder from '../components/VideoRecorder';
 import ServiceChips from '../components/ServiceChips';
@@ -51,6 +54,13 @@ const SUCCESS_TTL_MS = 8000;
 
 type ProblemId = 'identifier' | 'plate' | 'vin' | 'service';
 
+function formIsEmpty(f: typeof emptyForm) {
+  return (
+    !f.plate && !f.vin && !f.brand && !f.note && !f.serviceId && !f.platePhoto && !f.vinPhoto &&
+    !f.video && f.extraPhotos.length === 0 && f.coworkerIds.length === 0
+  );
+}
+
 function scrollTo(el: HTMLElement | null) {
   if (!el) return;
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -80,6 +90,30 @@ export default function NewJob() {
   const vinPhotoRef = useRef<HTMLDivElement>(null);
   const servicesRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
+
+  /* Put back whatever was in the form when the page last went away (a camera
+     round-trip that reloaded the tab, or a visit to another screen). Saving
+     waits for this, or the empty first render would overwrite the draft. */
+  const [draftReady, setDraftReady] = useState(false);
+  useEffect(() => {
+    void loadDraft<typeof emptyForm>().then((d) => {
+      if (d) setForm({ ...emptyForm, ...d });
+      setDraftReady(true);
+    });
+  }, []);
+  useEffect(() => {
+    if (!draftReady) return;
+    const id = setTimeout(() => void (formIsEmpty(form) ? clearDraft() : saveDraft(form)), 400);
+    return () => clearTimeout(id);
+  }, [form, draftReady]);
+
+  /* Most-used first, but never pre-selected: a silent default is how a wrong
+     service gets submitted. Ties keep the catalog's own order (sort is stable). */
+  const orderedServices = useMemo(() => {
+    const counts = serviceUseCounts();
+    return [...services].sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0));
+  }, [services]);
+  const brandSuggestions = recentBrands();
 
   useEffect(() => {
     supabase
@@ -287,7 +321,11 @@ export default function NewJob() {
       videoBlob: form.video,
     };
 
+    bumpService(form.serviceId!);
+    pushBrand(form.brand);
+
     const resetForm = () => {
+      void clearDraft();
       setForm(emptyForm);
       setAttempted(false);
       setDuplicateWarning(false);
@@ -358,6 +396,21 @@ export default function NewJob() {
             </div>
           </div>
 
+          <section aria-label={t('newJob.videoSection')}>
+            <div>
+              <VideoRecorder
+                video={form.video}
+                onRecorded={(blob) => {
+                  beginNextCar();
+                  setForm((f) => ({ ...f, video: blob }));
+                }}
+                onRemove={() => {
+                  beginNextCar();
+                  setForm((f) => ({ ...f, video: null }));
+                }}
+              />
+            </div>
+          </section>
         </Group>
 
         {/* Group 2 — which car it is. */}
@@ -458,7 +511,7 @@ export default function NewJob() {
                 /* No "n selected" hint any more — with one choice the filled chip
                    already says everything the count used to. */
                 <ServiceChips
-                  services={services}
+                  services={orderedServices}
                   selected={form.serviceId}
                   onSelect={selectService}
                   label={t('newJob.service')}
@@ -478,11 +531,30 @@ export default function NewJob() {
               }}
               className={fieldClass}
             />
+            {/* The last few makes, one tap each — consecutive cars are often the
+                same make. Gone once a brand is set. */}
+            {!form.brand && brandSuggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {brandSuggestions.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => {
+                      beginNextCar();
+                      setForm((f) => ({ ...f, brand: b }));
+                    }}
+                    className="inline-flex min-h-tap items-center rounded-lg border border-line-strong bg-surface px-3 text-sm font-semibold text-ink-900 active:bg-ink-50"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
           </Field>
         </Group>
 
         {/* Everything optional lives behind one row, so the common car is
-            photo → plate/VIN → service → Submit without scrolling past video,
+            photo → plate/VIN → service → Submit without scrolling past
             notes, site and crew. The summary shows what is set inside, so a
             non-default site or a crew is never hidden from the worker. */}
         <details className="group rounded-xl border border-line bg-surface">
@@ -495,7 +567,6 @@ export default function NewJob() {
                   form.coworkerIds.length > 0 && t('newJob.coworkersCount', { count: form.coworkerIds.length }),
                   form.note && t('newJob.note'),
                   form.extraPhotos.length > 0 && `${t('newJob.extraPhotos')} ${form.extraPhotos.length}`,
-                  form.video && t('newJob.video'),
                 ]
                   .filter(Boolean)
                   .join(' · ')}
@@ -533,25 +604,6 @@ export default function NewJob() {
                   onCapture={addExtraPhoto}
                 />
               )}
-            </div>
-          </section>
-
-          <section aria-labelledby="video-heading">
-            <h2 id="video-heading" className="text-sm font-semibold text-ink-900">
-              {t('newJob.videoSection')}
-            </h2>
-            <div className="mt-2">
-              <VideoRecorder
-                video={form.video}
-                onRecorded={(blob) => {
-                  beginNextCar();
-                  setForm((f) => ({ ...f, video: blob }));
-                }}
-                onRemove={() => {
-                  beginNextCar();
-                  setForm((f) => ({ ...f, video: null }));
-                }}
-              />
             </div>
           </section>
 
@@ -645,6 +697,11 @@ export default function NewJob() {
                       ? t('newJob.failedBody')
                       : t('newJob.queuedOffline')}
                 </p>
+                {status === 'success' && (
+                  <Link to="/mine" className="mt-1 inline-flex min-h-tap items-center text-sm font-bold underline underline-offset-2">
+                    {t('newJob.edit')}
+                  </Link>
+                )}
               </div>
               <button
                 type="button"

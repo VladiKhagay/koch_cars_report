@@ -22,7 +22,10 @@ export function TableCard({
   toolbar,
   children,
   className = '',
+  stickyHeader,
 }: {
+  /** Desktop only: the table scrolls inside the card and its header row stays put. */
+  stickyHeader?: boolean;
   /** Search, filters, primary action — sits above the header row, inside the frame. */
   toolbar?: ReactNode;
   children: ReactNode;
@@ -33,7 +36,15 @@ export function TableCard({
       {toolbar && <div className="border-b border-line p-3">{toolbar}</div>}
       {/* The scroll container is the table's own, so a wide table never makes
           the whole page scroll sideways. */}
-      <div className="overflow-x-auto">{children}</div>
+      <div
+        className={`overflow-x-auto ${
+          stickyHeader
+            ? 'md:max-h-[calc(100dvh-15rem)] md:overflow-y-auto md:[&_thead_th]:sticky md:[&_thead_th]:top-0 md:[&_thead_th]:z-10 md:[&_thead_th]:bg-sunken'
+            : ''
+        }`}
+      >
+        {children}
+      </div>
     </div>
   );
 }

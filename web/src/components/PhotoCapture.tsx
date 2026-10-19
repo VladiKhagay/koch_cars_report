@@ -151,22 +151,27 @@ export default function PhotoCapture({
            camera keeps the visual weight — it is the path for almost every
            car, and the gallery exists for the one photographed earlier. */
         <div
-          className={`${shell} items-center justify-center gap-2 border-dashed border-line-strong bg-surface text-ink-900`}
+          className={`${shell} justify-between gap-1 border-dashed border-line-strong bg-surface p-1 text-ink-900`}
         >
-          <Icon name="camera" size={28} />
-          <span className="text-center text-sm font-semibold">
-            {label}
-            {optional && <span className="ms-1.5 font-medium text-ink-500">{t('common.optional')}</span>}
-          </span>
+          {/* The tile itself is the camera button: one big target, no second
+              "Take photo" button to aim for. Gallery stays a small sibling —
+              it can't nest inside a button. */}
           <button
             type="button"
             onClick={openCamera}
-            className="mt-1 inline-flex min-h-tap w-full items-center justify-center gap-1.5 rounded-lg bg-ink-900 px-3 text-sm font-semibold text-surface"
+            className="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg p-2 active:bg-ink-50"
           >
-            <Icon name="camera" size={16} />
-            {t('newJob.takePhoto')}
+            <Icon name="camera" size={32} />
+            <span className="text-center text-sm font-semibold">
+              {label}
+              {optional && <span className="ms-1.5 font-medium text-ink-500">{t('common.optional')}</span>}
+            </span>
           </button>
-          <button type="button" onClick={openGallery} className={`${textAction} text-ink-700`}>
+          <button
+            type="button"
+            onClick={openGallery}
+            className={`${textAction} justify-center text-ink-700`}
+          >
             <Icon name="upload" size={16} />
             {t('newJob.uploadFromDevice')}
           </button>
