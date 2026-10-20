@@ -241,6 +241,12 @@
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
+  /* Tab bar: the full inset (34px on a notched iPhone) leaves a wide empty band
+     under the icons. The home-indicator pill only occupies the lowest ~20px, so
+     14px of the inset is given back and the bar sits closer to the edge. */
+  .safe-bottom-tight {
+    padding-bottom: max(env(safe-area-inset-bottom) - 14px, 0px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

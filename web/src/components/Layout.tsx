@@ -148,7 +148,7 @@ export default function Layout() {
             tabs — the manager role has five of these at 375px. */}
         <nav
           aria-label={t('nav.mainNav')}
-          className="safe-bottom z-20 flex shrink-0 border-t border-line bg-surface shadow-bar md:hidden"
+          className="safe-bottom-tight z-20 flex shrink-0 border-t border-line bg-surface shadow-bar md:hidden"
         >
           {tabBarItems.map((item) => (
             <NavLink

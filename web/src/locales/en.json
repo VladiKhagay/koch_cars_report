@@ -434,7 +434,8 @@
   "coworkers": {
     "label": "Co-workers",
     "search": "Search staff",
-    "pick": "Add a co-worker…",
+    "add": "Add a co-worker",
+    "close": "Close",
     "remove": "Remove {{name}}",
     "noMatches": "Nobody matches that name.",
     "max": "That’s the most — {{max}} co-workers per job. Pay is split evenly."
