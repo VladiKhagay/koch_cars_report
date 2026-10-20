@@ -6,7 +6,7 @@ import Icon from './Icon';
 import { Spinner } from './ui';
 
 /**
- * The job's condition video, fetched only on request (~7.5MB vs a few hundred
+ * The job's condition video, fetched only on request (~15MB vs a few hundred
  * KB for a photo) through the authorised /photo route and played from a blob
  * URL, since <video src> can't send the Authorization header. Download is an
  * explicit link (opens the share sheet on iPhone).

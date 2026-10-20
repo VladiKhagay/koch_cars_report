@@ -129,7 +129,8 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
           className="fixed inset-0 z-50 flex flex-col bg-black"
         >
           <video ref={liveRef} autoPlay muted playsInline className="min-h-0 w-full flex-1 object-cover" />
-          <div className="absolute inset-x-0 top-0 flex items-center justify-center p-4">
+          {/* viewport-fit=cover puts this under the notch / Dynamic Island; the inset keeps the timer below it. */}
+          <div className="absolute inset-x-0 top-0 flex items-center justify-center p-4 pt-[max(1rem,calc(env(safe-area-inset-top)+0.5rem))]">
             <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 font-mono text-base font-bold text-white">
               <span aria-hidden className="h-3 w-3 rounded-full bg-danger-600" />
               {clock(elapsed)} / {clock(MAX_VIDEO_SECONDS)}

@@ -22,7 +22,7 @@ export function objectKey(jobId: string, kind: PhotoKind): string {
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 /** Largest video /upload stores. Mirrored as MAX_VIDEO_BYTES in web/src/lib/video.ts. */
-export const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 /**
  * Accepted image formats, recognised by their leading bytes. Wider than JPEG
@@ -109,7 +109,7 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const isVideo = kind === 'video';
   const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES;
   if (Number(c.req.header('Content-Length')) > maxBytes) {
-    return c.json({ error: isVideo ? 'Video too large (max 25MB)' : 'Photo too large (max 8MB)' }, 413);
+    return c.json({ error: isVideo ? 'Video too large (max 50MB)' : 'Photo too large (max 8MB)' }, 413);
   }
 
   // A malformed jobId makes PostgREST answer 400, which fails closed like `false`.
@@ -133,7 +133,7 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   }
   // The Content-Length above can be absent or wrong; this is the real limit.
   if (bytes.byteLength > maxBytes) {
-    return c.json({ error: isVideo ? 'Video too large (max 25MB)' : 'Photo too large (max 8MB)' }, 413);
+    return c.json({ error: isVideo ? 'Video too large (max 50MB)' : 'Photo too large (max 8MB)' }, 413);
   }
 
   // The stored content type comes from the bytes, never from the client.

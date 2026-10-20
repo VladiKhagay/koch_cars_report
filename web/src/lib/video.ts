@@ -1,17 +1,17 @@
 /**
  * Condition video, recorded in-app via MediaRecorder with a capped bitrate: the
- * phone's own app writes 60-170MB a minute, while this keeps a one-minute clip
- * near 7.5MB (R2 free tier, bearable over yard signal).
+ * phone's own app writes 60-170MB a minute, while this keeps a two-minute clip
+ * near 15MB (R2 free tier, bearable over yard signal).
  */
 
 /** Hard stop. The recorder ends the clip itself at this length. */
-export const MAX_VIDEO_SECONDS = 60;
+export const MAX_VIDEO_SECONDS = 120;
 
 /** Requested bitrate: 720p at 1 Mbps shows a scratch at walkaround distance. Safari may treat it as a suggestion; tune per phone model here. */
 export const VIDEO_BITRATE = 1_000_000;
 
 /** Must match MAX_VIDEO_BYTES in worker/src/upload.ts. Refusing on the phone keeps a certain 413 out of the retry queue. */
-export const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 /** MP4 first (plays everywhere); WebM is the fallback for Androids whose Chrome can only record that. */
 const PREFERRED_TYPES = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
