@@ -38,10 +38,10 @@ export default function JobMedia({ jobId, downloadName }: { jobId: string; downl
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <PhotoViewer jobId={jobId} kind="plate" label={t('newJob.platePhoto')} />
-        <PhotoViewer jobId={jobId} kind="vin" label={t('newJob.vinPhoto')} />
+        <PhotoViewer jobId={jobId} kind="plate" label={t('newJob.platePhoto')} downloadName={downloadName} />
+        <PhotoViewer jobId={jobId} kind="vin" label={t('newJob.vinPhoto')} downloadName={downloadName} />
         {extraKinds.map((kind, i) => (
-          <PhotoViewer key={kind} jobId={jobId} kind={kind} label={t('newJob.extraPhoto', { n: i + 1 })} />
+          <PhotoViewer key={kind} jobId={jobId} kind={kind} label={t('newJob.extraPhoto', { n: i + 1 })} downloadName={downloadName} />
         ))}
       </div>
       {hasVideo && <VideoViewer jobId={jobId} downloadName={downloadName} />}

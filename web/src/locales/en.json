@@ -308,6 +308,7 @@
     "duplicateOfDetail": "Possible duplicate of a job logged {{date}} at {{site}} ({{service}})"
   },
   "photo": {
+    "download": "Download photo",
     "loading": "Loading photo…",
     "missingTitle": "No photo saved",
     "missingBody": "Either it was never uploaded, or the job is over 60 days old and the photo has been removed.",
