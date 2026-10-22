@@ -2,12 +2,16 @@ name: Nightly database backup
 
 # Supabase's free tier has no point-in-time recovery, so this is the backup
 # strategy: a nightly pg_dump, gzipped and pushed to a dedicated R2 bucket
-# (separate from car-prep-photos, which has a 90-day lifecycle rule — backups
+# (separate from car-prep-photos, which has a 60-day lifecycle rule — backups
 # must NOT be swept up by that rule, hence the separate bucket).
 on:
   schedule:
     - cron: '17 2 * * *' # 02:17 UTC daily, off-peak
   workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write # keepalive step below
 
 jobs:
   backup:
@@ -39,6 +43,14 @@ jobs:
           npx wrangler r2 object put \
             "car-prep-backups/$(date -u +%Y-%m-%d)/backup.sql.gz" \
             --file=backup.sql.gz --remote
+
+      # GitHub silently disables scheduled workflows after 60 days without repo
+      # activity. Re-enabling the workflow resets that timer, so the nightly
+      # run keeps itself alive. Only reached if the backup above succeeded.
+      - name: Keepalive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/backup.yml/enable"
 
       # Pruning is a lifecycle rule on the bucket, not scripted here — the
       # wrangler CLI has no `r2 object list` command to build a prune script

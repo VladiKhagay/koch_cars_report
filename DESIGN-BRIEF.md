@@ -331,7 +331,7 @@ Real, specific, cited. This is the work list, not a list of vibes.
 - `PhotoViewer.tsx:28-29` — the loading state is the character `…` and the
   failed state is the character `—`, both `text-sm text-slate-400`, inside a
   grey box. A manager cannot distinguish "still loading" from "this photo is
-  gone" (photos expire after 90 days, so this state is real and will recur).
+  gone" (photos expire after 60 days, so this state is real and will recur).
 
 ### My Jobs
 

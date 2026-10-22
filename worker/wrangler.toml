@@ -90,9 +90,7 @@ APP_URL = "https://app.koch-kcx.app"
 # by forwarding the caller's own JWT to Supabase's REST API and relying on
 # the same RLS policies that gate the frontend (see worker/src/upload.ts).
 #
-# R2 lifecycle rule (90-day photo expiry) is configured separately via:
+# R2 lifecycle rule (60-day photo and video expiry, migration 0025) is
+# configured separately via:
 #   wrangler r2 bucket lifecycle add car-prep-photos \
-#     --id expire-90d --expire-days 90 --prefix ""
-# and the 30-day condition-video rule (migration 0020):
-#   wrangler r2 bucket lifecycle add car-prep-photos \
-#     --id expire-video-30d --expire-days 30 --prefix "video/"
+#     --id expire-60d --expire-days 60 --prefix ""

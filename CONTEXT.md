@@ -32,8 +32,8 @@ Excel.
 |---|---|---|
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
 | Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
-| Photos | 2/car (plate + VIN), 90-day retention | ~6 GB rolling window. Drove the storage choice. |
-| Video | optional ≤2 min walkaround/car, in-app 720p @ 1 Mbps (~15 MB), 30-day retention | ~20 GB rolling window (~$0.25/mo over the R2 free tier at 1,300 cars). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
+| Photos | 2/car (plate + VIN), 60-day retention | ~6 GB rolling window. Drove the storage choice. |
+| Video | optional ≤2 min walkaround/car, in-app 720p @ 1 Mbps (~15 MB), 60-day retention | ~20 GB rolling window (~$0.25/mo over the R2 free tier at 1,300 cars). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
 | Devices | Modern phones, decent connectivity | Mobile-first PWA is enough; no native app. |
@@ -154,7 +154,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
   `koch-cars-report`), `not_found_handling = "single-page-application"`.
 - **Cloudflare Worker** `car-prep-tracker-worker` hosts the API.
 - **R2** bucket `car-prep-photos`, with a lifecycle rule expiring objects after
-  90 days — retention policy as configuration, zero code.
+  60 days — retention policy as configuration, zero code.
 - **Supabase** free tier: Postgres, Auth, RLS.
 - **GitHub Actions**: `ci.yml` (test + build both packages), `deploy-web.yml`,
   `deploy-worker.yml`, `backup.yml` (nightly `pg_dump` → R2, because the

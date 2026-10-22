@@ -134,7 +134,7 @@ the same query under three different identities.
   is not worth shipping to workers.
 - Accessibility here is operational, not decorative — see below.
 - Invite-only registration. No signup screen, no marketing surface.
-- Photos expire after 90 days by R2 lifecycle rule. Jobs are soft-deleted only,
+- Photos and videos expire after 60 days by R2 lifecycle rule. Jobs are soft-deleted only,
   never hard-deleted; the same is true of services.
 
 **Terminology** (the client's words — use exactly these): job, site, worker,

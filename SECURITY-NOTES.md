@@ -62,7 +62,7 @@ change yourself, or ask for it as a separate follow-up.)*
 
 ## 3. R2 photo lifecycle rule — verify it's actually applied (not just documented)
 
-The 90-day photo expiry and 180-day backup expiry are **already documented
+The 60-day photo expiry and 180-day backup expiry are **already documented
 as CLI commands** in `worker/README.md:47,52` and referenced in
 `worker/wrangler.toml`'s trailing comment — they are not dashboard steps,
 they're one-time `wrangler` invocations run against the live buckets. The
@@ -75,18 +75,17 @@ and an applied rule are two different things.
   npx wrangler r2 bucket lifecycle list car-prep-photos
   npx wrangler r2 bucket lifecycle list car-prep-backups
   ```
-  Confirm `expire-90d` (photos), `expire-video-30d` (condition videos,
-  prefix `video/`) and `expire-180d` (backups) all appear. If any is
+  Confirm `expire-60d` (photos and condition videos) and `expire-180d`
+  (backups) both appear. If any is
   missing, apply it:
   ```
-  npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-90d --expire-days 90 --prefix ""
-  npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-video-30d --expire-days 30 --prefix "video/"
+  npx wrangler r2 bucket lifecycle add car-prep-photos --id expire-60d --expire-days 60 --prefix ""
   npx wrangler r2 bucket lifecycle add car-prep-backups --id expire-180d --expire-days 180 --prefix ""
   ```
-- [ ] **Caveat before relying on this:** confirm 90-day photo retention and
+- [ ] **Caveat before relying on this:** confirm 60-day photo retention and
       180-day backup retention actually satisfy whatever record-keeping
       obligation applies to vehicle prep/service jobs in your
       jurisdiction (insurance, warranty, or consumer-protection
-      recordkeeping periods sometimes exceed 90 days). This is a business/
+      recordkeeping periods sometimes exceed 60 days). This is a business/
       legal call, not a technical one — the rule is easy to widen
-      (`--expire-days 365`) if 90 turns out to be too short.
+      (`--expire-days 365`) if 60 turns out to be too short.

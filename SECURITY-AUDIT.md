@@ -33,7 +33,7 @@
 - **Frontend** — React SPA (`web/`), deployed as a Cloudflare **Workers static-assets** project (`koch-cars-report`), *not* Pages. Talks directly to Supabase PostgREST with the caller's own JWT.
 - **Worker** (`worker/`) — Hono app, 5 routes: `/health`, `/ocr`, `/upload`, `/photo/:jobId/:kind`, `/invite`. Bindings: R2 (`PHOTOS`), Workers AI.
 - **Data** — Supabase Postgres. **All** authorization is RLS + `security definer` RPCs. The Worker deliberately does not reimplement authz: for `/upload` and `/photo` it forwards the caller's JWT to PostgREST and asks "can you see this job?"
-- **Photos** — private R2 bucket, keyed `${jobId}/${kind}.jpg`, 90-day lifecycle rule, served only through the Worker.
+- **Photos** — private R2 bucket, keyed `${jobId}/${kind}.jpg`, 60-day lifecycle rule, served only through the Worker.
 
 ### Verdict
 
@@ -318,7 +318,7 @@ There is exactly one upload path: `PhotoCapture.tsx` → `downscaleImage()` → 
 | Max files per entity | **5**, structurally: the `PHOTO_KINDS` allowlist plus the R2 key `${jobId}/${kind}.jpg` mean a 6th upload is impossible and a repeat overwrites. Mirrored by `photos_kind_check` (0005). Genuinely good design. |
 | Enforced both sides | Size: server only. Count: server only (client caps extras at 3 via `MAX_EXTRA_PHOTOS`). |
 | Bypassable? | **Yes** — M-1. |
-| Storage | Private R2 `car-prep-photos`, no public bucket access, 90-day lifecycle. Reachable only via the Worker binding. |
+| Storage | Private R2 `car-prep-photos`, no public bucket access, 60-day lifecycle. Reachable only via the Worker binding. |
 | Executable / unsafely served? | Low risk. Content type is **pinned** to `image/jpeg` on write (`upload.ts:69`) with an explicit comment about why — correct, and it defeats the classic stored-HTML attack. Missing `nosniff`/`Content-Disposition` (M-2) leaves a thin residue. |
 | Filenames | **Never trusted.** The key is derived entirely from `jobId` (validated against Supabase) + an allowlisted `kind`. R2 keys are flat strings, so `../` is inert regardless. **No path traversal.** |
 | Resource consumption | 20 MB × unlimited requests, no rate limit (M-5). |
