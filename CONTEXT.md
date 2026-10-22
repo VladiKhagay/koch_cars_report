@@ -33,7 +33,7 @@ Excel.
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
 | Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
 | Photos | 2/car (plate + VIN), 60-day retention | ~6 GB rolling window. Drove the storage choice. |
-| Video | optional ≤2 min walkaround/car, in-app 720p @ 1 Mbps (~15 MB), 60-day retention | ~20 GB rolling window (~$0.25/mo over the R2 free tier at 1,300 cars). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
+| Video | optional ≤2 min walkaround/car, in-app 1080p @ 3 Mbps (≤~45 MB), 60-day retention | ~60–120 GB rolling window (~$1–2/mo at 1,300 cars, ~$4/mo at 3,000). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
 | Devices | Modern phones, decent connectivity | Mobile-first PWA is enough; no native app. |

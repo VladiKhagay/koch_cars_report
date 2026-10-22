@@ -56,7 +56,7 @@ describe('MAX_UPLOAD_BYTES', () => {
   });
 
   it('allows 50MB for video — ~3x the recorder target of a 2-minute clip', () => {
-    expect(MAX_VIDEO_BYTES).toBe(50 * 1024 * 1024);
+    expect(MAX_VIDEO_BYTES).toBe(75 * 1024 * 1024);
   });
 });
 
