@@ -60,7 +60,8 @@
   "roles": {
     "worker": "Worker",
     "manager": "Manager",
-    "admin": "Admin"
+    "admin": "Admin",
+    "carasso": "Carasso"
   },
   "team": {
     "title": "Team",
@@ -89,13 +90,17 @@
     "nameRu": "Name (RU)",
     "nameHe": "Name (HE)",
     "order": "Order",
-    "workerPrice": "Worker price",
+    "workerPrice": "Worker price (₪)",
     "workerPriceHint": "what the worker is paid per job",
     "priceInvalid": "Worker price must be a number, zero or more.",
     "moveUp": "Move up",
     "moveDown": "Move down",
     "emptyTitle": "No services yet",
-    "emptyBody": "Add the work your sites perform. Workers pick from this list on every job."
+    "emptyBody": "Add the work your sites perform. Workers pick from this list on every job.",
+    "clientPricesRequired": "An active service needs both client prices (unit and total).",
+    "draftSaved": "Saved as an inactive draft, but it could not go live: {{reason}}",
+    "needsPrices": "This service has no client prices yet. An admin must set them before it can go live.",
+    "draftHint": "New services start inactive. An admin sets the client prices, then turns the service on."
   },
   "queue": {
     "title": "Waiting to sync",
@@ -144,7 +149,6 @@
     "plateInvalid": "Doesn't look like a valid plate — check and edit if needed",
     "vinInvalid": "VIN must be 17 characters (no I, O, or Q)",
     "vinChecksumWarning": "VIN checksum doesn't match — common for imported vehicles, double check the photo",
-    "duplicateWarning": "This VIN was already logged in the last 7 days",
     "serviceRequired": "Pick the work performed",
     "queuedOffline": "No connection — saved on this phone and it will submit automatically once you're back online",
     "failedTitle": "Couldn't submit — needs attention",
@@ -174,7 +178,11 @@
     "removeVideo": "Remove",
     "video_unsupported": "This browser can't record video. You can still submit the job.",
     "video_denied": "Camera access was refused. Allow the camera for this app in your phone settings, then try again.",
-    "video_tooLarge": "The video came out too large to upload. Record a shorter one."
+    "video_tooLarge": "The video came out too large to upload. Record a shorter one.",
+    "previousJob": "This car was already logged on {{date}} at {{site}} ({{service}}). You can still submit it.",
+    "duplicateConfirm": "This car was already logged on {{date}} at {{site}} ({{service}}). Submit it again anyway?",
+    "duplicateTitle": "Car already logged",
+    "submitAnyway": "Submit anyway"
   },
   "myJobs": {
     "title": "My Jobs",
@@ -257,7 +265,7 @@
     "saved": "Saved",
     "saveFailed": "Not saved — check your connection and try again",
     "duplicateAction": "Possible duplicate — review",
-    "duplicateQuestion": "This looks like a repeat of {{plate}}, logged {{date}} by {{worker}} ({{service}}). Delete this copy? It leaves exports and the day's list, and a manager can restore it from the job page.",
+    "duplicateQuestion": "This looks like a repeat of a job logged {{date}} at {{site}} ({{service}}). Delete this copy? It leaves exports and the day's list, and a manager can restore it from the job page.",
     "duplicateUnknown": "This job is flagged as a repeat, but the earlier one can't be shown — it may have been deleted or belong to another site. Delete this copy? A manager can restore it from the job page.",
     "deleteCopy": "Delete this copy",
     "showing": "{{first}}–{{last}} of {{total}}",
@@ -267,7 +275,8 @@
     "emptyTitle": "No jobs recorded yet",
     "emptyBody": "Jobs appear here as workers submit them.",
     "noMatchesTitle": "No jobs match those filters",
-    "noMatchesBody": "Try a wider date range, or clear the filters to see everything."
+    "noMatchesBody": "Try a wider date range, or clear the filters to see everything.",
+    "leadReadOnly": "Every job on your sites, newest first."
   },
   "jobDetail": {
     "title": "Job",
@@ -291,12 +300,17 @@
     "deleted": "Deleted",
     "deletedNotice": "This job is deleted. It is excluded from exports until you restore it.",
     "notFoundTitle": "Job not found",
-    "notFoundBody": "It may have been deleted, or you may not have access to it."
+    "notFoundBody": "It may have been deleted, or you may not have access to it.",
+    "crew": "Crew",
+    "clientPrices": "Client prices",
+    "pricing": "Pricing",
+    "noClientPrices": "This job has no client prices yet.",
+    "duplicateOfDetail": "Possible duplicate of a job logged {{date}} at {{site}} ({{service}})"
   },
   "photo": {
     "loading": "Loading photo…",
     "missingTitle": "No photo saved",
-    "missingBody": "Either it was never uploaded, or the job is over 90 days old and the photo has been removed.",
+    "missingBody": "Either it was never uploaded, or the job is over 60 days old and the photo has been removed.",
     "deniedTitle": "Can't open this photo",
     "deniedBody": "Your session may have expired. Sign out and back in, then try again.",
     "failedTitle": "Couldn't load the photo",
@@ -318,7 +332,7 @@
     "done": "Downloaded {{file}}",
     "empty": "No jobs in that date range — nothing to export.",
     "downloadCustomer": "Download customer report",
-    "customerHelp": "This file goes to the customer. It never contains worker names or worker pay.",
+    "customerHelp": "This file goes to the customer. It contains client prices. It can contain worker names unless an admin has hidden them.",
     "noColumns": "No columns are switched on, so the report would be blank. Configure it below.",
     "paymentsTitle": "Worker payments",
     "paymentsHelp": "Internal payroll sheet for one person: every job they worked on in the date range, at any site, including shared jobs at their share of the pay. Per-service summary and total. Do not send this to a customer.",
@@ -328,21 +342,32 @@
     "pickWorker": "Select a worker",
     "noWorkerMatches": "No workers match that name.",
     "configTitle": "Customer report columns",
-    "configure": "Configure",
     "configSummary_one": "{{count}} column in the customer report.",
     "configSummary_other": "{{count}} columns in the customer report.",
-    "configHelp": "Tick the columns the customer should see and put them in the order you want them in the file. Applies to every customer report for this site.",
+    "configHelp": "Tick the columns the customer should see and put them in the order you want them in the file. This is the one layout for every customer report; Carasso can still switch columns off for a single download.",
     "configSaved": "Report columns saved",
     "columns": {
       "date": "Date",
-      "brand": "Car model",
-      "plate": "Plate",
+      "brand": "Vehicle brand",
+      "plate": "Vehicle registration number",
       "vin": "VIN",
-      "service": "Service",
+      "service": "Work performed",
       "catalog_number": "Catalog number",
-      "billing_code": "Reservation number",
-      "worker": "Worker"
-    }
+      "billing_code": "Customer billing code",
+      "worker": "Worker",
+      "site": "Site",
+      "client_unit_price": "Client unit price (₪)",
+      "client_total_price": "Client total price (₪)"
+    },
+    "language": "File language",
+    "languageHint": "Hebrew unless you change it; remembered for you",
+    "periodHelpOne": "The report covers this date range.",
+    "allMySites": "All my sites",
+    "columnsTitle": "Columns in this file",
+    "columnsHelp": "Switch columns on or off for this download. Your changes aren't saved.",
+    "columnsHelpAdmin": "Switch columns for this download, or save this layout as the customer report for everyone (Carasso starts from it).",
+    "saveLayout": "Save as the layout",
+    "layoutInSettings": "Layout in Settings"
   },
   "admin": {
     "users": "Users",
@@ -372,7 +397,11 @@
     "sitesAdded": "Site added",
     "sitesWarning": "Site names appear on every export and analytics screen, and cannot be edited or removed here. Check the spelling before adding.",
     "sitesEmptyTitle": "No sites yet",
-    "sitesEmptyBody": "Add the locations where vehicles are prepared."
+    "sitesEmptyBody": "Add the locations where vehicles are prepared.",
+    "carassoSites": "Sites this person can see",
+    "inviteMissingSites": "Email, name and at least one site are required.",
+    "noSitesYet": "No sites yet.",
+    "sitesNotSaved": "The role was updated but the sites were not saved. Open the user and save the sites again."
   },
   "common": {
     "cancel": "Cancel",
@@ -445,10 +474,25 @@
     "download": "Download video",
     "loading": "Loading video…",
     "missingTitle": "No video saved",
-    "missingBody": "Either it was never uploaded, or the job is over 30 days old and the video has been removed.",
+    "missingBody": "Either it was never uploaded, or the job is over 60 days old and the video has been removed.",
     "deniedTitle": "Can't open this video",
     "deniedBody": "Your session may have expired. Sign out and back in, then try again.",
     "failedTitle": "Couldn't load the video",
     "failedBody": "Check your connection — the video itself is fine."
+  },
+  "prices": {
+    "unit": "Client unit price (₪)",
+    "total": "Client total price (₪)",
+    "workerPay": "Worker pay (₪)",
+    "workerPayHint": "what the worker is paid for this job",
+    "invalid": "Prices must be numbers, zero or more."
+  },
+  "settings": {
+    "tab": "Settings",
+    "title": "Settings",
+    "hideTitle": "Worker names",
+    "hideLabel": "Hide worker names from Carasso",
+    "hideHelp": "When on, Carasso users can't see who worked a job: the crew is removed from All jobs and Job details, the worker filter goes, and the Worker column is left out of their exports.",
+    "saved": "Saved"
   }
 }

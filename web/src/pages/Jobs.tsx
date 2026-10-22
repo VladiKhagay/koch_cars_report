@@ -11,10 +11,19 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
-import { applyJobFilters, saveBilling } from '../lib/jobs';
+import { applyJobFilters, fetchDuplicateSummary, saveBilling } from '../lib/jobs';
+import {
+  CARASSO_JOBS_VIEW,
+  CARASSO_JOB_COLUMNS,
+  fetchAppSettings,
+  fetchCarassoCrew,
+  fetchCarassoServices,
+} from '../lib/carasso';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
-import type { AppUser, Job, Service } from '../lib/types';
+import type { AppUser, CarassoJob, PreviousJob, Service } from '../lib/types';
+import { describePreviousJob } from '../components/previousJob';
+import { carassoRow, gridColumnPlan, type JobRow } from './jobsGrid';
 import BillingInput from '../components/BillingInput';
 import JobCard from '../components/JobCard';
 import {
@@ -45,12 +54,6 @@ import {
 } from '../components/ui';
 
 const PAGE_SIZE = 50;
-
-/** A job row with the two names the grid shows instead of foreign keys. */
-interface JobRow extends Job {
-  worker: { id: string; name: string } | null;
-  service: { name_en: string; name_ru: string | null; name_he: string | null } | null;
-}
 
 /** Stable identity: a fresh `[]` fallback would invalidate the table's models. */
 const NO_ROWS: JobRow[] = [];
@@ -87,7 +90,11 @@ function BillingCell({ job, handlers }: { job: JobRow; handlers: React.RefObject
 
 /* ----------------------------------------------------------------- columns */
 
-function buildColumns(t: (key: string) => string, handlers: React.RefObject<Handlers>, showSite: boolean) {
+function buildColumns(
+  t: (key: string) => string,
+  handlers: React.RefObject<Handlers>,
+  plan: ReturnType<typeof gridColumnPlan>,
+) {
     /* `helper.columns` keeps each column's value type attached to its renderer;
        a plain array widens them to `unknown`. The optional column is dropped afterwards. */
   const cols = helper.columns([
@@ -148,7 +155,12 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
     helper.accessor('billing_code', {
       id: 'billing',
       header: () => t('jobs.billingCode'),
-      cell: ({ row }) => <BillingCell job={row.original} handlers={handlers} />,
+      cell: ({ row }) =>
+        plan.editBilling ? (
+          <BillingCell job={row.original} handlers={handlers} />
+        ) : (
+          <CellMuted mono>{row.original.billing_code ?? '—'}</CellMuted>
+        ),
     }),
     helper.display({
       id: 'flags',
@@ -165,9 +177,11 @@ function buildColumns(t: (key: string) => string, handlers: React.RefObject<Hand
     }),
   ]);
 
-  // Only an admin sees more than one site; for everyone else the column would
-  // be the same string repeated 50 times.
-  return showSite ? cols : cols.filter((c) => c.id !== 'site');
+  // Only an admin (or a multi-site Carasso user) sees more than one site; for
+  // everyone else the column would be the same string repeated 50 times.
+  return cols.filter(
+    (c) => (c.id !== 'site' || plan.site) && (c.id !== 'worker' || plan.worker) && (c.id !== 'flags' || plan.flags),
+  );
 }
 
 /* -------------------------------------------------------------------- page */
@@ -176,6 +190,12 @@ export default function Jobs() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const { sites, siteId, canSwitch } = useSiteScope();
+  const isCarasso = appUser?.role === 'carasso';
+  /* Fail safe: names stay hidden for Carasso until the setting has been read. */
+  const [hideNames, setHideNames] = useState(true);
+  useEffect(() => {
+    if (isCarasso) void fetchAppSettings().then((s) => setHideNames(s.hideWorkerNames));
+  }, [isCarasso]);
 
   const [rows, setRows] = useState<JobRow[]>(NO_ROWS);
   const [total, setTotal] = useState(0);
@@ -210,7 +230,7 @@ export default function Jobs() {
   // The duplicate panel: which row is open, and the job it is a duplicate of.
   const [dupeFor, setDupeFor] = useState<string | null>(null);
   /** `null` = still loading, `'missing'` = the original can't be read. */
-  const [original, setOriginal] = useState<JobRow | 'missing' | null>(null);
+  const [original, setOriginal] = useState<PreviousJob | 'missing' | null>(null);
 
   // Managers are pinned to their own site; admins start there and may widen.
   useEffect(() => {
@@ -244,13 +264,18 @@ export default function Jobs() {
     setLoading(true);
     setFailed(false);
 
+    /* Carasso reads the whitelisting view (no pay, no notes, no duplicate flag; the
+       database scopes it to their sites). Everyone else reads jobs_manager. */
+    const base = isCarasso
+      ? supabase.from(CARASSO_JOBS_VIEW).select(CARASSO_JOB_COLUMNS, { count: 'exact' })
+      : supabase
+          .from('jobs_manager')
+          .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)', {
+            count: 'exact',
+          })
+          .is('deleted_at', null);
     const q = applyJobFilters(
-      supabase
-        .from('jobs_manager')
-        .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)', {
-          count: 'exact',
-        })
-        .is('deleted_at', null)
+      base
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
       {
@@ -269,11 +294,15 @@ export default function Jobs() {
       setFailed(true);
       setRows(NO_ROWS);
     } else {
-      setRows((data as JobRow[]) ?? NO_ROWS);
+      setRows(
+        isCarasso
+          ? ((data ?? []) as unknown as CarassoJob[]).map(carassoRow)
+          : (((data ?? []) as unknown as Omit<JobRow, 'crew'>[]).map((r) => ({ ...r, crew: null })) as JobRow[]),
+      );
       setTotal(count ?? 0);
     }
     setLoading(false);
-  }, [page, effectiveSite, workerFilter, serviceFilter, from, to, search, missingBilling]);
+  }, [page, isCarasso, effectiveSite, workerFilter, serviceFilter, from, to, search, missingBilling]);
 
   // Debounced so typing a plate doesn't fire a query per keystroke.
   useEffect(() => {
@@ -288,21 +317,31 @@ export default function Jobs() {
 
   // The worker filter lists the people who can appear in the current scope.
   useEffect(() => {
+    if (isCarasso) {
+      // Their own crews only, and nothing while names are hidden.
+      if (hideNames) setWorkers([]);
+      else void fetchCarassoCrew().then(setWorkers);
+      return;
+    }
     let q = supabase.from('users').select('id,name').order('name');
     if (effectiveSite) q = q.eq('site_id', effectiveSite);
     void q.then(({ data }) => setWorkers(data ?? []));
-  }, [effectiveSite]);
+  }, [effectiveSite, isCarasso, hideNames]);
 
     /* The service filter reads the same catalog the job form writes. Retired
        services are included: this grid is mostly read backwards through history. */
   useEffect(() => {
+    if (isCarasso) {
+      void fetchCarassoServices().then(setServices);
+      return;
+    }
     void supabase
       .from('services')
       .select('id,name_en,name_ru,name_he')
       .is('deleted_at', null)
       .order('sort_order')
       .then(({ data }) => setServices(data ?? []));
-  }, []);
+  }, [isCarasso]);
 
   /* --------------------------------------------------------------- actions */
 
@@ -319,7 +358,7 @@ export default function Jobs() {
   const staff = useStaff();
   const crewName = useCallback(
     (job: JobRow): string =>
-      [job.worker?.name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
+      job.crew ?? [job.worker?.name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
     [staff],
   );
 
@@ -343,25 +382,19 @@ export default function Jobs() {
     setDupeFor((current) => (current === jobId ? null : jobId));
   }, []);
 
-    /* Fetch the duplicated job when its panel opens. It may be unreadable
-       (soft-deleted, or at a site this manager can't see); that resolves to
-       `missing` rather than `null`, which would look like loading forever. */
+    /* Fetch the earlier job's date, site and service when the panel opens. The
+       earlier job may be on another site or gone; that resolves to `missing`
+       rather than `null`, which would look like loading forever. */
   useEffect(() => {
-    const copy = rows.find((r) => r.id === dupeFor);
-    if (!copy?.duplicate_of_job_id) return;
+    if (!dupeFor) return;
     let cancelled = false;
-    void supabase
-      .from('jobs_manager')
-      .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)')
-      .eq('id', copy.duplicate_of_job_id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setOriginal((data as JobRow) ?? 'missing');
-      });
+    void fetchDuplicateSummary(dupeFor).then((summary) => {
+      if (!cancelled) setOriginal(summary ?? 'missing');
+    });
     return () => {
       cancelled = true;
     };
-  }, [dupeFor, rows]);
+  }, [dupeFor]);
 
   async function deleteCopy(job: JobRow) {
     if (!appUser) return;
@@ -386,10 +419,12 @@ export default function Jobs() {
   // below can be built once and still call the current closures.
   handlers.current = { saveBillingCode, openDuplicate, siteName, serviceName, crewName, locale: i18n.language };
 
-  const columns = useMemo(
-    () => buildColumns(t, handlers, canSwitch),
-    [t, canSwitch],
+  const showSiteFilter = canSwitch && (!isCarasso || sites.length > 1);
+  const plan = useMemo(
+    () => gridColumnPlan({ isCarasso, showSite: showSiteFilter, hideNames }),
+    [isCarasso, showSiteFilter, hideNames],
   );
+  const columns = useMemo(() => buildColumns(t, handlers, plan), [t, plan]);
 
   const table = useTable({ features, columns, data: rows });
 
@@ -411,17 +446,7 @@ export default function Jobs() {
       ) : (
         <ConfirmPanel
           icon="trash"
-          question={t('jobs.duplicateQuestion', {
-            plate: original.plate ?? original.vin ?? '—',
-            date: new Date(original.created_at).toLocaleString(i18n.language, {
-              day: '2-digit',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            worker: original.worker?.name ?? '—',
-            service: serviceName(original),
-          })}
+          question={t('jobs.duplicateQuestion', describePreviousJob(original, i18n.language))}
           confirmLabel={t('jobs.deleteCopy')}
           onConfirm={() => void deleteCopy(job)}
           onCancel={() => setDupeFor(null)}
@@ -436,12 +461,12 @@ export default function Jobs() {
   const firstShown = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const lastShown = Math.min(total, page * PAGE_SIZE + rows.length);
   const filtered = Boolean(
-    search || missingBilling || workerFilter || serviceFilter || from || to || (canSwitch && siteFilter !== null && siteFilter !== siteId),
+    search || missingBilling || workerFilter || serviceFilter || from || to || (showSiteFilter && (siteFilter ?? '') !== (siteId ?? '')),
   );
 
   return (
     <Page width="full">
-      <PageHeading lead={t('jobs.lead')}>{t('jobs.title')}</PageHeading>
+      <PageHeading lead={isCarasso ? t('jobs.leadReadOnly') : t('jobs.lead')}>{t('jobs.title')}</PageHeading>
 
       {/* The table, the states it can be in, and its pager. */}
       <Group>
@@ -457,7 +482,7 @@ export default function Jobs() {
                     truncates a site or worker name — and a dropdown you have
                     to open to find out what it says is not a filter. The dates
                     are fixed-width by nature and stay paired. */}
-                {canSwitch && (
+                {showSiteFilter && (
                   <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
                     <span className={filterLabelClass}>{t('jobs.site')}</span>
                     <Select value={siteFilter ?? ''} onChange={(e) => setSiteFilter(e.target.value)}>
@@ -471,6 +496,7 @@ export default function Jobs() {
                   </label>
                 )}
 
+                {plan.worker && (
                 <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
                   <span className={filterLabelClass}>{t('jobs.worker')}</span>
                   <Select value={workerFilter} onChange={(e) => setWorkerFilter(e.target.value)}>
@@ -482,6 +508,7 @@ export default function Jobs() {
                     ))}
                   </Select>
                 </label>
+                )}
 
                 {/* Service names run as long as site and worker names do, so
                     this filter gets the same full-width-on-a-phone treatment
@@ -530,7 +557,7 @@ export default function Jobs() {
                       setServiceFilter('');
                       setFrom('');
                       setTo('');
-                      if (canSwitch) setSiteFilter(siteId);
+                      if (showSiteFilter) setSiteFilter(siteId);
                     }}
                   >
                     {t('jobs.clearFilters')}
@@ -597,15 +624,21 @@ export default function Jobs() {
             <JobCard
               key={job.id}
               job={job}
-              meta={`${crewName(job)} · ${new Date(job.created_at).toLocaleString(i18n.language, {
-                day: '2-digit',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-              })} · ${serviceName(job)}`}
+              meta={[
+                plan.worker ? crewName(job) : null,
+                new Date(job.created_at).toLocaleString(i18n.language, {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+                serviceName(job),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               showBilling
-              onSaveBilling={(value) => saveBillingCode(job, value)}
-              onDuplicate={() => openDuplicate(job.id)}
+              onSaveBilling={plan.editBilling ? (value) => saveBillingCode(job, value) : undefined}
+              onDuplicate={plan.flags ? () => openDuplicate(job.id) : undefined}
             >
               {dupeFor === job.id && (
                 <div className="mt-2 rounded-xl bg-sunken p-4">{duplicatePanel(job)}</div>

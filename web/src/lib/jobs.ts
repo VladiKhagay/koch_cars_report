@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { uploadPhoto, HttpError } from './workerApi';
 import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
-import type { Job, PhotoKind } from './types';
+import type { Job, PhotoKind, PreviousJob } from './types';
 
 /** The optional slots, in the order they are filled. Matches migration 0005. */
 export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
@@ -64,10 +64,9 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   let jobId = payload.jobId;
 
   if (!jobId) {
-    // Computed here so jobs queued offline get it too. No VIN, nothing to match.
-    const duplicateOfJobId = vin ? await findRecentDuplicate(payload.siteId, vin) : null;
-
     // worker_price is absent on purpose: a trigger stamps it from the service catalog (0005).
+    // So is duplicate_of_job_id: the database flags a repeat VIN or plate on insert (0029),
+    // which also covers jobs queued offline.
     const { data: job, error } = await supabase
       .from('jobs')
       .insert({
@@ -82,7 +81,6 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
         // without its crew (or the crew twice).
         coworker_ids: payload.coworkerIds ?? [],
         worker_note: payload.workerNote,
-        duplicate_of_job_id: duplicateOfJobId,
       })
       .select('id')
       .single();
@@ -130,12 +128,33 @@ export function saveBilling(jobId: string, fields: { billing_code?: string | nul
 }
 
 /**
- * Flags jobs with the same VIN at the same site in the last 7 days. A security
- * definer RPC returns only a job id, since workers can't SELECT others' jobs (0003).
+ * The most recent earlier job with the same VIN or plate: any site, any time,
+ * any service (0029). Returns only date, site and service: no money, no people.
+ * Warn-only, so it never throws: offline, or any failure, is "no warning" and
+ * the submit goes ahead (the database flags the job on insert regardless).
+ * Blank values are never matched.
  */
-export async function findRecentDuplicate(siteId: string, vin: string): Promise<string | null> {
-  const { data } = await supabase.rpc('find_recent_duplicate', { p_site_id: siteId, p_vin: vin });
-  return (data as string | null) ?? null;
+export async function findPreviousJob(vehicle: { plate?: string | null; vin?: string | null }): Promise<PreviousJob | null> {
+  const plate = vehicle.plate?.trim() || null;
+  const vin = vehicle.vin?.trim() || null;
+  if (!plate && !vin) return null;
+  try {
+    const { data, error } = await supabase.rpc('find_previous_job', { p_plate: plate, p_vin: vin });
+    if (error) return null;
+    return ((data ?? []) as PreviousJob[])[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The job a manager/admin's duplicate flag points at (0029). Reads through a
+ * function because the earlier job may be on another site, which jobs RLS hides.
+ */
+export async function fetchDuplicateSummary(jobId: string): Promise<PreviousJob | null> {
+  const { data, error } = await supabase.rpc('duplicate_job_summary', { p_job_id: jobId });
+  if (error) return null;
+  return ((data ?? []) as PreviousJob[])[0] ?? null;
 }
 
 /* ------------------------------------------------------------------- crew */

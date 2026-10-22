@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  availableColumns,
   CUSTOMER_COLUMNS,
+  SHEET_HEADERS_BY_LANG,
   moveColumn,
   resolveCustomerColumns,
   toStoredConfig,
@@ -124,5 +126,50 @@ describe('moveColumn', () => {
     const before = keys(cols);
     moveColumn(cols, 0, 1);
     expect(keys(cols)).toEqual(before);
+  });
+});
+
+describe('availableColumns', () => {
+  const all = resolveCustomerColumns({
+    columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })),
+  });
+  const offered = (role: Parameters<typeof availableColumns>[1]['role'], over = {}) =>
+    availableColumns(all, { role, hideWorkerNames: false, multiSite: true, ...over }).map((c) => c.key);
+
+  it('never offers client prices to a manager or a worker', () => {
+    for (const role of ['manager', 'worker', undefined] as const) {
+      expect(offered(role)).not.toContain('client_unit_price');
+      expect(offered(role)).not.toContain('client_total_price');
+    }
+  });
+
+  it('offers client prices to admin and Carasso', () => {
+    for (const role of ['admin', 'carasso'] as const) {
+      expect(offered(role)).toEqual(expect.arrayContaining(['client_unit_price', 'client_total_price']));
+    }
+  });
+
+  it('drops the Worker column for Carasso while names are hidden — and only for Carasso', () => {
+    expect(offered('carasso', { hideWorkerNames: true })).not.toContain('worker');
+    expect(offered('admin', { hideWorkerNames: true })).toContain('worker');
+    expect(offered('manager', { hideWorkerNames: true })).toContain('worker');
+    expect(offered('carasso')).toContain('worker');
+  });
+
+  it('offers the Site column only for a multi-site file', () => {
+    expect(offered('carasso', { multiSite: false })).not.toContain('site');
+    expect(offered('carasso')).toContain('site');
+  });
+
+  it('keeps the stored order of what remains', () => {
+    expect(offered('manager').slice(0, 3)).toEqual(['date', 'site', 'brand']);
+  });
+});
+
+describe('headers', () => {
+  it('has a Hebrew and an English header for every column', () => {
+    for (const lang of ['he', 'en'] as const) {
+      for (const key of CUSTOMER_COLUMNS) expect(SHEET_HEADERS_BY_LANG[lang][key]).toBeTruthy();
+    }
   });
 });

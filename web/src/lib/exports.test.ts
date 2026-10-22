@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCustomerReport,
   buildMyJobsSheet,
+  buildStatsSheet,
   buildWorkerPaymentReport,
+  exportLocale,
   type Cell,
   type ExportJob,
 } from './exports';
-import { resolveCustomerColumns } from './reportConfig';
+import { availableColumns, CUSTOMER_COLUMNS, resolveCustomerColumns } from './reportConfig';
 
 const job = (over: Partial<ExportJob> = {}): ExportJob => ({
   created_at: '2026-03-04T09:30:00.000Z',
@@ -62,7 +64,7 @@ describe('buildCustomerReport', () => {
         { key: 'vin', visible: false },
       ],
     });
-    const [header, row] = buildCustomerReport([job()], columns, 'en-GB');
+    const [header, row] = buildCustomerReport([job()], columns, 'en-GB', 'en');
     expect(header).toEqual(['Vehicle registration number', 'Date']);
     expect(row[0]).toBe('12-345-67');
     expect(row).toHaveLength(2);
@@ -79,27 +81,27 @@ describe('buildCustomerReport', () => {
         { key: 'date', visible: true },
       ],
     });
-    const cells = flat(buildCustomerReport([job()], columns, 'en-GB'));
+    const cells = flat(buildCustomerReport([job()], columns, 'en-GB', 'en'));
     expect(cells).not.toContain('25');
     expect(cells.some((c) => /price|pay/i.test(c))).toBe(false);
   });
 
   it('emits the worker name when the column is on', () => {
     const columns = resolveCustomerColumns({ columns: [{ key: 'worker', visible: true }] });
-    const [header, row] = buildCustomerReport([job()], columns, 'en-GB');
+    const [header, row] = buildCustomerReport([job()], columns, 'en-GB', 'en');
     expect(header).toEqual(['Worker']);
     expect(row).toEqual(['Dana']);
   });
 
   it('writes a blank cell for a job with no worker', () => {
     const columns = resolveCustomerColumns({ columns: [{ key: 'worker', visible: true }] });
-    const [, row] = buildCustomerReport([job({ worker: null })], columns, 'en-GB');
+    const [, row] = buildCustomerReport([job({ worker: null })], columns, 'en-GB', 'en');
     expect(row).toEqual(['']);
   });
 
   it('produces a header-only sheet when nothing is visible', () => {
     const columns = resolveCustomerColumns({ columns: [] });
-    const rows = buildCustomerReport([job(), job()], columns, 'en-GB');
+    const rows = buildCustomerReport([job(), job()], columns, 'en-GB', 'en');
     expect(rows[0]).toEqual([]);
     expect(rows).toHaveLength(3);
   });
@@ -116,6 +118,7 @@ describe('buildCustomerReport', () => {
       [job({ brand: null, billing_code: null, service: null })],
       columns,
       'en-GB',
+      'en',
     );
     expect(row).toEqual(['', '', '']);
   });
@@ -132,7 +135,7 @@ describe('buildWorkerPaymentReport', () => {
     job({ worker: { name: 'Dana' }, service: wash, worker_price: 25, created_at: '2026-03-03T08:00:00.000Z' }),
   ];
 
-  const build = (jobs: ExportJob[] = dana) => buildWorkerPaymentReport(jobs, 'Dana', 'en-GB');
+  const build = (jobs: ExportJob[] = dana) => buildWorkerPaymentReport(jobs, 'Dana', 'en-GB', 'en');
   /** The summary row for a service (or the totals), by its label in column B. */
   const summaryFor = (rows: Cell[][], label: string) =>
     rows.find((r) => r[1] === label);
@@ -232,6 +235,7 @@ describe('through SheetJS', () => {
       [job({ worker_price: 25 }), job({ worker_price: 15.5 })],
       'Dana',
       'en-GB',
+      'en',
     );
     const sheet = XLSX.utils.aoa_to_sheet(rows);
 
@@ -248,10 +252,127 @@ describe('through SheetJS', () => {
         { key: 'service', visible: true },
       ],
     });
-    const sheet = XLSX.utils.aoa_to_sheet(buildCustomerReport([job()], columns, 'en-GB'));
+    const sheet = XLSX.utils.aoa_to_sheet(buildCustomerReport([job()], columns, 'en-GB', 'en'));
     const back = XLSX.utils.sheet_to_json<Record<string, string>>(sheet);
 
     expect(Object.keys(back[0])).toEqual(['Vehicle registration number', 'Work performed']);
     expect(back[0]['Vehicle registration number']).toBe('12-345-67');
+  });
+});
+
+/* ------------------------------------------------------ Hebrew and prices */
+
+describe('Hebrew exports', () => {
+  const allColumns = resolveCustomerColumns({
+    columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })),
+  });
+  const priced = job({
+    site: { name: 'Haifa' },
+    service: { name_en: 'Full detail', name_he: 'פירוט מלא', catalog_number: 'SVC-001' },
+    client_unit_price: 12.5,
+    client_total_price: 50,
+  });
+  const ctx = { role: 'carasso' as const, hideWorkerNames: false, multiSite: true };
+  const he = (jobs: ExportJob[], c = allColumns) =>
+    buildCustomerReport(jobs, availableColumns(c, ctx), exportLocale('he'), 'he');
+
+  it('uses the agreed Hebrew customer-report headers, in layout order', () => {
+    expect(he([priced])[0]).toEqual([
+      'תאריך', 'אתר', 'יצרן', 'רישוי', 'שלדה', 'שירות', 'מק"ט', 'מספר הזמנה', 'עובד',
+      'מחיר לחלק (₪)', 'מחיר כולל (₪)',
+    ]);
+  });
+
+  it('uses the agreed English headers, including the shekel columns', () => {
+    const [header] = buildCustomerReport([priced], availableColumns(allColumns, ctx), 'en-GB', 'en');
+    expect(header).toEqual([
+      'Date', 'Site', 'Vehicle brand', 'Vehicle registration number', 'VIN', 'Work performed',
+      'Catalog number', 'Customer billing code', 'Worker', 'Client unit price (₪)', 'Client total price (₪)',
+    ]);
+  });
+
+  it('prints the Hebrew service name, falling back to English when it is empty', () => {
+    const cols = resolveCustomerColumns({ columns: [{ key: 'service', visible: true }] });
+    expect(he([priced], cols)[1]).toEqual(['פירוט מלא']);
+    const noHe = job({ service: { name_en: 'Polish', name_he: '', catalog_number: 'X' } });
+    expect(he([noHe], cols)[1]).toEqual(['Polish']);
+    const nullHe = job({ service: { name_en: 'Polish', name_he: null, catalog_number: 'X' } });
+    expect(he([nullHe], cols)[1]).toEqual(['Polish']);
+  });
+
+  it('keeps English service names in an English file even when a Hebrew name exists', () => {
+    const cols = resolveCustomerColumns({ columns: [{ key: 'service', visible: true }] });
+    expect(buildCustomerReport([priced], cols, 'en-GB', 'en')[1]).toEqual(['Full detail']);
+  });
+
+  it('writes client prices as numbers and the site name', () => {
+    const [, row] = he([priced]);
+    expect(row.slice(9)).toEqual([12.5, 50]);
+    expect(row[1]).toBe('Haifa');
+  });
+
+  it('leaves unpriced jobs blank rather than 0 or "null"', () => {
+    const [, row] = he([job({ client_unit_price: null })]);
+    expect(row.slice(9)).toEqual(['', '']);
+  });
+
+  it('formats dates for the file language', () => {
+    expect(exportLocale('he')).toBe('he-IL');
+    expect(exportLocale('en')).toBe('en-GB');
+  });
+
+  it('translates the payment sheet, its summary and its total', () => {
+    const rows = buildWorkerPaymentReport(
+      [job({ service: { name_en: 'Wash', name_he: 'שטיפה', catalog_number: 'S' }, worker_price: 10 })],
+      'Dana',
+      'he-IL',
+      'he',
+    );
+    expect(rows[0]).toEqual(['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'סכום']);
+    expect(rows[1][3]).toBe('שטיפה');
+    expect(rows.find((r) => r[0] === 'סיכום')).toBeTruthy();
+    expect(rows.find((r) => r[1] === 'שירות')?.slice(2)).toEqual(['', '', 'עבודות', 'סכום']);
+    expect(rows[rows.length - 1]).toEqual(['', 'סה"כ', '', '', 1, 10]);
+  });
+
+  it('translates the stats sheet', () => {
+    const rows = [
+      { day: '2026-03-01', site: 'Haifa', worker: 'Dana', catalog_number: 'S', service: { name_en: 'Wash', name_he: 'שטיפה' }, job_count: 3 },
+    ];
+    expect(buildStatsSheet(rows, 'he')).toEqual([
+      ['תאריך', 'אתר', 'עובד', 'מק"ט', 'שירות', 'מספר עבודות'],
+      ['2026-03-01', 'Haifa', 'Dana', 'S', 'שטיפה', 3],
+    ]);
+    expect(buildStatsSheet(rows, 'en')[0]).toEqual(['Date', 'Site', 'Worker', 'Catalog number', 'Service', 'Jobs']);
+  });
+});
+
+describe('who may export what', () => {
+  const all = resolveCustomerColumns({ columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })) });
+  const priced = job({ client_unit_price: 12.5, client_total_price: 50 });
+  const sheet = (role: 'manager' | 'admin' | 'carasso', hide = false) =>
+    buildCustomerReport([priced], availableColumns(all, { role, hideWorkerNames: hide, multiSite: false }), 'en-GB', 'en');
+
+  it('a manager file carries no client price column or value, even if the job row did', () => {
+    const rows = sheet('manager');
+    expect(rows[0].some((h) => /Client/.test(String(h)))).toBe(false);
+    expect(flat(rows)).not.toContain('12.5');
+    expect(flat(rows)).not.toContain('50');
+  });
+
+  it('an admin file carries them', () => {
+    expect(sheet('admin')[0]).toEqual(expect.arrayContaining(['Client unit price (₪)', 'Client total price (₪)']));
+  });
+
+  it('a Carasso file has no Worker column while names are hidden', () => {
+    expect(sheet('carasso', true)[0]).not.toContain('Worker');
+    expect(flat(sheet('carasso', true))).not.toContain('Dana');
+    expect(sheet('carasso', false)[0]).toContain('Worker');
+  });
+
+  it('worker pay is never in any customer file', () => {
+    for (const role of ['manager', 'admin', 'carasso'] as const) {
+      expect(flat(sheet(role))).not.toContain('25');
+    }
   });
 });

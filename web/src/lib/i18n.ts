@@ -36,7 +36,7 @@ void i18n
   .use(initReactI18next)
   .init({
     resources: { en: { translation: en }, ru: { translation: ru }, he: { translation: he } },
-    lng: isLang(localStorage.getItem('lang')) ? (localStorage.getItem('lang') as Lang) : 'en',
+    lng: isLang(localStorage.getItem('lang')) ? (localStorage.getItem('lang') as Lang) : 'he',
     fallbackLng: 'en',
     interpolation: { escapeValue: false },
   });

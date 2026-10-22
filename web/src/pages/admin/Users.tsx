@@ -1,10 +1,12 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { inviteUser, setUserActive } from '../../lib/workerApi';
+import { saveUserSites } from '../../lib/carasso';
 import type { AppUser, Site, UserRole } from '../../lib/types';
 import AdminTabs from '../../components/AdminTabs';
 import StatusBanner from '../../components/StatusBanner';
+import SiteChecklist from '../../components/SiteChecklist';
 import {
   CellMuted,
   CellTitle,
@@ -35,7 +37,7 @@ import {
   fieldClass,
 } from '../../components/ui';
 
-const ROLES: UserRole[] = ['worker', 'manager', 'admin'];
+const ROLES: UserRole[] = ['worker', 'manager', 'admin', 'carasso'];
 
 /** Name, role, site, status, actions. */
 const COLUMNS = 5;
@@ -55,6 +57,10 @@ export default function AdminUsers() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>('worker');
   const [siteId, setSiteId] = useState('');
+  /** Carasso only: the sites they may see. */
+  const [inviteSiteIds, setInviteSiteIds] = useState<string[]>([]);
+  /** user id -> Carasso site ids, for the table and the edit form. */
+  const [carassoSites, setCarassoSites] = useState<Map<string, string[]>>(new Map());
   const [inviteError, setInviteError] = useState('');
   const [inviteSent, setInviteSent] = useState(false);
   /** Errors from row actions, shown by the table rather than by the invite form. */
@@ -63,10 +69,11 @@ export default function AdminUsers() {
 
   // Inline edit
   const [expanded, setExpanded] = useState<Expanded>(null);
-  const [editDraft, setEditDraft] = useState<{ name: string; role: UserRole; site_id: string }>({
+  const [editDraft, setEditDraft] = useState<{ name: string; role: UserRole; site_id: string; site_ids: string[] }>({
     name: '',
     role: 'worker',
     site_id: '',
+    site_ids: [],
   });
 
   useEffect(() => {
@@ -76,20 +83,28 @@ export default function AdminUsers() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('users').select('*').order('name');
+    const [{ data }, { data: links }] = await Promise.all([
+      supabase.from('users').select('*').order('name'),
+      supabase.from('user_sites').select('user_id, site_id'),
+    ]);
     setUsers(data ?? []);
+    const byUser = new Map<string, string[]>();
+    for (const l of links ?? []) byUser.set(l.user_id, [...(byUser.get(l.user_id) ?? []), l.site_id]);
+    setCarassoSites(byUser);
     setLoading(false);
   }
 
   async function handleInvite() {
     setInviteError('');
     setInviteSent(false);
-    if (!email || !name || !siteId) {
-      setInviteError(t('admin.inviteMissingFields'));
+    const carasso = role === 'carasso';
+    if (!email || !name || (carasso ? inviteSiteIds.length === 0 : !siteId)) {
+      setInviteError(carasso ? t('admin.inviteMissingSites') : t('admin.inviteMissingFields'));
       return;
     }
     setSaving(true);
-    const result = await inviteUser({ email, name, role, siteId });
+    // Carasso has no home site: it is scoped by the sites list alone.
+    const result = await inviteUser(carasso ? { email, name, role, siteIds: inviteSiteIds } : { email, name, role, siteId });
     setSaving(false);
     if (!result.ok) {
       setInviteError(result.error);
@@ -98,21 +113,43 @@ export default function AdminUsers() {
     setInviteSent(true);
     setEmail('');
     setName('');
+    setInviteSiteIds([]);
     void load();
   }
 
   function startEdit(user: AppUser) {
     setExpanded({ id: user.id, mode: 'edit' });
-    setEditDraft({ name: user.name, role: user.role, site_id: user.site_id ?? '' });
+    setEditDraft({
+      name: user.name,
+      role: user.role,
+      site_id: user.site_id ?? '',
+      site_ids: carassoSites.get(user.id) ?? [],
+    });
   }
 
   async function saveEdit(userId: string) {
+    setActionError('');
+    const carasso = editDraft.role === 'carasso';
+    if (carasso && editDraft.site_ids.length === 0) {
+      setActionError(t('admin.inviteMissingSites'));
+      return;
+    }
     setSaving(true);
-    await supabase
+    // A Carasso user has no home site (the database insists); their sites live in user_sites.
+    const { error } = await supabase
       .from('users')
-      .update({ name: editDraft.name.trim(), role: editDraft.role, site_id: editDraft.site_id || null })
+      .update({ name: editDraft.name.trim(), role: editDraft.role, site_id: carasso ? null : editDraft.site_id || null })
       .eq('id', userId);
+    const sitesResult = !error && carasso ? await saveUserSites(userId, editDraft.site_ids) : { error: null };
     setSaving(false);
+    if (error || sitesResult.error) {
+      setActionError(
+        error
+          ? error.message
+          : `${sitesResult.error} — ${t('admin.sitesNotSaved')}`,
+      );
+      return;
+    }
     setExpanded(null);
     void load();
   }
@@ -131,16 +168,24 @@ export default function AdminUsers() {
     void load();
   }
 
-  const siteName = (id: string | null) => sites.find((s) => s.id === id)?.name ?? t('profile.noSite');
+  const siteName = useCallback(
+    (id: string | null) => sites.find((s) => s.id === id)?.name ?? t('profile.noSite'),
+    [sites, t],
+  );
+  /** A Carasso user's sites, joined; everyone else's single home site. */
+  const userSites = useCallback(
+    (u: AppUser) =>
+      u.role === 'carasso'
+        ? (carassoSites.get(u.id) ?? []).map((id) => siteName(id)).join(', ') || t('profile.noSite')
+        : siteName(u.site_id),
+    [carassoSites, siteName, t],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return users;
-    const nameOf = (id: string | null) => sites.find((s) => s.id === id)?.name ?? '';
-    return users.filter(
-      (u) => u.name.toLowerCase().includes(q) || nameOf(u.site_id).toLowerCase().includes(q),
-    );
-  }, [users, search, sites]);
+    return users.filter((u) => u.name.toLowerCase().includes(q) || userSites(u).toLowerCase().includes(q));
+  }, [users, search, userSites]);
 
   return (
     <Page width="wide">
@@ -208,16 +253,27 @@ export default function AdminUsers() {
                 </Select>
               </Field>
 
-              <Field htmlFor="invite-site" label={t('admin.site')}>
-                <Select id="invite-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-                  <option value="">{t('admin.site')}</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+              {role === 'carasso' ? (
+                <div className="sm:col-span-2">
+                  <SiteChecklist
+                    label={t('admin.carassoSites')}
+                    sites={sites}
+                    value={inviteSiteIds}
+                    onChange={setInviteSiteIds}
+                  />
+                </div>
+              ) : (
+                <Field htmlFor="invite-site" label={t('admin.site')}>
+                  <Select id="invite-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+                    <option value="">{t('admin.site')}</option>
+                    {sites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
             </div>
 
             {inviteError && (
@@ -276,14 +332,14 @@ export default function AdminUsers() {
                       {/* The two columns that vanish on a phone reappear here,
                           so a narrow screen loses layout, not information. */}
                       <p className="text-xs text-ink-600 sm:hidden">
-                        {t(`roles.${u.role}`)} · {siteName(u.site_id)}
+                        {t(`roles.${u.role}`)} · {userSites(u)}
                       </p>
                     </Td>
                     <Td hideBelow="sm">
                       <CellMuted>{t(`roles.${u.role}`)}</CellMuted>
                     </Td>
                     <Td hideBelow="md">
-                      <CellMuted>{siteName(u.site_id)}</CellMuted>
+                      <CellMuted>{userSites(u)}</CellMuted>
                     </Td>
                     <Td hideBelow="sm">
                       {/* State is reported, never actioned, by this element. */}
@@ -341,21 +397,32 @@ export default function AdminUsers() {
                             </Select>
                           </Field>
 
-                          <Field htmlFor={`edit-site-${u.id}`} label={t('admin.site')}>
-                            <Select
-                              id={`edit-site-${u.id}`}
-                              value={editDraft.site_id}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, site_id: e.target.value }))}
-                            >
-                              <option value="">{t('admin.site')}</option>
-                              {sites.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
+                          {editDraft.role !== 'carasso' && (
+                            <Field htmlFor={`edit-site-${u.id}`} label={t('admin.site')}>
+                              <Select
+                                id={`edit-site-${u.id}`}
+                                value={editDraft.site_id}
+                                onChange={(e) => setEditDraft((d) => ({ ...d, site_id: e.target.value }))}
+                              >
+                                <option value="">{t('admin.site')}</option>
+                                {sites.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                          )}
                         </div>
+
+                        {editDraft.role === 'carasso' && (
+                          <SiteChecklist
+                            label={t('admin.carassoSites')}
+                            sites={sites}
+                            value={editDraft.site_ids}
+                            onChange={(ids) => setEditDraft((d) => ({ ...d, site_ids: ids }))}
+                          />
+                        )}
 
                         {/* On a phone the pair fills the line, each holding a
                             128px floor, so a label is never squeezed to a

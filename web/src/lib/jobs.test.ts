@@ -17,6 +17,7 @@ const insertedPhotos: unknown[] = [];
 const rpcCalls: unknown[] = [];
 let jobIdSeq = 0;
 let uploadFails = false;
+let rpcFails = false;
 
 vi.mock('./supabase', () => {
   const jobsInsert = (row: unknown) => {
@@ -37,11 +38,12 @@ vi.mock('./supabase', () => {
           return Promise.resolve({ error: null });
         },
       }),
-      /* Always claims a duplicate, so "no VIN means no duplicate" is a real
-         assertion rather than one that passes because the stub returns null. */
-      rpc: (_fn: string, args: { p_vin: string }) => {
-        rpcCalls.push(args);
-        return Promise.resolve({ data: 'earlier-job' });
+      /* Always claims an earlier job, so the "never asked" assertions are real
+         rather than passing because the stub returns nothing. */
+      rpc: (fn: string, args: Record<string, unknown>) => {
+        rpcCalls.push({ fn, ...args });
+        if (fn === 'find_previous_job' && rpcFails) return Promise.reject(new Error('offline'));
+        return Promise.resolve({ data: [{ created_at: '2026-01-01T00:00:00Z', site_name: 'North', service_name_en: 'Wash' }], error: null });
       },
     },
   };
@@ -54,7 +56,7 @@ vi.mock('./workerApi', () => ({
   },
 }));
 
-const { submitJob, applyJobFilters, shareFor } = await import('./jobs');
+const { submitJob, applyJobFilters, shareFor, findPreviousJob } = await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
 const blob = () => new Blob(['x'], { type: 'image/jpeg' });
@@ -194,10 +196,11 @@ describe('submitJob — a car with no readable VIN', () => {
     expect(row().vin).toBeNull();
   });
 
-  it('claims no duplicate when there is no VIN to match on', async () => {
+  /* The flag is the database's job (0029 insert trigger): the client sends none,
+     so an offline-queued job is flagged exactly like an online one. */
+  it('does not send a duplicate flag or ask the duplicate check on submit', async () => {
     await submitJob({ ...payload(), vin: null });
-    expect(row().duplicate_of_job_id).toBeNull();
-    // The check is not merely inconclusive — it is never asked.
+    expect(row()).not.toHaveProperty('duplicate_of_job_id');
     expect(rpcCalls).toEqual([]);
   });
 
@@ -232,9 +235,9 @@ describe('submitJob — a car with no plate', () => {
     expect(row().plate).toBeNull();
   });
 
-  it('still finds a duplicate by VIN with no plate to compare', async () => {
+  it('still submits with no plate to compare', async () => {
     await submitJob({ ...payload(), plate: null, plateBlob: null });
-    expect(row().duplicate_of_job_id).toBe('earlier-job');
+    expect(row()).not.toHaveProperty('duplicate_of_job_id');
   });
 
   it('skips the plate photo slot entirely when no plate photo was taken', async () => {
@@ -247,6 +250,40 @@ describe('submitJob — a car with no plate', () => {
       submitJob({ ...payload(), plate: null, plateBlob: null, vin: null, vinBlob: null }),
     ).rejects.toThrow();
     expect(insertedJobs).toHaveLength(0);
+  });
+});
+
+/* ---------------------------------------------------------- duplicate check */
+
+describe('findPreviousJob', () => {
+  it('asks by plate and VIN together and returns the earlier job', async () => {
+    rpcCalls.length = 0;
+    const prev = await findPreviousJob({ plate: '1234567', vin: 'WVWZZZ1JZXW000001' });
+    expect(rpcCalls).toEqual([{ fn: 'find_previous_job', p_plate: '1234567', p_vin: 'WVWZZZ1JZXW000001' }]);
+    expect(prev).toMatchObject({ site_name: 'North', service_name_en: 'Wash' });
+  });
+
+  it('works from the plate alone, and from the VIN alone', async () => {
+    rpcCalls.length = 0;
+    await findPreviousJob({ plate: '1234567', vin: null });
+    await findPreviousJob({ plate: '  ', vin: 'WVWZZZ1JZXW000001' });
+    expect(rpcCalls).toEqual([
+      { fn: 'find_previous_job', p_plate: '1234567', p_vin: null },
+      { fn: 'find_previous_job', p_plate: null, p_vin: 'WVWZZZ1JZXW000001' },
+    ]);
+  });
+
+  it('never asks with nothing to match on', async () => {
+    rpcCalls.length = 0;
+    expect(await findPreviousJob({ plate: ' ', vin: null })).toBeNull();
+    expect(rpcCalls).toEqual([]);
+  });
+
+  /* Offline: the warning is a courtesy, so failing to ask must not stop a submit. */
+  it('treats a failed lookup as "no warning" instead of throwing', async () => {
+    rpcFails = true;
+    expect(await findPreviousJob({ vin: 'WVWZZZ1JZXW000001' })).toBeNull();
+    rpcFails = false;
   });
 });
 

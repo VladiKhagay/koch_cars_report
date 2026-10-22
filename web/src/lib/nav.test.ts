@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { navItemsFor } from './nav';
+import { landingPathFor, navItemsFor, ROUTE_ROLES } from './nav';
 import type { UserRole } from './types';
 
 /** The nav is built from `t()` calls; the labels don't matter here. */
 const t = (key: string) => key;
 
-const ROLES: UserRole[] = ['worker', 'manager', 'admin'];
+const ROLES: UserRole[] = ['worker', 'manager', 'admin', 'carasso'];
 
 /**
  * The bottom tab bar is `primary` plus one "More" tab when anything was
@@ -50,5 +50,34 @@ describe('navItemsFor', () => {
 
   it('returns nothing for a user whose role has not loaded yet', () => {
     expect(navItemsFor(undefined, t)).toEqual({ primary: [], secondary: [] });
+  });
+});
+
+describe('Carasso', () => {
+  const paths = (items: { to: string }[]) => items.map((i) => i.to);
+
+  it('gets All Jobs and Export, and nothing else', () => {
+    const { primary, secondary } = navItemsFor('carasso', t);
+    expect(paths(primary)).toEqual(['/jobs', '/export']);
+    expect(secondary).toEqual([]);
+  });
+
+  it('is excluded from every route except jobs and export', () => {
+    const open = Object.entries(ROUTE_ROLES)
+      .filter(([, roles]) => (roles as readonly UserRole[]).includes('carasso'))
+      .map(([name]) => name);
+    expect(open.sort()).toEqual(['export', 'jobs']);
+  });
+
+  /* "/" sends non-workers to /dashboard, which Carasso may not open: that is a redirect loop. */
+  it('lands on a page it may open', () => {
+    expect(landingPathFor('carasso')).toBe('/jobs');
+    expect(ROUTE_ROLES.jobs).toContain('carasso');
+  });
+
+  it('keeps the other roles landing where they did', () => {
+    expect(landingPathFor('worker')).toBe('/new');
+    expect(landingPathFor('manager')).toBe('/dashboard');
+    expect(landingPathFor('admin')).toBe('/dashboard');
   });
 });

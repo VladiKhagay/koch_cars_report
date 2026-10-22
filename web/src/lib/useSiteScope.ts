@@ -12,13 +12,16 @@ export function defaultSiteId(sites: Site[], homeSiteId: string | null): string 
 /**
  * Shared site scoping for the dashboard, export and analytics. Admins may
  * switch sites; managers and workers are pinned (RLS would reject anything
- * else). The site list loads for every role, as managers need names for filenames and labels.
+ * else). Carasso has no home site: `sites` holds only the ones an admin linked
+ * to it (RLS, 0028), `siteId` null means ALL of them, and `multiSite` says the
+ * file/grid spans more than one (so the Site column is offered).
  */
 export function useSiteScope() {
   const { appUser } = useAuth();
   const [sites, setSites] = useState<Site[]>([]);
   const [siteId, setSiteId] = useState<string | null>(null);
-  const canSwitch = appUser?.role === 'admin';
+  const isCarasso = appUser?.role === 'carasso';
+  const canSwitch = appUser?.role === 'admin' || isCarasso;
 
   useEffect(() => {
     if (!appUser) return;
@@ -36,13 +39,16 @@ export function useSiteScope() {
         setSites(list);
         // Only seed the default; never clobber a site the admin picked while
         // this request was in flight.
-        if (canSwitch) setSiteId((prev) => prev ?? defaultSiteId(list, appUser.site_id));
+        // Carasso opens on "all my sites" (null), not on one of them.
+        if (canSwitch && !isCarasso) setSiteId((prev) => prev ?? defaultSiteId(list, appUser.site_id));
       });
 
     return () => {
       cancelled = true;
     };
-  }, [appUser, canSwitch]);
+  }, [appUser, canSwitch, isCarasso]);
 
-  return { sites, siteId, setSiteId, canSwitch };
+  const multiSite = isCarasso ? siteId === null && sites.length > 1 : false;
+
+  return { sites, siteId, setSiteId, canSwitch, multiSite };
 }

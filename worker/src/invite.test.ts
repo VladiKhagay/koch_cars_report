@@ -43,3 +43,65 @@ describe('handleInvite — resending to an existing invitee', () => {
     expect((profile.init!.headers as Record<string, string>).Prefer).toContain('resolution=ignore-duplicates');
   });
 });
+
+/* Carasso is scoped by a list of sites, has no home site, and is the one role
+   whose invite writes a second table. */
+const S1 = '11111111-1111-4111-8111-111111111111';
+const S2 = '22222222-2222-4222-8222-222222222222';
+
+describe('handleInvite — Carasso', () => {
+  function stub(callerRole = 'admin') {
+    const calls: { url: string; body?: unknown }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: init?.body ? JSON.parse(init.body as string) : undefined });
+      if (url.includes('/rest/v1/users?auth_id=')) return Response.json([{ id: 'u1', role: callerRole }]);
+      if (url.includes('/auth/v1/invite')) return Response.json({ id: 'invitee-auth-id' });
+      if (url.includes('/rest/v1/users?on_conflict')) return Response.json([{ id: 'new-user-id' }], { status: 201 });
+      return new Response(null, { status: 201 });
+    });
+    return calls;
+  }
+  const invite = (body: unknown) => handleInvite(ctx(body)) as unknown as Promise<{ data: unknown; status: number }>;
+
+  it('creates the profile without a home site and links every chosen site', async () => {
+    const calls = stub();
+    const res = await invite({ email: 'c@example.com', name: 'Carasso', role: 'carasso', siteIds: [S1, S2, S1] });
+
+    expect(res.status).toBe(200);
+    const profile = calls.find((c) => c.url.includes('/rest/v1/users?on_conflict'))!;
+    expect(profile.body).toMatchObject({ role: 'carasso', site_id: null });
+    const links = calls.find((c) => c.url.endsWith('/rest/v1/user_sites'))!;
+    expect(links.body).toEqual([
+      { user_id: 'new-user-id', site_id: S1 },
+      { user_id: 'new-user-id', site_id: S2 },
+    ]);
+  });
+
+  it('refuses a Carasso invite with no sites, before sending any email', async () => {
+    const calls = stub();
+    for (const siteIds of [undefined, [], [''], [42], ['s1'], [S1, 'nope']]) {
+      const res = await invite({ email: 'c@example.com', name: 'Carasso', role: 'carasso', siteIds });
+      expect(res.status).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('still requires a siteId for the other roles', async () => {
+    stub();
+    const res = await invite({ email: 'w@example.com', name: 'W', role: 'worker', siteIds: ['s1'] });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an unknown role', async () => {
+    stub();
+    const res = await invite({ email: 'w@example.com', name: 'W', role: 'owner', siteId: 's1' });
+    expect(res.status).toBe(400);
+  });
+
+  it('is admin-only: a manager cannot invite a Carasso user', async () => {
+    const calls = stub('manager');
+    const res = await invite({ email: 'c@example.com', name: 'C', role: 'carasso', siteIds: [S1] });
+    expect(res.status).toBe(403);
+    expect(calls.some((c) => c.url.includes('/auth/v1/invite'))).toBe(false);
+  });
+});

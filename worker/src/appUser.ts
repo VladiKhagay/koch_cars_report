@@ -3,7 +3,7 @@ import type { Env } from './index';
 
 export interface AppUser {
   id: string;
-  role: 'worker' | 'manager' | 'admin';
+  role: 'worker' | 'manager' | 'admin' | 'carasso';
 }
 
 /**

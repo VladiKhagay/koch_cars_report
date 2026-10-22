@@ -1,4 +1,8 @@
-export type UserRole = 'worker' | 'manager' | 'admin';
+/**
+ * `carasso` is the client's read-only role (migration 0026): it sees jobs and
+ * client prices for the sites an admin links to it (`user_sites`), never pay.
+ */
+export type UserRole = 'worker' | 'manager' | 'admin' | 'carasso';
 
 export interface Site {
   id: string;
@@ -130,4 +134,56 @@ export interface StaffMember {
   name: string;
   site_id: string | null;
   active: boolean;
+}
+
+/** A row of `jobs_carasso` (0028): the only job shape Carasso (and admin exports) can read. No pay, no manager note, no duplicate flag. */
+export interface CarassoJob {
+  id: string;
+  site_id: string;
+  site_name: string;
+  created_at: string;
+  plate: string | null;
+  vin: string | null;
+  brand: string | null;
+  worker_note: string | null;
+  service_id: string | null;
+  service_name_en: string | null;
+  service_name_ru: string | null;
+  service_name_he: string | null;
+  catalog_number: string | null;
+  billing_code: string | null;
+  /** NULL (and `coworker_ids` empty, `crew` null) for Carasso while the admin hides worker names. */
+  worker_id: string | null;
+  coworker_ids: string[];
+  /** Everyone on the job, submitter first: "Dana, Avi". */
+  crew: string | null;
+  client_unit_price: number | null;
+  client_total_price: number | null;
+}
+
+/** A row of `services_carasso`: service names with no pay. */
+export interface CarassoService {
+  id: string;
+  name_en: string;
+  name_ru: string | null;
+  name_he: string | null;
+  catalog_number: string;
+  active: boolean;
+  sort_order: number;
+  deleted_at: string | null;
+}
+
+/** Client prices, in shekels, as typed by an admin. */
+export interface ClientPrices {
+  unit_price: number | null;
+  total_price: number | null;
+}
+
+/** The date, site and service of an earlier job: all a duplicate warning may say (0029). */
+export interface PreviousJob {
+  created_at: string;
+  site_name: string;
+  service_name_en: string | null;
+  service_name_ru: string | null;
+  service_name_he: string | null;
 }

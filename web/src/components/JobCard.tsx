@@ -28,7 +28,8 @@ export default function JobCard({
   meta: string;
   /** Whether the reservation-number row is shown. */
   showBilling: boolean;
-  onSaveBilling: (value: string) => Promise<boolean>;
+  /** Absent = read-only (Carasso): the reservation number is shown, not editable. */
+  onSaveBilling?: (value: string) => Promise<boolean>;
   /** When set, the duplicate flag is a button that opens the resolve panel. */
   onDuplicate?: () => void;
   /** Rendered under the card — the duplicate panel. */
@@ -78,13 +79,17 @@ export default function JobCard({
             <span className="shrink-0 whitespace-nowrap text-xs font-medium text-ink-600">
               {t('jobs.billingCode')}
             </span>
-            <BillingInput
-              fill
-              className="md:max-w-64"
-              committed={job.billing_code ?? ''}
-              resetKey={job.id}
-              onSave={onSaveBilling}
-            />
+            {onSaveBilling ? (
+              <BillingInput
+                fill
+                className="md:max-w-64"
+                committed={job.billing_code ?? ''}
+                resetKey={job.id}
+                onSave={onSaveBilling}
+              />
+            ) : (
+              <span className="min-w-0 break-words font-mono text-sm text-ink-900">{job.billing_code ?? '—'}</span>
+            )}
           </div>
         )}
       </div>

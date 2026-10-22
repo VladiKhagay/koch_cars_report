@@ -21,15 +21,16 @@ function loadStaff(): Promise<StaffMember[]> {
   return pending;
 }
 
-export function useStaff(): StaffMember[] {
+export function useStaff(enabled = true): StaffMember[] {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     void loadStaff().then((list) => live && setStaff(list));
     return () => {
       live = false;
     };
-  }, []);
+  }, [enabled]);
   return staff;
 }
 

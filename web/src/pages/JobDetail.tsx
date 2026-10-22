@@ -4,13 +4,16 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
-import { saveBilling } from '../lib/jobs';
+import { fetchDuplicateSummary, saveBilling } from '../lib/jobs';
+import { fetchJobClientPrices, parsePrice, saveJobClientPrices } from '../lib/clientPrices';
 import { recordAudit } from '../lib/audit';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
-import type { Job, PhotoKind, Service } from '../lib/types';
-import PhotoViewer from '../components/PhotoViewer';
-import VideoViewer from '../components/VideoViewer';
+import type { ClientPrices, Job, PreviousJob, Service } from '../lib/types';
+import JobMedia from '../components/JobMedia';
+import CarassoJobDetail from './CarassoJobDetail';
+import { describePreviousJob } from '../components/previousJob';
+import { formatMoney } from '../components/money';
 import CoworkerPicker from '../components/CoworkerPicker';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
@@ -18,6 +21,7 @@ import {
   Button,
   Card,
   ConfirmAction,
+  DetailRow,
   EmptyState,
   Field,
   Page,
@@ -27,7 +31,13 @@ import {
   fieldClass,
 } from '../components/ui';
 
+/** Carasso gets its own read-only screen (a different view, no pay, no edit); everyone else the staff screen. */
 export default function JobDetail() {
+  const { appUser } = useAuth();
+  return appUser?.role === 'carasso' ? <CarassoJobDetail /> : <StaffJobDetail />;
+}
+
+function StaffJobDetail() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const { id } = useParams<{ id: string }>();
@@ -44,11 +54,15 @@ export default function JobDetail() {
   const [coworkerIds, setCoworkerIds] = useState<string[]>([]);
   const [siteId, setSiteId] = useState('');
   const [serviceName, setServiceName] = useState('');
-  /* Only the extras that exist: probing all three slots blind would render
-     three 'photo unavailable' tiles on every job that has none. */
-  const [extraKinds, setExtraKinds] = useState<PhotoKind[]>([]);
-  /* Same reason: the video is optional, so most jobs have none to show. */
-  const [hasVideo, setHasVideo] = useState(false);
+  /* Money. Managers read the worker pay (read-only); only an admin edits it,
+     and the client prices. Strings, because they are typed into inputs. */
+  const [workerPay, setWorkerPay] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
+  const [priceError, setPriceError] = useState(false);
+  const [clientPrices, setClientPrices] = useState<ClientPrices | null>(null);
+  /** The earlier job a duplicate flag points at: date, site, service only. */
+  const [earlier, setEarlier] = useState<PreviousJob | null>(null);
   const [billingCode, setBillingCode] = useState('');
   const [managerNote, setManagerNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -70,15 +84,15 @@ export default function JobDetail() {
     setBillingCode(j.billing_code ?? '');
     setManagerNote(j.manager_note ?? '');
 
-    const { data: slots } = await supabase
-      .from('photos')
-      .select('kind')
-      .eq('job_id', jobId)
-      .or('kind.like.extra%,kind.eq.video')
-      .order('kind');
-    const kinds = (slots ?? []).map((p: { kind: PhotoKind }) => p.kind);
-    setExtraKinds(kinds.filter((k) => k.startsWith('extra')));
-    setHasVideo(kinds.includes('video'));
+    setWorkerPay(String(j.worker_price ?? 0));
+    setPriceError(false);
+    if (appUser?.role === 'admin') {
+      const prices = await fetchJobClientPrices(jobId);
+      setClientPrices(prices);
+      setUnitPrice(prices?.unit_price == null ? '' : String(prices.unit_price));
+      setTotalPrice(prices?.total_price == null ? '' : String(prices.total_price));
+    }
+    setEarlier(j.duplicate_of_job_id ? await fetchDuplicateSummary(jobId) : null);
 
     setSelectedWorkerId(j.worker_id);
     setCoworkerIds(j.coworker_ids ?? []);
@@ -100,6 +114,17 @@ export default function JobDetail() {
 
   async function handleSave() {
     if (!job || !appUser) return;
+    /* Admin money, validated before anything is written. Blank client prices
+       are allowed (the job simply has none); a typed value must be a number. */
+    const isAdmin = appUser.role === 'admin';
+    const pay = isAdmin ? parsePrice(workerPay) : null;
+    const unit = isAdmin ? parsePrice(unitPrice) : null;
+    const total = isAdmin ? parsePrice(totalPrice) : null;
+    if (isAdmin && (pay === null || (unitPrice.trim() !== '' && unit === null) || (totalPrice.trim() !== '' && total === null))) {
+      setPriceError(true);
+      return;
+    }
+    setPriceError(false);
     setSaving(true);
     const billing = { billing_code: billingCode || null, manager_note: managerNote || null };
     const jobChanges = {
@@ -108,6 +133,7 @@ export default function JobDetail() {
       // drop them anyway; dropping them here keeps the screen honest.
       coworker_ids: coworkerIds.filter((id) => id !== (selectedWorkerId || job.worker_id)),
       site_id: siteId || job.site_id,
+      ...(isAdmin ? { worker_price: pay! } : {}),
     };
     const changes = { ...billing, ...jobChanges };
     /* A manager moving a job to another site can't write its audit row
@@ -117,7 +143,11 @@ export default function JobDetail() {
     if (moving) await recordAudit(job.id, appUser.id, 'update', changes);
     // Billing first: a manager who moves the job away loses access to its billing row.
     const { error: billingError } = await saveBilling(job.id, billing);
-    const { error } = billingError ? { error: billingError } : await supabase.from('jobs').update(jobChanges).eq('id', job.id);
+    let { error } = billingError ? { error: billingError } : await supabase.from('jobs').update(jobChanges).eq('id', job.id);
+    if (!error && isAdmin) {
+      ({ error } = await saveJobClientPrices(job.id, { unit_price: unit, total_price: total }));
+      if (!error) setClientPrices({ unit_price: unit, total_price: total });
+    }
     setSaving(false);
     if (error) {
       setSaveError(true);
@@ -205,27 +235,21 @@ export default function JobDetail() {
       </div>
 
       {job.deleted_at && <StatusBanner tone="warning">{t('jobDetail.deletedNotice')}</StatusBanner>}
-      {job.duplicate_of_job_id && <StatusBanner tone="warning">{t('jobDetail.duplicateOf')}</StatusBanner>}
+      {job.duplicate_of_job_id && (
+        <StatusBanner tone="warning">
+          {earlier ? t('jobDetail.duplicateOfDetail', describePreviousJob(earlier, i18n.language)) : t('jobDetail.duplicateOf')}
+        </StatusBanner>
+      )}
 
       {/* Two columns from md, so the manager reads the photos and types the
           billing code without scrolling between them. The old max-w-md had no
           lg variant at all, which put a 448px column on a 1440px screen. */}
       <div className="grid gap-4 md:grid-cols-2 md:items-start">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <PhotoViewer jobId={job.id} kind="plate" label={t('newJob.platePhoto')} />
-            <PhotoViewer jobId={job.id} kind="vin" label={t('newJob.vinPhoto')} />
-            {extraKinds.map((kind, i) => (
-              <PhotoViewer key={kind} jobId={job.id} kind={kind} label={t('newJob.extraPhoto', { n: i + 1 })} />
-            ))}
-          </div>
-
-          {hasVideo && (
-            <VideoViewer
-              jobId={job.id}
-              downloadName={`${job.plate ?? job.vin ?? job.id}_${job.created_at.slice(0, 10)}`}
-            />
-          )}
+          <JobMedia
+            jobId={job.id}
+            downloadName={`${job.plate ?? job.vin ?? job.id}_${job.created_at.slice(0, 10)}`}
+          />
 
           <Card>
             <SectionHeading icon="clipboard">{t('jobDetail.details')}</SectionHeading>
@@ -236,7 +260,7 @@ export default function JobDetail() {
               value column further.
             */}
             <dl className="space-y-3">
-              <Row label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
               {canManage ? (
                 <div className="border-b border-line pb-3 last:border-0 last:pb-0">
                   <label htmlFor="job-worker" className="text-sm font-medium text-ink-600">
@@ -256,7 +280,7 @@ export default function JobDetail() {
                   </Select>
                 </div>
               ) : (
-                <Row label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
+                <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
               )}
               {canManage ? (
                 <div className="border-b border-line pb-3 last:border-0 last:pb-0">
@@ -276,7 +300,7 @@ export default function JobDetail() {
                 </div>
               ) : (
                 job.coworker_ids.length > 0 && (
-                  <Row label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
+                  <DetailRow label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
                 )
               )}
               {canManage ? (
@@ -293,11 +317,11 @@ export default function JobDetail() {
                   </Select>
                 </div>
               ) : (
-                <Row label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
+                <DetailRow label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
               )}
-              <Row label={t('newJob.vin')} value={job.vin ?? '—'} mono />
-              <Row label={t('jobDetail.service')} value={serviceName || '—'} />
-              {job.worker_note && <Row label={t('jobDetail.workerNote')} value={job.worker_note} />}
+              <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />
+              <DetailRow label={t('jobDetail.service')} value={serviceName || '—'} />
+              {job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />}
             </dl>
           </Card>
         </div>
@@ -324,6 +348,59 @@ export default function JobDetail() {
                 className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
               />
             </Field>
+
+            {/* Worker pay: read-only for managers (their own site, RLS), editable by admin.
+                Client prices are admin-only; the managers' API cannot read them. */}
+            {appUser?.role === 'manager' && (
+              <dl>
+                <DetailRow label={t('prices.workerPay')} value={formatMoney(job.worker_price, i18n.language)} />
+              </dl>
+            )}
+            {appUser?.role === 'admin' && (
+              <div className="space-y-4 border-t border-line pt-4">
+                <SectionHeading icon="tag">{t('jobDetail.pricing')}</SectionHeading>
+                <Field htmlFor="worker-pay" label={t('prices.workerPay')} hint={<span className="text-ink-500">{t('prices.workerPayHint')}</span>}>
+                  <input
+                    id="worker-pay"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={workerPay}
+                    onChange={(e) => setWorkerPay(e.target.value)}
+                    className={`${fieldClass} font-mono`}
+                  />
+                </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field htmlFor="client-unit" label={t('prices.unit')}>
+                    <input
+                      id="client-unit"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={unitPrice}
+                      onChange={(e) => setUnitPrice(e.target.value)}
+                      className={`${fieldClass} font-mono`}
+                    />
+                  </Field>
+                  <Field htmlFor="client-total" label={t('prices.total')}>
+                    <input
+                      id="client-total"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={totalPrice}
+                      onChange={(e) => setTotalPrice(e.target.value)}
+                      className={`${fieldClass} font-mono`}
+                    />
+                  </Field>
+                </div>
+                {clientPrices === null && <p className="text-sm text-ink-600">{t('jobDetail.noClientPrices')}</p>}
+                {priceError && <StatusBanner tone="error" live>{t('prices.invalid')}</StatusBanner>}
+              </div>
+            )}
 
             {saveError && <StatusBanner tone="error">{t('common.error')}</StatusBanner>}
 
@@ -356,14 +433,5 @@ export default function JobDetail() {
         )}
       </div>
     </Page>
-  );
-}
-
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-      <dt className="text-sm font-medium text-ink-600">{label}</dt>
-      <dd className={`mt-0.5 break-words text-ink-900 ${mono ? 'font-mono tracking-wide' : ''}`}>{value}</dd>
-    </div>
   );
 }

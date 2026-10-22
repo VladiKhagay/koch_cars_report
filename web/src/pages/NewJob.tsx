@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { Service } from '../lib/types';
+import type { PreviousJob, Service } from '../lib/types';
+import { describePreviousJob } from '../components/previousJob';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
-import { submitJob, findRecentDuplicate, isPermanentError, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { submitJob, findPreviousJob, isPermanentError, MAX_EXTRA_PHOTOS } from '../lib/jobs';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { enqueueForRetry } from '../lib/offlineQueue';
@@ -19,6 +20,7 @@ import CoworkerPicker from '../components/CoworkerPicker';
 import Icon from '../components/Icon';
 import {
   Button,
+  ConfirmPanel,
   Field,
   FieldNotice,
   Group,
@@ -68,7 +70,7 @@ function scrollTo(el: HTMLElement | null) {
 }
 
 export default function NewJob() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const { sites } = useSiteScope();
   const staff = useStaff();
@@ -78,7 +80,12 @@ export default function NewJob() {
   const [ocrBusy, setOcrBusy] = useState<{ plate: boolean; vin: boolean }>({ plate: false, vin: false });
   const [ocrIssue, setOcrIssue] = useState<{ plate: OcrReason | null; vin: OcrReason | null }>({ plate: null, vin: null });
   const [autoFilled, setAutoFilled] = useState<{ plate: boolean; vin: boolean }>({ plate: false, vin: false });
-  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  /* The most recent earlier job for this plate or VIN (any site, any time, any
+     service): date, site and service only. Warn-only, never blocks. */
+  const [previous, setPrevious] = useState<PreviousJob | null>(null);
+  /* Set while the Submit confirmation is up (the same earlier job, re-checked at submit). */
+  const [confirming, setConfirming] = useState<PreviousJob | null>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
   const [lastIdentifier, setLastIdentifier] = useState('');
@@ -169,10 +176,6 @@ export default function NewJob() {
                names a manufacturer, not the car, and a guess looks like a real read. */
       setForm((f) => ({ ...f, vin: text }));
       setAutoFilled((a) => ({ ...a, vin: true }));
-      if (siteId && isValidVinFormat(text)) {
-        const dup = await findRecentDuplicate(siteId, text);
-        setDuplicateWarning(Boolean(dup));
-      }
     } else if (reason) {
       setOcrIssue((i) => ({ ...i, vin: reason }));
     }
@@ -212,12 +215,9 @@ export default function NewJob() {
     setForm((f) => ({ ...f, extraPhotos: f.extraPhotos.filter((_, i) => i !== index) }));
   }
 
-  /* The duplicate flag is "same VIN at THIS site this week", so it is
-     re-asked when the site changes under an already-entered VIN. */
-  async function selectSite(id: string) {
+  function selectSite(id: string) {
     beginNextCar();
     setForm((f) => ({ ...f, siteId: id }));
-    setDuplicateWarning(isValidVinFormat(form.vin) ? Boolean(await findRecentDuplicate(id, form.vin)) : false);
   }
 
   function selectService(id: string) {
@@ -226,6 +226,27 @@ export default function NewJob() {
   }
 
   const siteId = form.siteId ?? appUser?.site_id ?? null;
+
+  /* Look for an earlier job as soon as the plate or VIN is complete enough to be
+     one, typed or read from a photo. Debounced; offline or any failure is simply
+     "no warning" (the database flags the job on insert regardless). */
+  const lookupPlate = isValidPlate(form.plate) ? form.plate : '';
+  const lookupVin = isValidVinFormat(form.vin) ? form.vin : '';
+  useEffect(() => {
+    setConfirming(null); // a pending confirmation described the car as it was
+    if (!lookupPlate && !lookupVin) {
+      setPrevious(null);
+      return;
+    }
+    let live = true;
+    const id = setTimeout(() => {
+      void findPreviousJob({ plate: lookupPlate, vin: lookupVin }).then((found) => live && setPrevious(found));
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
+  }, [lookupPlate, lookupVin]);
 
   /* The plate is optional too now (a car can arrive with no physical plate),
      so "no plate" is valid and only a plate that has been STARTED has to be
@@ -288,6 +309,26 @@ export default function NewJob() {
     }
     if (!appUser || !siteId || submitting) return;
 
+    /* One more look at submit, so a car logged since the notice appeared is still
+       caught. Found: ask once and let the worker decide; never refuse. */
+    setSubmitting(true);
+    // Never let a weak signal hold the submit: after 3s, treat it as no warning.
+    const earlier = await Promise.race([
+      findPreviousJob({ plate: form.plate, vin: form.vin }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+    setSubmitting(false);
+    if (earlier) {
+      setConfirming(earlier);
+      requestAnimationFrame(() => confirmRef.current?.focus());
+      return;
+    }
+    await sendJob();
+  }
+
+  async function sendJob() {
+    if (!appUser || !siteId || submitting) return;
+    setConfirming(null);
     setSubmitting(true);
     // Whichever of plate/VIN got typed identifies the car in the confirmation
     // message below — hasIdentifier guarantees at least one is set.
@@ -316,7 +357,8 @@ export default function NewJob() {
       void clearDraft();
       setForm(emptyForm);
       setAttempted(false);
-      setDuplicateWarning(false);
+      setPrevious(null);
+      setConfirming(null);
       setAutoFilled({ plate: false, vin: false });
       setOcrIssue({ plate: null, vin: null });
       setLastIdentifier(identifier);
@@ -472,8 +514,15 @@ export default function NewJob() {
             {/* Advisory only. An imported vehicle can legitimately fail the
                 checksum, so this warns and never blocks. */}
             {vinFormatValid && !vinChecksumOk && <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>}
-            {duplicateWarning && <FieldNotice icon="alertCircle">{t('newJob.duplicateWarning')}</FieldNotice>}
           </Field>
+
+          {/* Same plate or VIN seen before, at any site: a heads-up with the date,
+              site and service of the latest one. No money, no names. */}
+          {previous && (
+            <div role="status">
+              <FieldNotice icon="alertCircle">{t('newJob.previousJob', describePreviousJob(previous, i18n.language))}</FieldNotice>
+            </div>
+          )}
         </Group>
 
         {/* Group 3 — what was done to it. */}
@@ -603,7 +652,7 @@ export default function NewJob() {
           </Field>
 
           <Field htmlFor="job-site" label={t('newJob.site')}>
-            <Select id="job-site" value={siteId ?? ''} onChange={(e) => void selectSite(e.target.value)}>
+            <Select id="job-site" value={siteId ?? ''} onChange={(e) => selectSite(e.target.value)}>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -723,15 +772,28 @@ export default function NewJob() {
             </div>
           )}
 
-          <Button
-            size="lg"
-            block
-            busy={submitting}
-            onClick={() => void handleSubmit()}
-            aria-describedby={showProblems ? 'submit-problems' : undefined}
-          >
-            {submitting ? t('newJob.submitting') : t('newJob.submit')}
-          </Button>
+          {confirming ? (
+            <div ref={confirmRef} tabIndex={-1} role="alertdialog" aria-label={t('newJob.duplicateTitle')} className="outline-none">
+              <ConfirmPanel
+                variant="secondary"
+                icon="check"
+                question={t('newJob.duplicateConfirm', describePreviousJob(confirming, i18n.language))}
+                confirmLabel={t('newJob.submitAnyway')}
+                onConfirm={() => void sendJob()}
+                onCancel={() => setConfirming(null)}
+              />
+            </div>
+          ) : (
+            <Button
+              size="lg"
+              block
+              busy={submitting}
+              onClick={() => void handleSubmit()}
+              aria-describedby={showProblems ? 'submit-problems' : undefined}
+            >
+              {submitting ? t('newJob.submitting') : t('newJob.submit')}
+            </Button>
+          )}
         </div>
       </div>
     </>

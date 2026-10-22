@@ -4,6 +4,10 @@ import { supabase } from '../lib/supabase';
 import { serviceName, type ServiceNames } from '../lib/serviceName';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { JobDailyStat } from '../lib/types';
+import { SHEET_NAMES, buildStatsSheet } from '../lib/exports';
+import { downloadWorkbook } from '../lib/excelFile';
+import { useExportLang } from '../components/useExportLang';
+import ExportLangSelect from '../components/ExportLangSelect';
 import BarChart from '../components/BarChart';
 import StatTile from '../components/StatTile';
 import { Button, Card, Field, fieldClass, Group, Page, PageHeading, SectionHeading, Select, Skeleton } from '../components/ui';
@@ -34,6 +38,7 @@ export default function Analytics() {
   const [rows, setRows] = useState<JobDailyStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportLang, setExportLang] = useExportLang();
 
     /* Filter options come from the site's roster and the service catalog, not
        from the loaded rows: otherwise narrowing the date range could drop the
@@ -175,32 +180,33 @@ export default function Analytics() {
       const serviceIds = [...new Set(stats.map((r) => r.service_id))];
       const [{ data: users }, { data: svcs }] = await Promise.all([
         workerIds.length > 0 ? supabase.from('users').select('id, name').in('id', workerIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
-        serviceIds.length > 0 ? supabase.from('services').select('id, catalog_number, name_en').in('id', serviceIds) : Promise.resolve({ data: [] as { id: string; catalog_number: string; name_en: string }[] }),
+        serviceIds.length > 0 ? supabase.from('services').select('id, catalog_number, name_en, name_he').in('id', serviceIds) : Promise.resolve({ data: [] as { id: string; catalog_number: string; name_en: string; name_he: string | null }[] }),
       ]);
       const workerMap = Object.fromEntries((users ?? []).map((u) => [u.id, u.name]));
       // The catalog number is deliberately absent from the UI but present here:
       // the exported report is the whole reason it exists. Its own column, not
       // glued to the name, so the office can match on it directly.
       const svcMap = Object.fromEntries(
-        (svcs ?? []).map((s) => [s.id, { code: s.catalog_number, name: s.name_en }]),
+        (svcs ?? []).map((s) => [s.id, { code: s.catalog_number, name: s.name_en, name_he: s.name_he }]),
       );
       const siteMap = Object.fromEntries(sites.map((s) => [s.id, s.name]));
 
       const exportRows = stats.map((r) => ({
-        Date: r.day,
-        Site: siteMap[r.site_id] ?? r.site_id,
-        Worker: workerMap[r.worker_id] ?? '',
-        'Catalog number': svcMap[r.service_id]?.code ?? '',
-        Service: svcMap[r.service_id]?.name ?? '',
-        Jobs: r.job_count,
+        day: r.day,
+        site: siteMap[r.site_id] ?? r.site_id,
+        worker: workerMap[r.worker_id] ?? '',
+        catalog_number: svcMap[r.service_id]?.code ?? '',
+        service: svcMap[r.service_id] ? { name_en: svcMap[r.service_id].name, name_he: svcMap[r.service_id].name_he } : null,
+        job_count: r.job_count,
       }));
 
-      const XLSX = await import('xlsx');
-      const sheet = XLSX.utils.json_to_sheet(exportRows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, sheet, 'Stats');
       const scope = allSites ? 'all-sites' : (sites.find((s) => s.id === siteId)?.name ?? 'site');
-      XLSX.writeFile(workbook, `stats-${scope}-${from}-to-${to}.xlsx`);
+      await downloadWorkbook(
+        buildStatsSheet(exportRows, exportLang),
+        SHEET_NAMES[exportLang].stats,
+        `stats-${scope}-${from}-to-${to}.xlsx`,
+        exportLang,
+      );
     } finally {
       setExporting(false);
     }
@@ -292,7 +298,8 @@ export default function Analytics() {
         </div>
       </Group>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <ExportLangSelect value={exportLang} onChange={setExportLang} />
         <Button icon="download" busy={exporting} disabled={!siteId} onClick={() => void exportStats(false)}>
           {t('stats.exportSite')}
         </Button>

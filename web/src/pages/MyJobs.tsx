@@ -12,7 +12,10 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
 import { applyJobFilters, crewIds } from '../lib/jobs';
-import { buildMyJobsSheet } from '../lib/exports';
+import { MY_JOBS_HEADERS, SHEET_NAMES, buildMyJobsSheet, exportServiceName } from '../lib/exports';
+import { buildWorkbook } from '../lib/excelFile';
+import { useExportLang } from '../components/useExportLang';
+import ExportLangSelect from '../components/ExportLangSelect';
 import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
 import { useQueuedJobs } from '../lib/useQueue';
 import { useSiteScope } from '../lib/useSiteScope';
@@ -246,6 +249,7 @@ export default function MyJobs() {
   const [saving, setSaving] = useState(false);
   const [, forceTick] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [exportLang, setExportLang] = useExportLang();
   /* Named outcomes rather than a button that silently stops spinning: on a
      phone the download itself is a notification the worker may not see, and one
      that failed looks exactly like one that worked. */
@@ -426,31 +430,25 @@ export default function MyJobs() {
       if (!rows) throw new Error('query failed');
 
       const sheetRows = buildMyJobsSheet(
-        rows.map((job) => ({ ...job, service: serviceLabel(job.service_id) })),
-        // The sheet's headers are the table's headers, in the reader's language.
-        [t('jobs.date'), t('jobs.plate'), t('newJob.brand'), t('jobs.service')],
+        rows.map((job) => ({ ...job, service: exportServiceName(services.find((x) => x.id === job.service_id), exportLang) })),
+        // The file's headers, in the language chosen for exports (Hebrew by default).
+        MY_JOBS_HEADERS[exportLang],
       );
 
-      // Loaded on demand, as on the manager's export screen: a sizeable library
-      // is not worth shipping to every worker who only ever logs cars.
-      const XLSX = await import('xlsx');
-      const sheet = XLSX.utils.aoa_to_sheet(sheetRows, { cellDates: true });
+      // SheetJS is loaded on demand inside buildWorkbook: not worth shipping to every worker who only logs cars.
+      const sheetName = SHEET_NAMES[exportLang].jobs;
+      const { XLSX, workbook } = await buildWorkbook(sheetRows, sheetName, exportLang);
       /* Excel's default date format drops the time, and two cars on the same
          morning are told apart by exactly that. Applied per cell because the
          free build of SheetJS has no column-level format. */
+      const sheet = workbook.Sheets[sheetName];
       for (let r = 1; r < sheetRows.length; r++) {
         const cell = sheet[XLSX.utils.encode_cell({ r, c: 0 })];
         if (cell) cell.z = 'yyyy-mm-dd hh:mm';
       }
-
-      const book = XLSX.utils.book_new();
-      // Hebrew reads right to left, and so should the sheet it opens into —
-      // otherwise the first column lands where the reader's eye finishes.
-      if (i18n.dir() === 'rtl') book.Workbook = { Views: [{ RTL: true }] };
-      XLSX.utils.book_append_sheet(book, sheet, 'Jobs');
       // The window is in the name: these land in a Downloads folder a month at
       // a time, and "my-jobs.xlsx (3)" is not something anybody can tell apart.
-      XLSX.writeFile(book, `my-jobs-${from}-to-${to}.xlsx`);
+      XLSX.writeFile(workbook, `my-jobs-${from}-to-${to}.xlsx`);
       setExported('done');
     } catch {
       setExported('error');
@@ -591,6 +589,7 @@ export default function MyJobs() {
                 >
                   {t('myJobs.exportExcel')}
                 </Button>
+                <ExportLangSelect value={exportLang} onChange={setExportLang} />
                 {filtered && (
                   <>
                     <Badge tone="info" icon="tag">

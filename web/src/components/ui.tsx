@@ -159,6 +159,16 @@ export function LanguageToggle({ compact, block }: { compact?: boolean; block?: 
   );
 }
 
+/** One label-over-value row of a read-only detail card (a `dl` child). */
+export function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+      <dt className="text-sm font-medium text-ink-600">{label}</dt>
+      <dd className={`mt-0.5 break-words text-ink-900 ${mono ? 'font-mono tracking-wide' : ''}`}>{value}</dd>
+    </div>
+  );
+}
+
 /** Label + value pairs that are read, not edited. A real `dl` for screen readers. */
 export function DataList({ items }: { items: { label: string; value: ReactNode }[] }) {
   return (

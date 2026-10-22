@@ -2,12 +2,13 @@ import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Icon, { type IconName } from './Icon';
 
-export default function AdminTabs({ active }: { active: 'users' | 'services' | 'sites' }) {
+export default function AdminTabs({ active }: { active: 'users' | 'services' | 'sites' | 'settings' }) {
   const { t } = useTranslation();
   const tabs: { key: string; to: string; label: string; icon: IconName }[] = [
     { key: 'users', to: '/admin/users', label: t('admin.users'), icon: 'users' },
     { key: 'services', to: '/services', label: t('admin.services'), icon: 'tag' },
     { key: 'sites', to: '/admin/sites', label: t('admin.sites'), icon: 'grid' },
+    { key: 'settings', to: '/admin/settings', label: t('settings.tab'), icon: 'settings' },
   ];
 
   return (

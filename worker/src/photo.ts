@@ -10,9 +10,9 @@ const VIDEO_FILENAMES: Record<string, string> = {
 };
 
 /**
- * Streams a private R2 object back to the caller. Same RLS-delegated
- * authorization as upload.ts: forward the caller's JWT and ask Supabase
- * whether they can see the job.
+ * Streams a private R2 object back to the caller. Authorization is delegated
+ * to Postgres: the caller's JWT is forwarded and Supabase says whether they can
+ * see the job.
  */
 export async function handleGetPhoto(c: Context<{ Bindings: Env }>) {
   const jobId = c.req.param('jobId');
@@ -24,12 +24,19 @@ export async function handleGetPhoto(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Not found' }, 404);
   }
 
-  const checkRes = await fetch(
-    `${c.env.SUPABASE_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=id`,
-    { headers: { apikey: c.env.SUPABASE_ANON_KEY, Authorization: authHeader } },
-  );
-  const rows = checkRes.ok ? ((await checkRes.json()) as unknown[]) : [];
-  if (!checkRes.ok || rows.length === 0) {
+  // can_view_job (migration 0028) is jobs_select plus Carasso's sites. Carasso
+  // has no RLS access to `jobs`, so probing the table directly would 403 it.
+  // A malformed jobId makes PostgREST answer 400, which fails closed like `false`.
+  const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_view_job`, {
+    method: 'POST',
+    headers: {
+      apikey: c.env.SUPABASE_ANON_KEY,
+      Authorization: authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_job_id: jobId }),
+  });
+  if (!checkRes.ok || (await checkRes.json().catch(() => false)) !== true) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 

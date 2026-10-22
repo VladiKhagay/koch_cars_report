@@ -17,6 +17,31 @@ export interface Nav {
   secondary: NavItem[];
 }
 
+/**
+ * Who may open which route: the single source for App.tsx's route guards, so
+ * a new role is one edit here. Anything not listed is closed to Carasso.
+ */
+export const ROUTE_ROLES = {
+  newJob: ['worker'],
+  workerScreens: ['worker'],
+  dashboard: ['manager', 'admin'],
+  /** All Jobs and Job Detail (Carasso reads them through jobs_carasso, read-only). */
+  jobs: ['manager', 'admin', 'carasso'],
+  /** Customer report (Carasso: customer report only). */
+  export: ['manager', 'admin', 'carasso'],
+  analytics: ['manager', 'admin'],
+  team: ['manager'],
+  services: ['manager', 'admin'],
+  admin: ['admin'],
+} as const satisfies Record<string, readonly UserRole[]>;
+
+/** Where `/` sends each role. An unknown role gets the safe, read-only page. */
+export function landingPathFor(role: UserRole | undefined): string {
+  if (role === 'worker') return '/new';
+  if (role === 'manager' || role === 'admin') return '/dashboard';
+  return '/jobs';
+}
+
 export function navItemsFor(role: UserRole | undefined, t: (key: string) => string): Nav {
   if (role === 'worker') {
     return {
@@ -53,6 +78,15 @@ export function navItemsFor(role: UserRole | undefined, t: (key: string) => stri
         { to: '/analytics', label: t('nav.analytics'), icon: 'chart' },
         { to: '/export', label: t('nav.export'), icon: 'download' },
         { to: '/admin/users', label: t('nav.admin'), icon: 'settings' },
+      ],
+      secondary: [],
+    };
+  }
+  if (role === 'carasso') {
+    return {
+      primary: [
+        { to: '/jobs', label: t('nav.jobs'), icon: 'clipboard' },
+        { to: '/export', label: t('nav.export'), icon: 'download' },
       ],
       secondary: [],
     };

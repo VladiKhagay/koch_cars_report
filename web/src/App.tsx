@@ -21,12 +21,13 @@ import Team from './pages/Team';
 import Services from './pages/Services';
 import AdminUsers from './pages/admin/Users';
 import AdminSites from './pages/admin/Sites';
+import AdminSettings from './pages/admin/Settings';
+import { ROUTE_ROLES, landingPathFor } from './lib/nav';
 
 function RoleHome() {
   const { appUser } = useAuth();
   if (!appUser) return null;
-  if (appUser.role === 'worker') return <Navigate to="/new" replace />;
-  return <Navigate to="/dashboard" replace />;
+  return <Navigate to={landingPathFor(appUser.role)} replace />;
 }
 
 export default function App() {
@@ -48,19 +49,20 @@ export default function App() {
             <Route path="/" element={<RoleHome />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/more" element={<More />} />
-            <Route path="/new" element={<ProtectedRoute roles={['worker']}><NewJob /></ProtectedRoute>} />
-            <Route path="/mine" element={<ProtectedRoute roles={['worker']}><MyJobs /></ProtectedRoute>} />
-            <Route path="/stats" element={<ProtectedRoute roles={['worker']}><MyStats /></ProtectedRoute>} />
-            <Route path="/lookup" element={<ProtectedRoute roles={['worker']}><VehicleLookup /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute roles={['manager', 'admin']}><Dashboard /></ProtectedRoute>} />
-            <Route path="/jobs" element={<ProtectedRoute roles={['manager', 'admin']}><Jobs /></ProtectedRoute>} />
-            <Route path="/jobs/:id" element={<ProtectedRoute roles={['manager', 'admin']}><JobDetail /></ProtectedRoute>} />
-            <Route path="/export" element={<ProtectedRoute roles={['manager', 'admin']}><Export /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute roles={['manager', 'admin']}><Analytics /></ProtectedRoute>} />
-            <Route path="/team" element={<ProtectedRoute roles={['manager']}><Team /></ProtectedRoute>} />
-            <Route path="/services" element={<ProtectedRoute roles={['manager', 'admin']}><Services /></ProtectedRoute>} />
-            <Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><AdminUsers /></ProtectedRoute>} />
-            <Route path="/admin/sites" element={<ProtectedRoute roles={['admin']}><AdminSites /></ProtectedRoute>} />
+            <Route path="/new" element={<ProtectedRoute roles={ROUTE_ROLES.newJob}><NewJob /></ProtectedRoute>} />
+            <Route path="/mine" element={<ProtectedRoute roles={ROUTE_ROLES.workerScreens}><MyJobs /></ProtectedRoute>} />
+            <Route path="/stats" element={<ProtectedRoute roles={ROUTE_ROLES.workerScreens}><MyStats /></ProtectedRoute>} />
+            <Route path="/lookup" element={<ProtectedRoute roles={ROUTE_ROLES.workerScreens}><VehicleLookup /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute roles={ROUTE_ROLES.dashboard}><Dashboard /></ProtectedRoute>} />
+            <Route path="/jobs" element={<ProtectedRoute roles={ROUTE_ROLES.jobs}><Jobs /></ProtectedRoute>} />
+            <Route path="/jobs/:id" element={<ProtectedRoute roles={ROUTE_ROLES.jobs}><JobDetail /></ProtectedRoute>} />
+            <Route path="/export" element={<ProtectedRoute roles={ROUTE_ROLES.export}><Export /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute roles={ROUTE_ROLES.analytics}><Analytics /></ProtectedRoute>} />
+            <Route path="/team" element={<ProtectedRoute roles={ROUTE_ROLES.team}><Team /></ProtectedRoute>} />
+            <Route path="/services" element={<ProtectedRoute roles={ROUTE_ROLES.services}><Services /></ProtectedRoute>} />
+            <Route path="/admin/users" element={<ProtectedRoute roles={ROUTE_ROLES.admin}><AdminUsers /></ProtectedRoute>} />
+            <Route path="/admin/sites" element={<ProtectedRoute roles={ROUTE_ROLES.admin}><AdminSites /></ProtectedRoute>} />
+            <Route path="/admin/settings" element={<ProtectedRoute roles={ROUTE_ROLES.admin}><AdminSettings /></ProtectedRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

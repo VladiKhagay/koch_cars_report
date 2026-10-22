@@ -1,25 +1,38 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useSiteScope } from '../lib/useSiteScope';
-import { buildCustomerReport, buildWorkerPaymentReport, type Cell, type ExportJob } from '../lib/exports';
-import { shareFor } from '../lib/jobs';
-import { staffNames, useStaff } from '../lib/useStaff';
 import {
-  moveColumn,
-  resolveCustomerColumns,
-  toStoredConfig,
-  type ColumnConfig,
-} from '../lib/reportConfig';
-import type { AppUser } from '../lib/types';
+  REPORT_SHEET_NAME,
+  SHEET_NAMES,
+  buildCustomerReport,
+  buildWorkerPaymentReport,
+  customerReportFileName,
+  exportLocale,
+  type ExportJob,
+} from '../lib/exports';
+import { downloadWorkbook } from '../lib/excelFile';
+import { useExportLang } from '../components/useExportLang';
+import { shareFor } from '../lib/jobs';
+import {
+  CARASSO_JOBS_VIEW,
+  CARASSO_JOB_COLUMNS,
+  fetchAppSettings,
+  saveCustomerReportLayout,
+} from '../lib/carasso';
+import { availableColumns, type ColumnConfig, type ExportLang } from '../lib/reportConfig';
+import { staffNames, useStaff } from '../lib/useStaff';
+import type { AppUser, CarassoJob } from '../lib/types';
+import ReportColumns from '../components/ReportColumns';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
+import { mergeColumnSubset } from './exportColumns';
 import {
   Button,
   Card,
   Field,
-  IconButton,
   Page,
   PageHeading,
   SearchField,
@@ -32,19 +45,45 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Only the fields the two reports read — the query asks for nothing else. */
-const JOB_FIELDS =
+/** Rows per request: PostgREST caps a response (1,000 by default) and a multi-site month is bigger. */
+const CHUNK = 1000;
+
+/** The payment sheet's fields. Admin only, read from jobs_manager, which carries the pay. */
+const PAYMENT_FIELDS =
   'created_at, plate, vin, brand, billing_code, worker_price,' +
   ' worker_id, coworker_ids, submitter_share, coworker_share,' +
-  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, catalog_number)';
+  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, name_he, catalog_number)';
 
-/** What JOB_FIELDS returns, before either report reshapes it. */
+/** A manager's customer report: no pay and (not being readable to them) no client prices. */
+const MANAGER_REPORT_FIELDS =
+  'created_at, plate, vin, brand, billing_code, worker_id, coworker_ids,' +
+  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, name_he, catalog_number)';
+
 type FetchedJob = ExportJob & {
   worker_id: string;
   coworker_ids: string[];
   submitter_share: number;
   coworker_share: number;
 };
+
+/** A `jobs_carasso` row as the customer report reads it. */
+function fromCarasso(r: CarassoJob): ExportJob {
+  return {
+    created_at: r.created_at,
+    plate: r.plate,
+    vin: r.vin,
+    brand: r.brand,
+    billing_code: r.billing_code,
+    worker_price: 0,
+    worker: r.crew ? { name: r.crew } : null,
+    site: { name: r.site_name },
+    service: r.service_name_en
+      ? { name_en: r.service_name_en, name_he: r.service_name_he, catalog_number: r.catalog_number ?? '' }
+      : null,
+    client_unit_price: r.client_unit_price,
+    client_total_price: r.client_total_price,
+  };
+}
 
 type ReportKind = 'customer' | 'payments';
 
@@ -89,21 +128,47 @@ export default function Export() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const { sites, siteId, setSiteId, canSwitch } = useSiteScope();
+  const role = appUser?.role;
+  const isAdmin = role === 'admin';
+  const isCarasso = role === 'carasso';
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
   const [busy, setBusy] = useState<ReportKind | null>(null);
-    /** Distinguishable outcomes instead of one silent button, so nobody taps again for three copies. */
+  /** Distinguishable outcomes instead of one silent button, so nobody taps again for three copies. */
   const [result, setResult] = useState<Result | null>(null);
 
-  // Report layout
-  const [columns, setColumns] = useState<ColumnConfig[] | null>(null);
-  const [configuring, setConfiguring] = useState(false);
-  const [savingConfig, setSavingConfig] = useState(false);
-  const [configResult, setConfigResult] = useState<'saved' | 'error' | null>(null);
+  /* The file's language, Hebrew until this person picks otherwise; remembered per user. */
+  const [lang, chooseLang] = useExportLang();
 
-    /* Worker pay is admin-only on the Services screen, so this sheet is too. Note
-       a manager can still read `jobs.worker_price` via the API; the UI is the softer half. */
-  const canSeePay = appUser?.role === 'admin';
+  /* The one saved layout, plus this download's own toggles on top of it (never saved by a non-admin). */
+  const [columns, setColumns] = useState<ColumnConfig[] | null>(null);
+  const [hideNames, setHideNames] = useState(true);
+  const [settingsFailed, setSettingsFailed] = useState(false);
+  const [savingLayout, setSavingLayout] = useState(false);
+  const [layoutResult, setLayoutResult] = useState<'saved' | 'error' | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void fetchAppSettings().then((s) => {
+      if (!live) return;
+      setSettingsFailed(!s.ok);
+      setHideNames(s.hideWorkerNames);
+      setColumns(s.customerReportColumns);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /** Admin or Carasso with no site picked = every site they may see: one file, with a Site column. */
+  const multiSite = canSwitch && siteId === null && sites.length > 1;
+  const shown = columns ? availableColumns(columns, { role, hideWorkerNames: hideNames, multiSite }) : [];
+  const visibleCount = shown.filter((c) => c.visible).length;
+  /** Managers are pinned to a site (set by the scope hook); the others read every site they may. */
+  const scopeReady = canSwitch ? sites.length > 0 : Boolean(siteId);
+
+  /* Worker pay is admin-only on the Services screen, so this sheet is too. */
+  const canSeePay = isAdmin;
 
   /* Who the payment sheet is for. Empty until picked — the report is per
      worker, so there is no sensible default and guessing one would produce a
@@ -112,9 +177,10 @@ export default function Export() {
   const [workerId, setWorkerId] = useState('');
   const [workerSearch, setWorkerSearch] = useState('');
 
-    /* Everyone on staff, every site: the payment sheet is per person across sites
-       (0019). Inactive staff are included; they are still owed for earlier jobs. */
-  const staff = useStaff();
+  /* Everyone on staff, every site: the payment sheet is per person across sites
+     (0019). Inactive staff are included; they are still owed for earlier jobs. */
+  // list_staff() is closed to Carasso, so it is not even asked for.
+  const staff = useStaff(!isCarasso);
   useEffect(() => {
     if (!canSeePay) return;
     let cancelled = false;
@@ -131,7 +197,7 @@ export default function Export() {
     };
   }, [canSeePay]);
 
-    /* The search narrows a native select (a long list can't be typed at) instead of replacing it. */
+  /* The search narrows a native select (a long list can't be typed at) instead of replacing it. */
   const matchingWorkers = workers.filter((w) =>
     w.name.toLowerCase().includes(workerSearch.trim().toLowerCase()),
   );
@@ -144,130 +210,127 @@ export default function Export() {
       ? [selectedWorker, ...matchingWorkers]
       : matchingWorkers;
 
-  useEffect(() => {
-    if (!siteId) return;
-    let cancelled = false;
-    void supabase
-      .from('sites')
-      .select('customer_report_config')
-      .eq('id', siteId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setColumns(resolveCustomerColumns(data?.customer_report_config));
-      });
-    return () => {
-      cancelled = true;
+  /** Both bounds are inclusive local calendar days, as in the jobs grid. */
+  function bounds() {
+    return {
+      fromIso: new Date(`${from}T00:00:00`).toISOString(),
+      toIso: new Date(`${to}T23:59:59.999`).toISOString(),
     };
-  }, [siteId]);
+  }
 
-    /**
-     * The jobs both reports are built from. `forWorkerId` narrows in Postgres so
-     * the payment sheet can never hold somebody else's job; it matches submitted
-     * OR co-worked jobs at any site (the site filter is for the customer report).
-     * Both bounds are inclusive local calendar days, as in the jobs grid.
-     */
-  async function fetchJobs(forWorkerId?: string): Promise<FetchedJob[] | null> {
-    const fromIso = new Date(`${from}T00:00:00`).toISOString();
-    const toIso = new Date(`${to}T23:59:59.999`).toISOString();
+  /**
+   * The customer report's jobs. Admin and Carasso read `jobs_carasso` (client
+   * prices; for Carasso the database also blanks names while they are hidden).
+   * A manager reads `jobs_manager` with none of the money fields selected.
+   * Fetched in chunks so a multi-site month is never silently cut at 1,000.
+   */
+  async function fetchCustomerJobs(): Promise<ExportJob[] | null> {
+    const { fromIso, toIso } = bounds();
+    const all: ExportJob[] = [];
+    for (let start = 0; ; start += CHUNK) {
+      const base = isAdmin || isCarasso
+        ? supabase.from(CARASSO_JOBS_VIEW).select(CARASSO_JOB_COLUMNS)
+        : supabase.from('jobs_manager').select(MANAGER_REPORT_FIELDS).is('deleted_at', null);
+      let query = base
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(start, start + CHUNK - 1);
+      if (siteId) query = query.eq('site_id', siteId);
+      const { data, error } = await query;
+      if (error) return null;
+      const page = (data ?? []) as unknown as (CarassoJob | (ExportJob & { coworker_ids: string[] }))[];
+      all.push(
+        ...page.map((j) =>
+          'site_name' in j
+            ? fromCarasso(j)
+            : {
+                ...j,
+                worker_price: 0,
+                // Everyone who worked the car, submitter first: "Dana, Avi".
+                worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
+              },
+        ),
+      );
+      if (page.length < CHUNK) return all;
+    }
+  }
 
-    let query = supabase
+  /**
+   * The payment sheet's jobs: narrowed in Postgres to this person's (submitted
+   * or co-worked, any site), so the file can never hold somebody else's job.
+   */
+  async function fetchPaymentJobs(forWorkerId: string): Promise<FetchedJob[] | null> {
+    const { fromIso, toIso } = bounds();
+    const { data, error } = await supabase
       .from('jobs_manager')
-      .select(JOB_FIELDS)
+      .select(PAYMENT_FIELDS)
       .is('deleted_at', null)
       .gte('created_at', fromIso)
       .lte('created_at', toIso)
-      .order('created_at', { ascending: true });
-
-    query = forWorkerId
-      ? query.or(`worker_id.eq.${forWorkerId},coworker_ids.cs.{${forWorkerId}}`)
-      : query.eq('site_id', siteId!);
-
-    const { data, error } = await query;
-
+      .order('created_at', { ascending: true })
+      .or(`worker_id.eq.${forWorkerId},coworker_ids.cs.{${forWorkerId}}`);
     if (error) return null;
     return (data ?? []) as unknown as FetchedJob[];
   }
 
-  async function writeSheet(rows: Cell[][], sheetName: string, suffix: string, who?: string) {
-    // Loaded on demand — this is the only screen that needs it, and it's a
-    // sizeable library not worth shipping to every worker on a mobile connection.
-    const XLSX = await import('xlsx');
-    const sheet = XLSX.utils.aoa_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
-    // The payment sheet spans every site, so it isn't named after one.
-    const siteName = who ? undefined : (sites.find((s) => s.id === siteId)?.name ?? 'site');
-    // The worker's name goes in the filename: these files land in a Downloads
-    // folder a month at a time, and "payments-2026-03-01-to-…" ten times over
-    // is ten files nobody can tell apart without opening them.
-    const file = [siteName, suffix, who, from, 'to', to].filter(Boolean).join('-') + '.xlsx';
-    XLSX.writeFile(workbook, file);
-    return file;
-  }
-
   async function runExport(kind: ReportKind) {
-    if ((kind === 'customer' && (!siteId || !columns)) || !periodComplete) return;
+    if ((kind === 'customer' && (!scopeReady || !columns)) || !periodComplete) return;
     // The payment sheet is per worker; without one there is no report to build.
     if (kind === 'payments' && !selectedWorker) return;
     setBusy(kind);
     setResult(null);
 
-    const jobs = await fetchJobs(kind === 'payments' ? workerId : undefined);
-    if (!jobs) {
+    try {
+      const locale = exportLocale(lang);
+      let rows;
+      let sheetName;
+      let file;
+      if (kind === 'customer') {
+        const jobs = await fetchCustomerJobs();
+        if (!jobs) return setResult({ kind: 'error', for: kind });
+        if (jobs.length === 0) return setResult({ kind: 'empty', for: kind });
+        rows = buildCustomerReport(jobs, shown, locale, lang);
+        sheetName = REPORT_SHEET_NAME;
+        file = customerReportFileName(from, to);
+      } else {
+        const jobs = await fetchPaymentJobs(workerId);
+        if (!jobs) return setResult({ kind: 'error', for: kind });
+        if (jobs.length === 0) return setResult({ kind: 'empty', for: kind });
+        // This person's share, and their own name on every row — the job's
+        // submitter may be somebody else.
+        rows = buildWorkerPaymentReport(
+          jobs.map((j) => ({ ...j, worker_price: shareFor(j, workerId), worker: { name: selectedWorker!.name } })),
+          selectedWorker!.name,
+          locale,
+          lang,
+        );
+        sheetName = SHEET_NAMES[lang].payments;
+        // The worker's name goes in the filename: these land in a Downloads folder a month at a time.
+        file = `payments-${selectedWorker!.name}-${from}-to-${to}.xlsx`;
+      }
+      await downloadWorkbook(rows, sheetName, file, lang);
+      setResult({ kind: 'done', file, for: kind });
+    } catch {
       setResult({ kind: 'error', for: kind });
+    } finally {
       setBusy(null);
-      return;
     }
-    if (jobs.length === 0) {
-      setResult({ kind: 'empty', for: kind });
-      setBusy(null);
-      return;
-    }
-
-    const rows =
-      kind === 'customer'
-        ? buildCustomerReport(
-            // Everyone who worked the car, submitter first: "Dana, Avi".
-            jobs.map((j) => ({
-              ...j,
-              worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
-            })),
-            columns!,
-            i18n.language,
-          )
-        : buildWorkerPaymentReport(
-            // This person's share, and their own name on every row — the job's
-            // submitter may be somebody else.
-            jobs.map((j) => ({ ...j, worker_price: shareFor(j, workerId), worker: { name: selectedWorker!.name } })),
-            selectedWorker!.name,
-            i18n.language,
-          );
-
-    const file = await writeSheet(
-      rows,
-      kind === 'customer' ? 'Treatments' : 'Payments',
-      kind === 'customer' ? 'treatments' : 'payments',
-      kind === 'payments' ? selectedWorker!.name : undefined,
-    );
-    setResult({ kind: 'done', file, for: kind });
-    setBusy(null);
   }
 
-  async function saveConfig() {
+  /** Admin: saves this view's columns as THE layout (every other column keeps its place). */
+  async function saveLayout() {
     if (!columns) return;
-    setSavingConfig(true);
-    setConfigResult(null);
-    const { error } = await supabase.rpc('update_customer_report_config', {
-      new_config: toStoredConfig(columns),
-    });
-    setSavingConfig(false);
-    setConfigResult(error ? 'error' : 'saved');
+    setSavingLayout(true);
+    setLayoutResult(null);
+    const { error } = await saveCustomerReportLayout(columns);
+    setSavingLayout(false);
+    setLayoutResult(error ? 'error' : 'saved');
   }
 
-  const visibleCount = columns?.filter((c) => c.visible).length ?? 0;
-
-    /* A cleared date input makes `new Date('T00:00:00')` invalid and
-       `.toISOString()` throw, so every export is gated on both ends. */
+  /* A cleared date input makes `new Date('T00:00:00')` invalid and
+     `.toISOString()` throw, so every export is gated on both ends. */
   const periodComplete = Boolean(from && to);
 
   /** The period as a person reads it, in their own locale. */
@@ -286,29 +349,29 @@ export default function Export() {
       }
     : null;
 
+  const siteChoices = canSwitch && sites.length > (isCarasso ? 1 : 0);
+
   return (
     <Page width="form">
       <PageHeading>{t('export.title')}</PageHeading>
 
-      {/*
-        The period comes FIRST and on its own card, because it is the one
-        setting both reports share.
-        It used to sit inside the customer report's card, above that report's
-        own download button — so the worker payment card below appeared to have
-        no date range at all, and the range it silently used was one the manager
-        had set while looking at a different report. Same two inputs, same
-        component, moved to where what they govern is stated: the heading names
-        them as the report period, the help line says both reports below use
-        them, and each report restates the span it is about to cover directly
-        above its own button.
-      */}
+      {/* The period comes first and on its own card, because it (and the file
+          language) is shared by every report below. */}
       <Card className="space-y-4">
         <SectionHeading icon="calendar">{t('export.periodTitle')}</SectionHeading>
-        <p className="text-sm text-ink-600">{t('export.periodHelp')}</p>
+        <p className="text-sm text-ink-600">{canSeePay ? t('export.periodHelp') : t('export.periodHelpOne')}</p>
 
-        {canSwitch && sites.length > 0 && (
+        {siteChoices && (
           <Field htmlFor="export-site" label={t('export.site')}>
-            <Select id="export-site" value={siteId ?? ''} onChange={(e) => setSiteId(e.target.value)}>
+            <Select
+              id="export-site"
+              value={siteId ?? ''}
+              onChange={(e) => {
+                setSiteId(e.target.value || null);
+                setResult(null);
+              }}
+            >
+              <option value="">{isCarasso ? t('export.allMySites') : t('jobs.allSites')}</option>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -347,13 +410,66 @@ export default function Export() {
           </Field>
         </div>
 
+        <Field htmlFor="export-lang" label={t('export.language')} hint={<span className="text-ink-500">{t('export.languageHint')}</span>}>
+          <Select id="export-lang" value={lang} onChange={(e) => chooseLang(e.target.value as ExportLang)}>
+            <option value="he">עברית</option>
+            <option value="en">English</option>
+          </Select>
+        </Field>
+
         {!periodComplete && <StatusBanner tone="warning">{t('export.periodIncomplete')}</StatusBanner>}
       </Card>
 
       <Card className="space-y-3">
         <SectionHeading icon="clipboard">{t('export.customerTitle')}</SectionHeading>
 
+        {settingsFailed && <StatusBanner tone="error">{t('common.error')}</StatusBanner>}
+
         {period && <PeriodLine>{t('export.periodCovers', period)}</PeriodLine>}
+
+        {/* This download's columns. Everyone may toggle them for this file; only
+            an admin can keep them as the layout (and reorder). */}
+        {columns && (
+          <details className="rounded-xl border border-line bg-surface">
+            <summary className="flex min-h-control cursor-pointer items-center justify-between gap-3 px-4 text-sm font-semibold text-ink-900">
+              <span>{t('export.columnsTitle')}</span>
+              <span className="font-medium text-ink-600">{t('export.configSummary', { count: visibleCount })}</span>
+            </summary>
+            <div className="space-y-3 border-t border-line p-4">
+              <p className="text-sm text-ink-600">{isAdmin ? t('export.columnsHelpAdmin') : t('export.columnsHelp')}</p>
+              <ReportColumns
+                reorder={isAdmin}
+                columns={shown}
+                onChange={(next) => {
+                  setLayoutResult(null);
+                  setColumns((prev) => mergeColumnSubset(prev!, next));
+                }}
+              />
+              {isAdmin && (
+                <>
+                  {layoutResult === 'saved' && (
+                    <StatusBanner tone="success" live>
+                      {t('export.configSaved')}
+                    </StatusBanner>
+                  )}
+                  {layoutResult === 'error' && (
+                    <StatusBanner tone="error" live>
+                      {t('common.error')}
+                    </StatusBanner>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button variant="secondary" icon="check" busy={savingLayout} onClick={() => void saveLayout()}>
+                      {t('export.saveLayout')}
+                    </Button>
+                    <Link to="/admin/settings" className="inline-flex min-h-tap items-center text-sm font-semibold underline underline-offset-2">
+                      {t('export.layoutInSettings')}
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
+        )}
 
         {result?.for === 'customer' && <ResultBanner result={result} />}
 
@@ -362,7 +478,7 @@ export default function Export() {
           block
           icon="download"
           busy={busy === 'customer'}
-          disabled={!siteId || !columns || visibleCount === 0 || !periodComplete || busy !== null}
+          disabled={!scopeReady || !columns || visibleCount === 0 || !periodComplete || busy !== null}
           onClick={() => void runExport('customer')}
         >
           {busy === 'customer' ? t('export.preparing') : t('export.downloadCustomer')}
@@ -387,8 +503,7 @@ export default function Export() {
 
           <Field htmlFor="export-worker" label={t('export.worker')}>
             {/* Search first, then the picker it narrows — only once the list is
-                long enough to be worth searching. Below that it is one more
-                empty box between a manager and the file they came for. */}
+                long enough to be worth searching. */}
             {workers.length > 8 && (
               <SearchField
                 value={workerSearch}
@@ -417,10 +532,7 @@ export default function Export() {
             )}
           </Field>
 
-          {/* What this button is about to produce, named in full: whose jobs,
-              and over which dates. It changes as either input changes, which is
-              what makes the period above visibly part of THIS report rather
-              than a setting that happens to sit further up the page. */}
+          {/* What this button is about to produce, named in full: whose jobs, and over which dates. */}
           {period && (
             <PeriodLine>
               {selectedWorker
@@ -433,8 +545,7 @@ export default function Export() {
             <ResultBanner
               result={result}
               /* "No jobs in that date range" is ambiguous here — it reads as if
-                 the yard was shut. Name the worker: the range is fine, this
-                 person logged nothing in it. */
+                 the yard was shut. Name the worker. */
               emptyMessage={
                 selectedWorker ? t('export.emptyWorker', { worker: selectedWorker.name }) : undefined
               }
@@ -453,90 +564,6 @@ export default function Export() {
           </Button>
         </Card>
       )}
-
-      {/* ------------------------------------------------ report layout ---- */}
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <SectionHeading icon="settings">{t('export.configTitle')}</SectionHeading>
-          <Button variant="secondary" onClick={() => setConfiguring((v) => !v)}>
-            {configuring ? t('common.close') : t('export.configure')}
-          </Button>
-        </div>
-
-        {!configuring && (
-          <p className="text-sm text-ink-600">
-            {t('export.configSummary', { count: visibleCount })}
-          </p>
-        )}
-
-        {configuring && columns && (
-          <div className="mt-2 space-y-3">
-            <p className="text-sm text-ink-600">{t('export.configHelp')}</p>
-
-            <ul className="divide-y divide-line rounded-xl border border-line">
-              {columns.map((column, i) => (
-                <li key={column.key} className="flex min-h-tap items-center gap-2 p-2">
-                  <label className="flex min-w-0 flex-1 items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={column.visible}
-                      onChange={() => {
-                        setConfigResult(null);
-                        setColumns((prev) =>
-                          prev!.map((c) => (c.key === column.key ? { ...c, visible: !c.visible } : c)),
-                        );
-                      }}
-                      className="size-5 shrink-0 accent-ink-900"
-                    />
-                    <span
-                      className={`min-w-0 break-words text-sm font-medium ${
-                        column.visible ? 'text-ink-900' : 'text-ink-500'
-                      }`}
-                    >
-                      {t(`export.columns.${column.key}`)}
-                    </span>
-                  </label>
-                  <div className="flex shrink-0 items-center">
-                    <IconButton
-                      icon="arrowUp"
-                      label={t('services.moveUp')}
-                      disabled={i === 0}
-                      onClick={() => {
-                        setConfigResult(null);
-                        setColumns((prev) => moveColumn(prev!, i, -1));
-                      }}
-                    />
-                    <IconButton
-                      icon="arrowDown"
-                      label={t('services.moveDown')}
-                      disabled={i === columns.length - 1}
-                      onClick={() => {
-                        setConfigResult(null);
-                        setColumns((prev) => moveColumn(prev!, i, 1));
-                      }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-
-            {configResult === 'saved' && (
-              <StatusBanner tone="success" live>
-                {t('export.configSaved')}
-              </StatusBanner>
-            )}
-            {configResult === 'error' && (
-              <StatusBanner tone="error" live>
-                {t('common.error')}
-              </StatusBanner>
-            )}
-
-            <Button icon="check" busy={savingConfig} onClick={() => void saveConfig()}>
-              {t('admin.save')}
-            </Button>
-          </div>
-        )}
-      </Card>
     </Page>
   );
 }

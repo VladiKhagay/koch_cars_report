@@ -200,7 +200,9 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
   const limited = await rateLimited(c, c.env.OCR_LIMITER);
   if (limited) return limited;
 
-  if (!(await getActiveAppUser(c))) {
+  // Carasso is read-only and has no photo capture; it must not spend OCR quota.
+  const caller = await getActiveAppUser(c);
+  if (!caller || !['worker', 'manager', 'admin'].includes(caller.role)) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 /*
  * The photo viewer tells a manager what to do about a missing image, and it can
  * only be as right as this mapping. Getting it wrong is not cosmetic: the state
- * this replaces blamed the 90-day expiry for everything, which sent someone
+ * this replaces blamed the 60-day expiry for everything, which sent someone
  * hunting for a deleted file when the photo had never been uploaded — the exact
  * confusion this suite exists to prevent recurring.
  */

@@ -111,7 +111,7 @@ export async function ocrPhoto(image: Blob, kind: 'plate' | 'vin'): Promise<OcrO
   }
 }
 
-/** Why a photo could not be shown, so the viewer doesn't blame the 90-day expiry for everything. */
+/** Why a photo could not be shown, so the viewer doesn't blame the 60-day expiry for everything. */
 export type PhotoFailure =
   /** The Worker has no object at this key: never uploaded, or expired. */
   | 'missing'
@@ -151,8 +151,11 @@ export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<Pho
 export async function inviteUser(input: {
   email: string;
   name: string;
-  role: 'worker' | 'manager' | 'admin';
-  siteId: string;
+  role: 'worker' | 'manager' | 'admin' | 'carasso';
+  /** Home site, for every role except Carasso. */
+  siteId?: string;
+  /** Carasso only: the sites they may see. At least one. */
+  siteIds?: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/invite`, {
