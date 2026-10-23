@@ -49,6 +49,14 @@
      hairlines and unusable for body copy. */
   --color-brand-grey: #919396;
 
+  /* --- Accent ------------------------------------------------------------
+     The one hue slot for "this is the primary / current thing": primary
+     button, active nav, focus ring. Held on brand near-black until the client
+     supplies brand colours; changing these three re-skins every use. */
+  --color-accent: var(--color-ink-900);
+  --color-accent-hover: var(--color-ink-800);
+  --color-accent-soft: var(--color-ink-100); /* tint behind the current nav item */
+
   /* --- Semantic surfaces / lines / text ---------------------------------- */
   --color-surface: #ffffff; /* BRAND paper */
   --color-sunken: var(--color-ink-50);
@@ -84,15 +92,15 @@
      --text-xs is deliberately raised from Tailwind's 12px to 13px so that any
      stray `text-xs` in a low-traffic screen still lands above the legibility
      floor for a phone screen in sunlight. */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+  --font-sans: "Rubik Variable", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, "Noto Sans", "Liberation Sans", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
 
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.125rem;
-  --text-sm: 0.875rem;
-  --text-sm--line-height: 1.25rem;
+  --text-sm: 0.9375rem; /* 15px: the working size of the app, up from 14px */
+  --text-sm--line-height: 1.375rem;
   --text-base: 1rem;
   --text-base--line-height: 1.5rem;
   --text-lg: 1.125rem;
@@ -155,7 +163,7 @@
   /* One focus treatment everywhere. Offset puts the ring outside the control,
      so it stays visible on the near-black primary buttons too. */
   :focus-visible {
-    outline: 2px solid var(--color-ink-900);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
 

@@ -7,6 +7,8 @@
     "signIn": "התחברות",
     "email": "אימייל",
     "password": "סיסמה",
+    "showPassword": "הצג סיסמה",
+    "hidePassword": "הסתר סיסמה",
     "signingIn": "מתחבר…",
     "error": "לא הצלחנו להתחבר — בדקו את האימייל והסיסמה.",
     "signOut": "יציאה",
@@ -227,6 +229,8 @@
     "coworker": "עובד נוסף"
   },
   "dashboard": {
+    "viewYesterday": "הצג את אתמול",
+    "backToToday": "חזרה להיום",
     "title": "עבודות לפי יום",
     "today": "היום",
     "site": "אתר",
@@ -257,6 +261,7 @@
     "backToToday": "חזרה להיום"
   },
   "jobs": {
+    "filtersActive": "פעיל",
     "title": "כל העבודות",
     "onlyMissingBilling": "ללא מספר הזמנה",
     "lead": "כל העבודות, מהחדשה לישנה. מספרי ההזמנה מוזנים כאן.",

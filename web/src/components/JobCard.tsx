@@ -24,8 +24,9 @@ export default function JobCard({
   children,
 }: {
   job: JobCardData;
-  /** Crew and time, already formatted — "Dana, Avi · 11:30". */
-  meta: string;
+  /** Crew, time, service — already formatted, one entry each. Each is isolated
+      so an English name inside a Hebrew line cannot reorder its neighbours. */
+  meta: (string | null)[];
   /** Whether the reservation-number row is shown. */
   showBilling: boolean;
   /** Absent = read-only (Carasso): the reservation number is shown, not editable. */
@@ -58,7 +59,14 @@ export default function JobCard({
               </p>
               {/* A plate-less job already shows its VIN above. */}
               {job.plate && job.vin && <p className="truncate font-mono text-xs text-ink-600">{job.vin}</p>}
-              <p className="truncate text-xs text-ink-600">{meta}</p>
+              <p className="break-words text-xs text-ink-600">
+                {meta.filter(Boolean).map((part, i) => (
+                  <span key={i}>
+                    {i > 0 && ' · '}
+                    <bdi>{part}</bdi>
+                  </span>
+                ))}
+              </p>
             </div>
             {!onDuplicate && flag}
             <Icon name="chevronRight" size={18} className="shrink-0 text-ink-500 rtl:-scale-x-100" />
