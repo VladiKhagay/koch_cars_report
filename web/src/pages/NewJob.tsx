@@ -787,6 +787,7 @@ export default function NewJob() {
             <Button
               size="lg"
               block
+              variant={problems.length > 0 ? 'incomplete' : 'primary'}
               busy={submitting}
               onClick={() => void handleSubmit()}
               aria-describedby={showProblems ? 'submit-problems' : undefined}

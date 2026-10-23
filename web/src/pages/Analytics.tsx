@@ -279,12 +279,12 @@ export default function Analytics() {
       {/* The totals and the same numbers broken out — one reading. */}
       <Group>
         {loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:max-w-md" aria-hidden>
+          <div className="grid grid-cols-2 gap-3" aria-hidden>
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+          <div className="grid grid-cols-2 gap-3">
             <StatTile label={t('stats.jobsInRange')} value={total} />
             <StatTile label={t('stats.activeWorkers')} value={byWorker.length} />
           </div>

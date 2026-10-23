@@ -17,7 +17,7 @@ function QueueIndicator({ compact }: { compact?: boolean }) {
   return (
     <NavLink
       to="/mine"
-      className={`inline-flex min-h-tap items-center gap-2 rounded-lg bg-ink-900 px-3 font-semibold text-surface ${
+      className={`inline-flex min-h-tap items-center gap-2 rounded-lg bg-accent px-3 font-semibold text-surface ${
         compact ? 'text-xs' : 'w-full text-sm'
       }`}
     >
@@ -58,7 +58,7 @@ export default function Layout() {
           stylesheet order. A transform has nothing to tie with. */}
       <a
         href="#main"
-        className="fixed start-4 top-4 z-30 inline-flex min-h-tap -translate-y-24 items-center rounded-lg bg-ink-900 px-4 font-semibold text-surface shadow-raised transition-transform duration-150 focus:translate-y-0"
+        className="fixed start-4 top-4 z-30 inline-flex min-h-tap -translate-y-24 items-center rounded-lg bg-accent px-4 font-semibold text-surface shadow-raised transition-transform duration-150 focus:translate-y-0"
       >
         {t('nav.skipToContent')}
       </a>
@@ -81,14 +81,16 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex min-h-tap items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-colors duration-150 ${
-                  isActive ? 'bg-ink-900 text-surface' : 'text-ink-700 hover:bg-ink-100 active:bg-ink-200'
+                `relative flex min-h-tap items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-colors duration-150 ${
+                  isActive ? 'bg-accent-soft text-ink-900' : 'text-ink-700 hover:bg-ink-100 active:bg-ink-200'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <Icon name={item.icon} size={20} className={isActive ? '' : 'text-ink-500'} />
+                  {/* Indicator bar + weight + tint: the current page is never colour alone. */}
+                  {isActive && <span aria-hidden className="absolute inset-y-2 start-0 w-1 rounded-full bg-accent" />}
+                  <Icon name={item.icon} size={20} strokeWidth={isActive ? 2.25 : 1.75} className={isActive ? '' : 'text-ink-500'} />
                   <span className="min-w-0 break-words">{item.label}</span>
                 </>
               )}
@@ -156,14 +158,14 @@ export default function Layout() {
               to={item.to}
               className={({ isActive }) =>
                 `relative flex min-h-control-lg min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-center text-xs font-semibold leading-[1.15] active:bg-ink-50 ${
-                  isActive ? 'text-ink-900' : 'text-ink-500'
+                  isActive ? 'text-ink-900' : 'text-ink-600'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   {/* Position + weight, not only colour, marks the current tab. */}
-                  {isActive && <span aria-hidden className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-ink-900" />}
+                  {isActive && <span aria-hidden className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-accent" />}
                   <Icon name={item.icon} size={22} strokeWidth={isActive ? 2 : 1.75} />
                   <span className="w-full break-words">{item.label}</span>
                 </>

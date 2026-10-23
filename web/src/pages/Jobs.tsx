@@ -3,6 +3,7 @@
  * filters and paging all happen in Postgres (~3,000 jobs a month); TanStack
  * Table owns the column model and rendering, the database owns the row set.
  */
+import Icon from '../components/Icon';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -39,6 +40,7 @@ import {
   TrExpanded,
 } from '../components/DataTable';
 import {
+  Badge,
   Button,
   ConfirmPanel,
   EmptyState,
@@ -194,6 +196,7 @@ export default function Jobs() {
   const isCarasso = appUser?.role === 'carasso';
   /* Fail safe: names stay hidden for Carasso until the setting has been read. */
   const [hideNames, setHideNames] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   useEffect(() => {
     if (isCarasso) void fetchAppSettings().then((s) => setHideNames(s.hideWorkerNames));
   }, [isCarasso]);
@@ -477,7 +480,21 @@ export default function Jobs() {
             <div className="space-y-2">
               <SearchField value={search} onChange={setSearch} label={t('jobs.search')} />
 
-              <div className="flex flex-wrap items-end gap-2">
+              {/* On a phone the six filters were half a screen before the first job:
+                  they sit behind one toggle, open by default from `sm` up. */}
+              <button
+                type="button"
+                aria-expanded={filtersOpen}
+                aria-controls="jobs-filters"
+                onClick={() => setFiltersOpen((o) => !o)}
+                className="inline-flex min-h-tap items-center gap-2 rounded-lg px-2 text-sm font-semibold text-ink-800 hover:bg-ink-100 sm:hidden"
+              >
+                <Icon name="chevronDown" size={18} className={filtersOpen ? 'rotate-180' : ''} />
+                {t('stats.filters')}
+                {filtered && <Badge tone="info">{t('jobs.filtersActive')}</Badge>}
+              </button>
+
+              <div id="jobs-filters" className={`${filtersOpen ? 'flex' : 'hidden'} flex-wrap items-end gap-2 sm:flex`}>
                 {/* The two name-carrying filters take the full width on a
                     phone. Sharing a 360px row gave each about 160px, which
                     truncates a site or worker name — and a dropdown you have
@@ -634,9 +651,7 @@ export default function Jobs() {
                   minute: '2-digit',
                 }),
                 serviceName(job),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+              ]}
               showBilling
               onSaveBilling={plan.editBilling ? (value) => saveBillingCode(job, value) : undefined}
               onDuplicate={plan.flags ? () => openDuplicate(job.id) : undefined}

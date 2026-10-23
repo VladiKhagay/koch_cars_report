@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import Logo from '../components/Logo';
 import StatusBanner from '../components/StatusBanner';
+import Icon from '../components/Icon';
 import { AuthShell, Button, Field, LanguageToggle, fieldClass, fieldErrorClass } from '../components/ui';
 
 export default function Login() {
@@ -14,6 +15,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!loading && session) return <Navigate to="/" replace />;
 
@@ -31,7 +33,7 @@ export default function Login() {
       {/* The wordmark is the brand moment; the heading is the product. Neither
           is an eyebrow for the other, so they carry different weights. */}
       <div className="text-ink-900">
-        <Logo height={24} title={t('app.name')} />
+        <Logo height={28} title={t('app.name')} />
       </div>
 
       <h1 className="mt-8 text-2xl font-semibold tracking-tighter text-ink-900 sm:text-3xl">{t('auth.signIn')}</h1>
@@ -58,19 +60,30 @@ export default function Login() {
         </Field>
 
         <Field htmlFor="login-password" label={t('auth.password')}>
-          <input
-            id="login-password"
-            type="password"
-            required
-            autoComplete="current-password"
-            enterKeyHint="go"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              setError(false);
-            }}
-            className={`${fieldClass} ${error ? fieldErrorClass : ''}`}
-          />
+          <div className="relative">
+            <input
+              id="login-password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              autoComplete="current-password"
+              enterKeyHint="go"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError(false);
+              }}
+              className={`${fieldClass} pe-12 ${error ? fieldErrorClass : ''}`}
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+              aria-pressed={showPassword}
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute inset-y-0 end-0 inline-flex w-12 items-center justify-center rounded-lg text-ink-600 hover:text-ink-900"
+            >
+              <Icon name={showPassword ? 'eyeOff' : 'eye'} size={20} />
+            </button>
+          </div>
         </Field>
 
         {/* One error treatment, the same one the rest of the app uses — and it

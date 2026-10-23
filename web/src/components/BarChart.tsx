@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 
@@ -31,12 +31,23 @@ export default function BarChart({ title, data, valueLabel }: Props) {
   const uid = useId();
   const [hovered, setHovered] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
+  // Measured, so a chart with few bars stretches across its card instead of
+  // hugging one side; with many bars the natural width wins and it scrolls.
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [available, setAvailable] = useState(0);
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAvailable(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showTable, data.length]);
 
   const max = Math.max(1, ...data.map((d) => d.value));
   // Clean round ticks (0 / half / max, rounded up) rather than raw fractions.
   const axisMax = Math.ceil(max / 5) * 5 || max;
 
-  const width = Math.max(data.length * (BAR_MAX_THICKNESS + SLOT_PADDING), 260);
+  const width = Math.max(data.length * (BAR_MAX_THICKNESS + SLOT_PADDING), 260, available);
   const barSlot = width / Math.max(data.length, 1);
   const barWidth = Math.min(BAR_MAX_THICKNESS, barSlot - 8);
   const plotHeight = HEIGHT - TOP - BOTTOM;
@@ -73,7 +84,7 @@ export default function BarChart({ title, data, valueLabel }: Props) {
               fixed coordinate space, so mirroring the page would start the
               scroll at the last bar and put the axis origin on the right
               without moving a single drawn element. Numbers read LTR anyway. */}
-          <div dir="ltr" className="overflow-x-auto">
+          <div ref={plotRef} dir="ltr" className="overflow-x-auto">
             <svg
               viewBox={`0 0 ${width} ${HEIGHT}`}
               width={width}
@@ -167,7 +178,7 @@ export default function BarChart({ title, data, valueLabel }: Props) {
             {data.map((d, i) => (
               <tr key={`${uid}-${i}`} className="border-t border-line">
                 <td className="py-2 text-ink-900">{d.label}</td>
-                <td className="py-2 text-end font-mono tabular-nums font-semibold text-ink-900">{d.value}</td>
+                <td className="py-2 text-end tabular-nums font-semibold text-ink-900">{d.value}</td>
               </tr>
             ))}
           </tbody>

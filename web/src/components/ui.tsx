@@ -55,8 +55,8 @@ export function PageHeading({
         {/* Steps down on a phone. 28px is a page title on a laptop; on a 360px
             screen it is two wrapped lines of "Моя статистика" before the first
             row of content, and the title's job is orientation, not spectacle. */}
-        <h1 className="text-xl font-semibold tracking-tighter text-ink-900 sm:text-2xl">{children}</h1>
-        {lead && <p className="mt-1.5 max-w-prose text-sm text-ink-600">{lead}</p>}
+        <h1 className="text-2xl font-semibold tracking-tighter text-ink-900 sm:text-3xl">{children}</h1>
+        {lead && <p className="mt-1.5 max-w-prose text-base text-ink-600">{lead}</p>}
       </div>
       {action}
     </div>
@@ -86,7 +86,7 @@ export function Card({
 /** Heading for a card-level section: more space above than below, sentence case. */
 export function SectionHeading({ icon, children }: { icon?: IconName; children: ReactNode }) {
   return (
-    <h2 className="mb-3 flex items-center gap-2 text-base font-semibold tracking-tight text-ink-900">
+    <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold tracking-tight text-ink-900">
       {icon && <Icon name={icon} size={18} className="text-ink-500" />}
       {children}
     </h2>
@@ -185,15 +185,17 @@ export function DataList({ items }: { items: { label: string; value: ReactNode }
 
 /* ----------------------------------------------------------------- buttons */
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'incomplete';
 type Size = 'md' | 'lg';
 
 const VARIANT: Record<Variant, string> = {
   // Near-black on white. The brand palette is monochrome, so the highest-
   // contrast pairing in it is also the most sunlight-legible primary action.
-  primary: 'bg-ink-900 text-surface hover:bg-ink-800 active:bg-ink-950 border border-ink-900',
+  primary: 'bg-accent text-surface hover:bg-accent-hover active:bg-ink-950 border border-accent',
   secondary: 'bg-surface text-ink-900 border border-line-strong hover:bg-ink-50 active:bg-ink-100',
   ghost: 'bg-transparent text-ink-700 border border-transparent hover:bg-ink-100 active:bg-ink-200',
+  // Still tappable (a tap lists what is missing), but visibly not ready.
+  incomplete: 'bg-ink-200 text-ink-600 border border-line-strong hover:bg-ink-200',
   danger: 'bg-danger-600 text-surface border border-danger-600 hover:bg-danger-700 active:bg-danger-700',
 };
 

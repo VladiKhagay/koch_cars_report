@@ -138,7 +138,8 @@ export default defineConfig({
       workbox: {
                 // App-shell caching only. API responses are never cached, so nobody sees
                 // stale records; the offline queue covers connectivity gaps.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // Rubik: only the three scripts the app ships in (Hebrew, Cyrillic, Latin).
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}', '**/rubik-{latin,hebrew,cyrillic}-wght-normal-*.woff2'],
       },
     }),
   ],

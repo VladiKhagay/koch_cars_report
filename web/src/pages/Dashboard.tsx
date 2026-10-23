@@ -12,6 +12,7 @@ import Icon from '../components/Icon';
 import JobCard from '../components/JobCard';
 import {
   Badge,
+  Button,
   EmptyState,
   Group,
   IconButton,
@@ -216,7 +217,16 @@ export default function Dashboard() {
         {loading && <LoadingRegion label={t('common.loading')} rows={4} />}
 
         {!loading && jobs.length === 0 && (
-          <EmptyState icon="clipboard" title={t('dashboard.emptyTitle')} body={t('dashboard.emptyBody')} />
+          <EmptyState
+            icon="clipboard"
+            title={t('dashboard.emptyTitle')}
+            body={t('dashboard.emptyBody')}
+            action={
+              <Button variant="secondary" onClick={() => setDay(isToday ? shiftDay(day, -1) : todayIso())}>
+                {isToday ? t('dashboard.viewYesterday') : t('dashboard.backToToday')}
+              </Button>
+            }
+          />
         )}
 
         {!loading && jobs.length > 0 && filtered.length === 0 && (
@@ -227,9 +237,10 @@ export default function Dashboard() {
             <JobCard
               key={job.id}
               job={job}
-              meta={`${[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')} · ${new Date(
-                job.created_at,
-              ).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}`}
+              meta={[
+                [job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
+                new Date(job.created_at).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }),
+              ]}
               showBilling={!job.billing_code || justSaved.has(job.id)}
               onSaveBilling={(value) => saveBillingCode(job, value)}
             />

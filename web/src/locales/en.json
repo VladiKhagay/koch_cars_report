@@ -7,6 +7,8 @@
     "signIn": "Sign in",
     "email": "Email",
     "password": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "signingIn": "Signing in…",
     "error": "Couldn't sign in — check your email and password.",
     "signOut": "Sign out",
@@ -220,6 +222,8 @@
     "coworker": "Co-worker"
   },
   "dashboard": {
+    "viewYesterday": "View yesterday",
+    "backToToday": "Back to today",
     "title": "Daily jobs",
     "today": "Today",
     "site": "Site",
@@ -244,6 +248,7 @@
     "backToToday": "Back to today"
   },
   "jobs": {
+    "filtersActive": "Active",
     "title": "All jobs",
     "onlyMissingBilling": "Missing reservation number",
     "lead": "Every job, newest first. Fill in reservation numbers here.",

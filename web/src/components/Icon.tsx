@@ -21,6 +21,8 @@ import {
   ClipboardList,
   Clock,
   Download,
+  Eye,
+  EyeOff,
   ImageOff,
   Info,
   LayoutDashboard,
@@ -80,6 +82,8 @@ export type IconName =
   | 'language'
   | 'signOut'
   | 'lock'
+  | 'eye'
+  | 'eyeOff'
   | 'settings'
   | 'calendar';
 
@@ -118,6 +122,8 @@ const ICONS: Record<IconName, LucideIcon> = {
   language: Languages,
   signOut: LogOut,
   lock: Lock,
+  eye: Eye,
+  eyeOff: EyeOff,
   settings: Settings,
   calendar: Calendar,
 };

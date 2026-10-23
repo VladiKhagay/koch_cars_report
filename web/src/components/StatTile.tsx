@@ -6,7 +6,7 @@ export default function StatTile({ label, value }: { label: string; value: strin
        column and "Jobs this month" breaks into four lines. */
     <div className="rounded-xl border border-line bg-surface p-3 shadow-card sm:p-4">
       <p className="text-sm font-medium text-ink-700">{label}</p>
-      <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-ink-900 sm:text-2xl">{value}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-ink-900 sm:text-2xl">{value}</p>
     </div>
   );
 }

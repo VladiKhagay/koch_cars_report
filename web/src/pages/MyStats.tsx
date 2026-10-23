@@ -296,7 +296,7 @@ function ServiceBreakdown({
             <li key={s.label} title={tooltip(s)}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0 truncate text-sm font-medium text-ink-900">{s.label}</span>
-                <span className="shrink-0 font-mono text-sm tabular-nums text-ink-700">
+                <span className="shrink-0 text-sm tabular-nums text-ink-700">
                   <span className="font-semibold text-ink-900">{s.value}</span> · {s.share}%
                 </span>
               </div>
