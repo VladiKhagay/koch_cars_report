@@ -3,13 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { serviceName as localizedServiceName } from '../lib/serviceName';
+import { serviceName as localizedServiceName, type ServiceNames } from '../lib/serviceName';
 import { fetchDuplicateSummary, saveBilling } from '../lib/jobs';
 import { fetchJobClientPrices, parsePrice, saveJobClientPrices } from '../lib/clientPrices';
 import { recordAudit } from '../lib/audit';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
-import type { ClientPrices, Job, PreviousJob, Service } from '../lib/types';
+import type { ClientPrices, Job, PreviousJob } from '../lib/types';
 import JobMedia from '../components/JobMedia';
 import CarassoJobDetail from './CarassoJobDetail';
 import { describePreviousJob } from '../components/previousJob';
@@ -101,9 +101,9 @@ function StaffJobDetail() {
     if (j.service_id) {
       const { data: svc } = await supabase
         .from('services')
-        .select('*')
+        .select('name_en, name_ru, name_he')
         .eq('id', j.service_id)
-        .single<Service>();
+        .single<ServiceNames>();
             // Honour the Russian service name, as the worker's chip list does.
       setServiceName(localizedServiceName(svc, i18n.language) ?? '');
     } else {

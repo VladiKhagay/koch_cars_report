@@ -11,6 +11,7 @@ import ExportLangSelect from '../components/ExportLangSelect';
 import BarChart from '../components/BarChart';
 import StatTile from '../components/StatTile';
 import { Button, Card, Field, fieldClass, Group, Page, PageHeading, SectionHeading, Select, Skeleton } from '../components/ui';
+import { formatDate, MONTH_YEAR } from '../lib/formatDate';
 
 function isoDaysAgo(days: number) {
   const d = new Date();
@@ -145,7 +146,7 @@ export default function Analytics() {
     return [...byMonth.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([m, v]) => ({
-        label: new Date(`${m}-01`).toLocaleDateString(i18n.language, { month: 'short', year: '2-digit' }),
+        label: formatDate(new Date(`${m}-01`), i18n.language, MONTH_YEAR),
         value: v,
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps

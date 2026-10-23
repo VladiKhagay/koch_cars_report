@@ -23,6 +23,9 @@ export interface Service {
   deleted_at: string | null;
 }
 
+/** Exactly the `Service` fields, for `.select()` (no created_at). */
+export const SERVICE_COLUMNS = 'id, name_en, name_ru, name_he, catalog_number, worker_price, active, sort_order, deleted_at';
+
 export interface AppUser {
   id: string;
   auth_id: string;
@@ -31,6 +34,9 @@ export interface AppUser {
   site_id: string | null;
   active: boolean;
 }
+
+/** Exactly the `AppUser` fields, for `.select()` (no created_at). */
+export const APP_USER_COLUMNS = 'id, auth_id, name, role, site_id, active';
 
 export interface Job {
   id: string;

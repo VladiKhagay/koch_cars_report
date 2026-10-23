@@ -105,11 +105,19 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const limited = await rateLimited(c, c.env.UPLOAD_LIMITER);
   if (limited) return limited;
 
-  // Refuse an oversized body on its declared length, before buffering any of it.
+  // Checked before the permission lookup so a bad body costs no Postgres call.
+  // R2 needs the length up front to take a stream; the web client sends a Blob, so it is always set.
+  // A missing header falls back to buffering (below) rather than a 4xx, which the offline queue would treat as permanent.
   const isVideo = kind === 'video';
   const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES;
-  if (Number(c.req.header('Content-Length')) > maxBytes) {
-    return c.json({ error: isVideo ? 'Video too large (max 50MB)' : 'Photo too large (max 8MB)' }, 413);
+  const tooLarge = `${isVideo ? 'Video' : 'Photo'} too large (max ${maxBytes / 1024 / 1024}MB)`;
+  const lengthHeader = c.req.header('Content-Length');
+  let declared = 0;
+  if (lengthHeader !== undefined) {
+    if (!/^\d+$/.test(lengthHeader)) return c.json({ error: 'Invalid Content-Length' }, 400);
+    declared = Number(lengthHeader);
+    if (declared === 0) return c.json({ error: 'Empty body' }, 400);
+    if (declared > maxBytes) return c.json({ error: tooLarge }, 413);
   }
 
   // A malformed jobId makes PostgREST answer 400, which fails closed like `false`.
@@ -127,18 +135,49 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  const bytes = await c.req.arrayBuffer();
-  if (bytes.byteLength === 0) {
-    return c.json({ error: 'Empty body' }, 400);
+  // Streamed, never buffered: a 75MB video would eat most of the 128MB isolate.
+  let body = c.req.raw.body;
+  if (lengthHeader === undefined && body) {
+    // ponytail: no Content-Length is not expected from browsers; buffer (bounded by maxBytes) instead of failing the upload.
+    const parts: Uint8Array[] = [];
+    const source = body.getReader();
+    for (;;) {
+      const { done, value } = await source.read();
+      if (done) break;
+      declared += value.byteLength;
+      if (declared > maxBytes) {
+        await source.cancel();
+        return c.json({ error: tooLarge }, 413);
+      }
+      parts.push(value);
+    }
+    if (declared === 0) return c.json({ error: 'Empty body' }, 400);
+    body = new Blob(parts as unknown as ArrayBuffer[]).stream();
   }
-  // The Content-Length above can be absent or wrong; this is the real limit.
-  if (bytes.byteLength > maxBytes) {
-    return c.json({ error: isVideo ? 'Video too large (max 50MB)' : 'Photo too large (max 8MB)' }, 413);
+  if (!body) return c.json({ error: 'Empty body' }, 400);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let peeked = 0;
+  while (peeked < 12) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    peeked += value.byteLength;
+  }
+  // A fresh copy: a chunk may be a view into a larger buffer.
+  const head = new Uint8Array(Math.min(peeked, 12));
+  let at = 0;
+  for (const chunk of chunks) {
+    if (at === head.byteLength) break;
+    const part = chunk.subarray(0, head.byteLength - at);
+    head.set(part, at);
+    at += part.byteLength;
   }
 
   // The stored content type comes from the bytes, never from the client.
-  const contentType = isVideo ? sniffVideoType(bytes) : sniffImageType(bytes);
+  const contentType = isVideo ? sniffVideoType(head.buffer) : sniffImageType(head.buffer);
   if (!contentType) {
+    await reader.cancel();
     return c.json(
       {
         error: isVideo
@@ -149,8 +188,44 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
     );
   }
 
+  // The Content-Length above is the client's word; this counts the real bytes.
+  let received = 0;
+  let overLimit = false;
+  const counter = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      received += chunk.byteLength;
+      if (received > declared) {
+        overLimit = true;
+        controller.error(new Error('Body longer than Content-Length'));
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+  const replay = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
+
   const key = objectKey(jobId, kind);
-  await c.env.PHOTOS.put(key, bytes, { httpMetadata: { contentType } });
+  try {
+    // R2 put is atomic: an errored stream stores nothing, so there is no partial object to
+    // delete, and deleting here would wipe a copy an earlier attempt already stored.
+    await c.env.PHOTOS.put(key, replay.pipeThrough(counter).pipeThrough(new FixedLengthStream(declared)), {
+      httpMetadata: { contentType },
+    });
+  } catch (err) {
+    // Only our own count is the client's fault; anything else is a 5xx so the upload stays queued.
+    if (overLimit) return c.json({ error: tooLarge }, 413);
+    throw err;
+  }
 
   return c.json({ key });
 }

@@ -52,6 +52,7 @@ import {
   SkeletonList,
   fieldClass,
 } from '../components/ui';
+import { formatDate, DAY_MONTH } from '../lib/formatDate';
 
 const PAGE_SIZE = 50;
 
@@ -106,7 +107,7 @@ function buildColumns(
         return (
           <span className="whitespace-nowrap">
             <CellTitle>
-              {d.toLocaleDateString(handlers.current.locale, { day: '2-digit', month: 'short' })}
+              {formatDate(d, handlers.current.locale, DAY_MONTH)}
             </CellTitle>{' '}
             <CellMuted>
               {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit' })}

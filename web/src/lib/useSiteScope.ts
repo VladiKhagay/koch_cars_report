@@ -31,7 +31,7 @@ export function useSiteScope() {
 
     void supabase
       .from('sites')
-      .select('*')
+      .select('id, name')
       .order('name')
       .then(({ data }) => {
         if (cancelled) return;

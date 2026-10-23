@@ -18,9 +18,9 @@ export const CARASSO_JOB_COLUMNS =
   'worker_id, coworker_ids, crew, client_unit_price, client_total_price';
 
 /** Service filter options for Carasso (services itself is closed to it, as it carries pay rates). */
-export async function fetchCarassoServices(): Promise<CarassoService[]> {
-  const { data } = await supabase.from('services_carasso').select('*').order('sort_order');
-  return (data ?? []) as CarassoService[];
+export async function fetchCarassoServices(): Promise<Pick<CarassoService, 'id' | 'name_en' | 'name_ru' | 'name_he'>[]> {
+  const { data } = await supabase.from('services_carasso').select('id, name_en, name_ru, name_he').order('sort_order');
+  return (data ?? []) as Pick<CarassoService, 'id' | 'name_en' | 'name_ru' | 'name_he'>[];
 }
 
 /** Worker filter options: the people on Carasso's jobs. Empty while names are hidden. */

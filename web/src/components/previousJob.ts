@@ -1,5 +1,6 @@
 import { serviceName } from '../lib/serviceName';
 import type { PreviousJob } from '../lib/types';
+import { formatDate, DAY_MONTH_YEAR } from '../lib/formatDate';
 
 /**
  * The three things a duplicate warning may say about an earlier job: when, where,
@@ -7,7 +8,7 @@ import type { PreviousJob } from '../lib/types';
  */
 export function describePreviousJob(job: PreviousJob, language: string) {
   return {
-    date: new Date(job.created_at).toLocaleDateString(language, { day: '2-digit', month: 'short', year: 'numeric' }),
+    date: formatDate(job.created_at, language, DAY_MONTH_YEAR),
     site: job.site_name,
     service:
       serviceName(

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import type { AppUser } from '../lib/types';
+import { APP_USER_COLUMNS, type AppUser } from '../lib/types';
 import { setQueueOwner } from '../lib/offlineQueue';
 
 interface AuthState {
@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function loadAppUser(authId: string) {
-    const { data } = await supabase.from('users').select('*').eq('auth_id', authId).single();
+    const { data } = await supabase.from('users').select(APP_USER_COLUMNS).eq('auth_id', authId).single();
     setAppUser(data ?? null);
   }
 

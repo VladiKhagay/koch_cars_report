@@ -40,6 +40,7 @@ import {
   Select,
   fieldClass,
 } from '../components/ui';
+import { formatDate, LONG_DATE } from '../lib/formatDate';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -336,16 +337,8 @@ export default function Export() {
   /** The period as a person reads it, in their own locale. */
   const period = periodComplete
     ? {
-        from: new Date(`${from}T00:00:00`).toLocaleDateString(i18n.language, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        }),
-        to: new Date(`${to}T00:00:00`).toLocaleDateString(i18n.language, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        }),
+        from: formatDate(new Date(`${from}T00:00:00`), i18n.language, LONG_DATE),
+        to: formatDate(new Date(`${to}T00:00:00`), i18n.language, LONG_DATE),
       }
     : null;
 

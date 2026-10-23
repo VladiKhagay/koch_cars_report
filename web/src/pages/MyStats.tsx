@@ -12,6 +12,7 @@ import MonthNav from '../components/MonthNav';
 import StatTile from '../components/StatTile';
 import StatusBanner from '../components/StatusBanner';
 import { EmptyState, Group, Page, PageHeading, SectionHeading, Skeleton } from '../components/ui';
+import { formatDate, MONTH_YEAR } from '../lib/formatDate';
 
 /** The slice of `job_daily_stats` this screen reads. */
 interface ServiceCount {
@@ -22,7 +23,7 @@ interface ServiceCount {
 }
 
 function monthLabel(month: string, locale: string) {
-  return new Date(`${month}-01T00:00:00`).toLocaleDateString(locale, { month: 'short', year: '2-digit' });
+  return formatDate(new Date(`${month}-01T00:00:00`), locale, MONTH_YEAR);
 }
 
 export default function MyStats() {

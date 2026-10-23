@@ -20,7 +20,7 @@ import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/d
 import { useQueuedJobs } from '../lib/useQueue';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
-import type { Job, Service } from '../lib/types';
+import { SERVICE_COLUMNS, type Job, type Service } from '../lib/types';
 import Icon from '../components/Icon';
 import MonthNav from '../components/MonthNav';
 import ServiceChips from '../components/ServiceChips';
@@ -53,6 +53,7 @@ import {
   Skeleton,
   fieldClass,
 } from '../components/ui';
+import { formatDate, DAY_MONTH } from '../lib/formatDate';
 
 const PAGE_SIZE = 25;
 
@@ -115,7 +116,7 @@ function buildColumns(
         return (
           <span className="whitespace-nowrap">
             <CellTitle>
-              {d.toLocaleDateString(handlers.current.locale, { day: '2-digit', month: 'short' })}
+              {formatDate(d, handlers.current.locale, DAY_MONTH)}
             </CellTitle>{' '}
             <CellMuted>
               {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit' })}
@@ -347,7 +348,7 @@ export default function MyJobs() {
     if (!appUser) return;
     void supabase
       .from('services')
-      .select('*')
+      .select(SERVICE_COLUMNS)
       .eq('active', true)
       .order('sort_order')
       .then(({ data }) => setServices(data ?? []));
@@ -490,7 +491,7 @@ export default function MyJobs() {
   const lastShown = Math.min(total, page * PAGE_SIZE + jobs.length);
   const columnCount = columns.length;
   const rangeLabel = [from, to]
-    .map((d) => new Date(`${d}T00:00:00`).toLocaleDateString(i18n.language, { day: '2-digit', month: 'short' }))
+    .map((d) => formatDate(new Date(`${d}T00:00:00`), i18n.language, DAY_MONTH))
     .join(' – ');
 
   return (

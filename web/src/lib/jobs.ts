@@ -11,10 +11,15 @@ export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
 /**
  * True when retrying `submitJob` with the same payload can never succeed: a
  * 4xx from the Worker, or a Postgres RLS rejection (42501). Anything else is
- * treated as transient so an outage never drops data.
+ * treated as transient so an outage never drops data. 401 (token mid-refresh),
+ * 408 and 429 (rate limit hit while flushing a backlog) clear on their own.
  */
+const RETRYABLE_4XX = [401, 408, 429];
+
 export function isPermanentError(err: unknown): boolean {
-  if (err instanceof HttpError) return err.status >= 400 && err.status < 500;
+  if (err instanceof HttpError) {
+    return err.status >= 400 && err.status < 500 && !RETRYABLE_4XX.includes(err.status);
+  }
   const code = (err as { code?: string } | null | undefined)?.code;
   return code === '42501'; // insufficient_privilege — RLS denied the write
 }

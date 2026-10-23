@@ -6,8 +6,6 @@ import Login from './pages/Login';
 import Welcome from './pages/Welcome';
 import Profile from './pages/Profile';
 import More from './pages/More';
-// Dev-only visual harness; import.meta.env.DEV strips it from production builds.
-import PhotoCaptureHarness from './dev/PhotoCaptureHarness';
 import NewJob from './pages/NewJob';
 import MyJobs from './pages/MyJobs';
 import MyStats from './pages/MyStats';
@@ -35,7 +33,6 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {import.meta.env.DEV && <Route path="/dev/photo" element={<PhotoCaptureHarness />} />}
           <Route path="/login" element={<Login />} />
           <Route path="/welcome" element={<Welcome />} />
 

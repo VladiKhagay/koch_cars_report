@@ -3,6 +3,7 @@
  * grid, so what ends up in a file that leaves the building is testable.
  */
 import { SHEET_HEADERS_BY_LANG, type ColumnConfig, type ExportLang } from './reportConfig';
+import { formatDate } from './formatDate';
 
 /* ------------------------------------------------------------- language */
 
@@ -65,7 +66,7 @@ export type Cell = string | number | Date;
 function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string, lang: ExportLang): Cell {
   switch (key) {
     case 'date':
-      return new Date(job.created_at).toLocaleDateString(locale);
+      return formatDate(job.created_at, locale);
     case 'brand':
       return job.brand ?? '';
     case 'plate':
@@ -184,7 +185,7 @@ export function buildWorkerPaymentReport(
     const cents = toCents(job.worker_price);
 
     rows.push([
-      new Date(job.created_at).toLocaleDateString(locale),
+      formatDate(job.created_at, locale),
       // One sheet per person across every site they worked at (0019).
       job.site?.name ?? '',
       job.worker?.name ?? workerName,

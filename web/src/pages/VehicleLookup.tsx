@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
 import { Button, Card, EmptyState, Page, PageHeading, SearchField, SectionHeading, SkeletonList } from '../components/ui';
+import { formatDate } from '../lib/formatDate';
 
 /** One row of `lookup_vehicle` (0018). Deliberately carries no worker. */
 interface LookupRow {
@@ -75,7 +76,7 @@ export default function VehicleLookup() {
                       ) ?? '—'}
                     </span>
                     <span className="text-sm text-ink-600">
-                      {new Date(r.created_at).toLocaleDateString(i18n.language)} · {r.site_name}
+                      {formatDate(r.created_at, i18n.language)} · {r.site_name}
                     </span>
                   </div>
                   <div dir="ltr" className="font-mono text-sm text-ink-600">

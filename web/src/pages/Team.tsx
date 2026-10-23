@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { setUserActive } from '../lib/workerApi';
-import type { AppUser } from '../lib/types';
+import { APP_USER_COLUMNS, type AppUser } from '../lib/types';
 import { Badge, Card, ConfirmAction, EmptyState, LoadingRegion, Page, PageHeading } from '../components/ui';
 
 /** Manager view of their site's team. Activate/deactivate of workers at their site is enforced by set_user_active (0004), not just this UI. */
@@ -20,7 +20,7 @@ export default function Team() {
 
   async function load(siteId: string) {
     setLoading(true);
-    const { data } = await supabase.from('users').select('*').eq('site_id', siteId).order('name');
+    const { data } = await supabase.from('users').select(APP_USER_COLUMNS).eq('site_id', siteId).order('name');
     setUsers(data ?? []);
     setLoading(false);
   }

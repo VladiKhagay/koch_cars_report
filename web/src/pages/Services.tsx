@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { ClientPrices, Service } from '../lib/types';
+import { SERVICE_COLUMNS, type ClientPrices, type Service } from '../lib/types';
 import {
   fetchServiceClientPrices,
   parsePrice as parseClientPrice,
@@ -98,7 +98,7 @@ export default function Services() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('services').select('*').is('deleted_at', null).order('sort_order');
+    const { data } = await supabase.from('services').select(SERVICE_COLUMNS).is('deleted_at', null).order('sort_order');
     setServices(data ?? []);
     if (isAdmin) setClientPrices(await fetchServiceClientPrices());
     setLoading(false);
