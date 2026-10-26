@@ -54,7 +54,7 @@ const emptyForm = {
 /** How long the "job submitted" confirmation stays up before it self-clears. */
 const SUCCESS_TTL_MS = 8000;
 
-type ProblemId = 'identifier' | 'plate' | 'vin' | 'service' | 'video';
+type ProblemId = 'identifier' | 'plate' | 'vin' | 'service';
 
 function formIsEmpty(f: typeof emptyForm) {
   return (
@@ -90,15 +90,12 @@ export default function NewJob() {
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
   const [lastIdentifier, setLastIdentifier] = useState('');
   const [attempted, setAttempted] = useState(false);
-  /* A gallery clip mid-compression: Submit waits, or the job would go without the video the worker just picked. */
-  const [compressingVideo, setCompressingVideo] = useState(false);
 
   const plateInputRef = useRef<HTMLInputElement>(null);
   const vinInputRef = useRef<HTMLInputElement>(null);
   const platePhotoRef = useRef<HTMLDivElement>(null);
   const vinPhotoRef = useRef<HTMLDivElement>(null);
   const servicesRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   /* Put back whatever was in the form when the page last went away (a camera
@@ -299,8 +296,6 @@ export default function NewJob() {
     });
   if (!form.serviceId)
     problems.push({ id: 'service', label: t('newJob.needService'), focus: () => scrollTo(servicesRef.current) });
-  if (compressingVideo)
-    problems.push({ id: 'video', label: t('newJob.videoCompressing'), focus: () => scrollTo(videoRef.current) });
 
   const showProblems = attempted && problems.length > 0;
 
@@ -332,7 +327,7 @@ export default function NewJob() {
   }
 
   async function sendJob() {
-    if (!appUser || !siteId || submitting || compressingVideo) return;
+    if (!appUser || !siteId || submitting) return;
     setConfirming(null);
     setSubmitting(true);
     // Whichever of plate/VIN got typed identifies the car in the confirmation
@@ -427,7 +422,7 @@ export default function NewJob() {
             </div>
           </div>
 
-          <section ref={videoRef} aria-label={t('newJob.videoSection')}>
+          <section aria-label={t('newJob.videoSection')}>
             <div>
               <VideoRecorder
                 video={form.video}
@@ -438,11 +433,6 @@ export default function NewJob() {
                 onRemove={() => {
                   beginNextCar();
                   setForm((f) => ({ ...f, video: null }));
-                }}
-                disabled={submitting}
-                onBusyChange={(busy) => {
-                  setCompressingVideo(busy);
-                  if (busy) setConfirming(null); // "Submit anyway" would go without the clip
                 }}
               />
             </div>
@@ -799,7 +789,6 @@ export default function NewJob() {
               block
               variant={problems.length > 0 ? 'incomplete' : 'primary'}
               busy={submitting}
-              disabled={compressingVideo}
               onClick={() => void handleSubmit()}
               aria-describedby={showProblems ? 'submit-problems' : undefined}
             >
