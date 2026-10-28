@@ -1,4 +1,5 @@
-import { submitJob, submitVideo, isPermanentError, type NewJobPayload } from './jobs';
+import { submitJob, submitVideo, isPermanentError, isRateLimited, resumable, type NewJobPayload, type VideoUpload } from './jobs';
+import { abortVideoUpload } from './workerApi';
 
 const DB_NAME = 'car-prep-tracker';
 const STORE = 'pending-jobs';
@@ -55,14 +56,41 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   });
 }
 
+const uploadKey = (queuedId: string) => `video-upload:${queuedId}`;
+
 /**
- * The only three persistence calls the queue makes. An object, not imports, so
+ * The only persistence calls the queue makes. An object, not imports, so
  * tests can swap in an in-memory store (vitest runs in node, without IndexedDB).
+ *
+ * A video's resume state ({uploadId, etags}) lives in localStorage, not on the
+ * IndexedDB entry: it changes after every piece, and re-putting the entry would
+ * rewrite the whole clip each time. Never throws: a lost write only loses resume.
  */
 export const queueStore = {
   getAll: (): Promise<QueuedJob[]> => withStore('readonly', (store) => store.getAll()),
   put: (entry: QueuedJob): Promise<unknown> => withStore('readwrite', (store) => store.put(entry)),
   delete: (queuedId: string): Promise<unknown> => withStore('readwrite', (store) => store.delete(queuedId)),
+  getUpload: (queuedId: string): VideoUpload | null => {
+    try {
+      return JSON.parse(localStorage.getItem(uploadKey(queuedId)) ?? 'null') as VideoUpload | null;
+    } catch {
+      return null;
+    }
+  },
+  putUpload: (queuedId: string, upload: VideoUpload): void => {
+    try {
+      localStorage.setItem(uploadKey(queuedId), JSON.stringify(upload));
+    } catch {
+      /* full or unavailable: this clip just restarts from zero next time */
+    }
+  },
+  deleteUpload: (queuedId: string): void => {
+    try {
+      localStorage.removeItem(uploadKey(queuedId));
+    } catch {
+      /* nothing to do */
+    }
+  },
 };
 
 /* Shared queue state: a plain external store so every screen reads the same pending snapshot. */
@@ -151,7 +179,15 @@ export async function retryQueued(queuedId: string): Promise<void> {
 export async function discardQueued(queuedId: string): Promise<void> {
   const entry = (await queueStore.getAll()).find((e) => e.queuedId === queuedId);
   if (entry?.stage !== 'video') return;
+  const upload = queueStore.getUpload(queuedId);
+  // Best effort: an upload nobody aborts is dropped by the bucket's own rule after 7 days.
+  // ponytail: Discard while this entry is the one uploading does not stop that run: it may still
+  // land the clip and its row, or, if it fails, recordFailure re-puts the entry so it reappears.
+  // The UI offers Discard only on failed entries; cancel the in-flight run (an AbortController
+  // per entry) if this ever matters.
+  if (upload && entry.jobId) void abortVideoUpload(entry.jobId, upload.uploadId).catch(() => {});
   await queueStore.delete(queuedId);
+  queueStore.deleteUpload(queuedId);
   await refreshQueue();
 }
 
@@ -180,6 +216,21 @@ let uploadingId: string | null = null;
 
 export function getUploadingId(): string | null {
   return uploadingId;
+}
+
+/* How much of that video is in, 0-99 from the pieces that landed (100 is only "landed", when the entry goes); null when not known yet. */
+let uploadProgress: number | null = null;
+
+export function getUploadProgress(): number | null {
+  return uploadProgress;
+}
+
+function setProgress(upload: VideoUpload | null, size: number): void {
+  // Stored state is untrusted (another version, hand edits): anything odd reads as "not known".
+  const percent = Math.floor((Math.min((upload?.parts?.length ?? 0) * (upload?.partSize ?? 0), size) / size) * 100);
+  // Capped at 99: with every piece in, complete() and the row write are still to come.
+  uploadProgress = Number.isFinite(percent) && percent > 0 ? Math.min(percent, 99) : null;
+  emit();
 }
 
 /*
@@ -226,7 +277,8 @@ let hiddenDuringAttempt = false;
 
 /** Records a failed attempt. Returns true when the entry is now flagged for a human. */
 async function recordFailure(entry: QueuedJob, err: unknown, countAttempt: boolean): Promise<boolean> {
-  const attempts = (entry.attempts ?? 0) + (countAttempt ? 1 : 0);
+  // A 429 is the Worker asking us to slow down, not a failed attempt; the age bound still applies.
+  const attempts = (entry.attempts ?? 0) + (countAttempt && !isRateLimited(err) ? 1 : 0);
   const age = Date.now() - new Date(entry.queuedAt).getTime();
   const exhausted = isPermanentError(err) || attempts >= MAX_ATTEMPTS || age >= MAX_AGE_MS;
   await queueStore.put({ ...entry, attempts, needsAttention: exhausted || undefined });
@@ -284,6 +336,7 @@ export async function flushQueue(): Promise<void> {
       for (const entry of videosStalled ? [] : pending.filter((e) => e.stage === 'video')) {
         if (!entry.jobId || !entry.videoBlob) {
           await queueStore.delete(entry.queuedId); // nothing left to send
+          queueStore.deleteUpload(entry.queuedId);
           changed = true;
           continue;
         }
@@ -296,21 +349,43 @@ export async function flushQueue(): Promise<void> {
         const startedBy = owner;
         // Starting while hidden counts as hidden: no event will fire to set it.
         hiddenDuringAttempt = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+        const { queuedId, videoBlob } = entry;
+        const upload = queueStore.getUpload(queuedId);
+        let piecesSaved = upload?.parts?.length ?? 0;
+        // A run that moved the clip forward is not a failed attempt, so a slow link
+        // never burns the 5 attempts while it progresses (the 24h bound still holds).
+        let landedPiece = false;
+        // After a restart (save(null): gone, stale or foreign state) re-sent pieces are not
+        // progress, and the starting count came from state that turned out invalid, so stop counting.
+        let restarted = false;
+        // Only state submitVideo will resume from: stale state reads as "not known" until the first save.
+        setProgress(resumable(upload, videoBlob.size) ? upload : null, videoBlob.size);
+        const save = (u: VideoUpload | null) => {
+          if (!u) restarted = true;
+          else if (!restarted && u.parts.length > piecesSaved) landedPiece = true;
+          piecesSaved = u?.parts.length ?? 0;
+          if (u) queueStore.putUpload(queuedId, u);
+          else queueStore.deleteUpload(queuedId);
+          setProgress(u, videoBlob.size);
+        };
         try {
-          await submitVideo(entry.jobId, entry.videoBlob);
-          await queueStore.delete(entry.queuedId);
+          await submitVideo(entry.jobId, videoBlob, { upload, save });
+          await queueStore.delete(queuedId);
+          queueStore.deleteUpload(queuedId);
           changed = true;
         } catch (err) {
           changed = true;
           if (owner !== startedBy) break;
-          const counted = !hiddenDuringAttempt;
+          const counted = !hiddenDuringAttempt && !landedPiece;
           if (!(await recordFailure(entry, err, counted))) {
             // transient: a counted one is not retried by this call's reruns; an uncounted one cost nothing
-            if (counted) videosStalled = true;
+            // A 429 also waits for the next call: rerunning now spends another start token.
+            if (counted || isRateLimited(err)) videosStalled = true;
             break;
           }
         } finally {
           uploadingId = null;
+          uploadProgress = null;
           releaseWakeLock();
           // From the store, not the old snapshot: that one still lists the clip that just landed.
           await refreshQueue();

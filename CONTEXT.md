@@ -100,16 +100,17 @@ frontend talks to Supabase directly; there is no REST API of our own to
 maintain, and no application-layer permission checks to keep in sync with the
 database. A missing UI guard is a cosmetic bug, not a security hole.
 
-**The Worker exists only for the four things the browser cannot do safely:**
+**The Worker exists only for the things the browser cannot do safely:**
 
 | Endpoint | Why it can't be client-side |
 |---|---|
 | `POST /ocr` | Workers AI binding is server-only. |
 | `POST /upload` | R2 write credentials must not reach the client. |
+| `POST /video/start`, `/video/part`, `/video/complete`, `/video/abort` | Resumable condition-video upload (R2 multipart through the same binding, 8 MiB pieces). Same reason as `/upload`; each call re-checks `can_write_photo`. |
 | `GET /photo/:jobId/:kind` | Bucket is private; the Worker checks the caller may see the job, then streams the object. |
 | `POST /invite` | The only place the Supabase **service-role key** is used — gated on verifying the caller is an active admin first. |
 
-All four verify the caller's Supabase JWT. `/upload` and `/photo` go further and
+All of them verify the caller's Supabase JWT. `/upload`, `/video/*` and `/photo` go further and
 **forward the caller's own JWT to Supabase**, so R2 access inherits the same RLS
 policies as everything else rather than re-implementing them.
 
@@ -310,6 +311,45 @@ photos only. The condition video (up to 75MB) follows as its own queue entry
   counted either. Past
   5 attempts / 24 hours the worker sees "Video not uploaded" in My Jobs with
   Retry (fresh budget) and Discard (with confirmation).
+- The video is sent in 8 MiB pieces (`VIDEO_PART_BYTES`, mirrored in
+  `web/src/lib/video.ts` and `worker/src/upload.ts`), sequentially:
+  `/video/start` carries piece 1 (the Worker sniffs the type from it and opens an
+  R2 multipart upload at `video/{jobId}`), `/video/part` the rest,
+  `/video/complete` joins them. The phone keeps `{uploadId, partSize, etags}` in
+  localStorage under `video-upload:<queuedId>` (not on the IndexedDB entry,
+  which would rewrite the whole clip per piece), saved after every piece, so an
+  interrupted upload, even after the app was closed, resumes from the last
+  finished piece. A lost response just re-sends the same piece number. Each
+  piece gets up to 3 tries in a run (2 s / 6 s backoff) for transient errors and
+  a 180 s timeout (below ~0.37 Mbps up no piece can land: tune it there).
+- If R2 no longer has the upload (expired, or aborted), the Worker answers 410
+  and the video restarts from zero, once per run; a second 410 flags it. Saved
+  state from another piece size, with gaps, or with more pieces than the clip
+  is cleared (fresh start). A
+  failed state write only loses resume. The state is cleared when the clip
+  lands, when the entry has nothing left to send, and on Discard (which also
+  asks the Worker to abort the R2 upload, best effort).
+- A run that landed at least one new piece does not count as a failed attempt,
+  so a slow link that keeps progressing never burns the 5 attempts; the 24-hour
+  bound still applies. After a restart in a run (410, or cleared stale state)
+  no piece counts as progress for that run, so a failure still counts.
+- My Jobs and the header show the percentage (pieces landed / size).
+- A 404 from any `/video/*` call means the Worker predates `/video/*` (or was
+  rolled back after the phone saved state; web and Worker deploy in parallel
+  on push to main): the phone clears the saved state and falls back to the
+  single-request `/upload`, with a timeout of 180 s per piece the clip would
+  have had. Deploying the Worker first is recommended; the fallback makes
+  either order safe. Remove it once the Worker is everywhere.
+- `/video/complete` also has the 180 s timeout (it is idempotent on the
+  Worker), so a request a locked screen left hanging cannot stall the queue.
+- Worker side, details in SECURITY-NOTES §4: `/video/start` has its own
+  `VIDEO_START_LIMITER` (10/min per user, on top of `UPLOAD_LIMITER`) since
+  every start parks an R2 multipart upload (up to 80 MiB for up to 7 days if
+  never completed); `jobId` must be a canonical lowercase uuid (400 otherwise);
+  complete runs its head() idempotency check on any R2 error and only maps
+  known "gone" codes to 410 (anything else is a 500 the phone retries); abort
+  always answers 200. Which R2 codes appear when is an assumption until the
+  live check in SECURITY-NOTES §4.
 - No real background upload: iOS cannot do it for a web app. Keep the app open.
 
 This needed migration **0031** (`can_write_photo`): `can_write_job` only lets a
@@ -378,6 +418,7 @@ car-prep-tracker/
 │   ├── src/index.ts          # Hono app, CORS, JWKS auth
 │   ├── src/ocr.ts            # Workers AI + pure parseOcrAnswer()
 │   ├── src/upload.ts         # R2 write, RLS-checked
+│   ├── src/videoUpload.ts    # resumable video (R2 multipart), RLS-checked per call
 │   ├── src/photo.ts          # R2 read, RLS-checked
 │   ├── src/invite.ts         # the ONLY service-role usage
 │   └── wrangler.toml

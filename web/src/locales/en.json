@@ -113,10 +113,12 @@
     "badge_other": "{{count}} waiting",
     "offline": "No connection",
     "videoUploading": "Uploading video…",
+    "videoUploadingPercent": "Uploading video… {{percent}}%",
     "videoWaiting": "Video waiting for signal",
     "videoFailed": "Video not uploaded",
     "badgeVideoFailed": "Video failed",
     "badgeVideoUploading": "Sending video",
+    "badgeVideoUploadingPercent": "Sending video {{percent}}%",
     "badgeVideoWaiting": "Video waiting"
   },
   "newJob": {
@@ -222,6 +224,7 @@
     "needsAttention": "Needs attention",
     "needsAttentionHint": "Couldn't submit and won't retry automatically — ask your manager for help",
     "videoUploading": "Uploading video",
+    "videoUploadingPercent": "Uploading video {{percent}}%",
     "videoWaiting": "Video waiting for signal",
     "videoFailed": "Video not uploaded",
     "videoFailedHint": "The job is in, but its video didn't upload. The clip is only on this phone — try again, or discard it.",

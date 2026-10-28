@@ -17,7 +17,7 @@ import { buildWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
 import ExportLangSelect from '../components/ExportLangSelect';
 import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
-import { useQueuedJobs, useUploadingId } from '../lib/useQueue';
+import { useQueuedJobs, useUploadingId, useUploadProgress } from '../lib/useQueue';
 import { discardQueued, retryQueued } from '../lib/offlineQueue';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
@@ -234,6 +234,7 @@ export default function MyJobs() {
   const { appUser } = useAuth();
   const queued = useQueuedJobs();
   const uploadingId = useUploadingId();
+  const uploadPercent = useUploadProgress();
   const staff = useStaff();
   const { sites } = useSiteScope();
 
@@ -544,7 +545,9 @@ export default function MyJobs() {
                     <Badge tone="info" icon="sync">
                       {video
                         ? uploadingId === job.queuedId
-                          ? t('myJobs.videoUploading')
+                          ? uploadPercent
+                            ? t('myJobs.videoUploadingPercent', { percent: uploadPercent })
+                            : t('myJobs.videoUploading')
                           : t('myJobs.videoWaiting')
                         : t('queue.title')}
                     </Badge>

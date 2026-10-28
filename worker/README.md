@@ -1,6 +1,6 @@
 # car-prep-tracker-worker
 
-Cloudflare Worker: the only custom backend in the system. It does two things
+Cloudflare Worker: the only custom backend in the system. It does the things
 that the browser can't do safely on its own:
 
 1. **`/ocr`** — runs photo OCR on Cloudflare Workers AI (Moondream), so there is
@@ -10,6 +10,14 @@ that the browser can't do safely on its own:
    REST API and checking whether the same Row Level Security policies that
    gate the frontend would let them see that job. No service-role key is
    ever used here.
+3. **`/video/start`, `/video/part`, `/video/complete`, `/video/abort`** — the
+   condition video as a resumable R2 multipart upload in 8 MiB pieces
+   (`src/videoUpload.ts`). Every call re-checks `can_write_photo` for the video
+   slot; the key is always `video/{jobId}`, never chosen by the client; an
+   upload R2 no longer has answers 410 and the phone starts that video over.
+   `/video/start` is also capped by `VIDEO_START_LIMITER` (10/min per user,
+   `wrangler.toml`), since each start parks an R2 multipart upload. Error
+   semantics and the pending live R2 check: `SECURITY-NOTES.md` §4.
 
 All actual application data (jobs, users, services) lives in Supabase and is
 written directly from the frontend — this Worker never touches Postgres.

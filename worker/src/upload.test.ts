@@ -103,8 +103,11 @@ function stream(bytes: Uint8Array): ReadableStream<Uint8Array> {
   });
 }
 
+/* A canonical job id, as Postgres prints it. */
+const JOB = 'aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb';
+
 /** contentLength null = header absent. */
-function upload(kind: string, bytes: Uint8Array, contentLength: string | null = String(bytes.byteLength)) {
+function upload(kind: string, bytes: Uint8Array, contentLength: string | null = String(bytes.byteLength), jobId = JOB) {
   const stored: { key: string; bytes: number; contentType?: string }[] = [];
   const headers: Record<string, string | undefined> = { authorization: 'Bearer caller', 'content-length': contentLength ?? undefined };
   const ctx = {
@@ -122,7 +125,7 @@ function upload(kind: string, bytes: Uint8Array, contentLength: string | null = 
     },
     get: () => ({ sub: 'user-1' }),
     req: {
-      query: (k: string) => (k === 'jobId' ? 'job-1' : kind),
+      query: (k: string) => (k === 'jobId' ? jobId : kind),
       header: (k: string) => headers[k.toLowerCase()],
       raw: { body: stream(bytes) },
     },
@@ -159,14 +162,14 @@ describe('handleUpload', () => {
     const { run, stored } = upload('plate', bytesOf(1000, JPEG));
     const res = await run();
     expect(res.status).toBe(200);
-    expect(res.data.key).toBe('job-1/plate.jpg');
-    expect(stored).toEqual([{ key: 'job-1/plate.jpg', bytes: 1000, contentType: 'image/jpeg' }]);
+    expect(res.data.key).toBe(`${JOB}/plate.jpg`);
+    expect(stored).toEqual([{ key: `${JOB}/plate.jpg`, bytes: 1000, contentType: 'image/jpeg' }]);
   });
 
   it('streams a video', async () => {
     const { run, stored } = upload('video', bytesOf(1000, MP4));
     expect((await run()).status).toBe(200);
-    expect(stored[0]).toMatchObject({ key: 'video/job-1', contentType: 'video/mp4' });
+    expect(stored[0]).toMatchObject({ key: `video/${JOB}`, contentType: 'video/mp4' });
   });
 
   it('refuses an oversize video on its declared length, naming the real limit', async () => {
@@ -190,10 +193,14 @@ describe('handleUpload', () => {
     expect(stored).toEqual([]);
   });
 
-  it('buffers a body that has no Content-Length instead of failing it', async () => {
-    const { run, stored } = upload('plate', bytesOf(64, JPEG), null);
+  /* readCapped joins the two-chunk stream into one buffer; every byte must reach R2. */
+  it.each([
+    ['plate', JPEG, 'image/jpeg'],
+    ['video', MP4, 'video/mp4'],
+  ])('buffers a %s body that has no Content-Length instead of failing it', async (kind, head, contentType) => {
+    const { run, stored } = upload(kind, bytesOf(1000, head), null);
     expect((await run()).status).toBe(200);
-    expect(stored).toHaveLength(1);
+    expect(stored).toEqual([{ key: objectKey(JOB, kind as 'plate' | 'video'), bytes: 1000, contentType }]);
   });
 
   it('still enforces the size limit when there is no Content-Length', async () => {
@@ -227,7 +234,7 @@ describe('handleUpload', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://sb.test/rest/v1/rpc/can_write_photo');
-    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: 'job-1', p_kind: 'video' });
+    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: JOB, p_kind: 'video' });
   });
 
   /* A photo slot must name its kind too: without p_kind PostgREST finds no one-argument can_write_photo. */
@@ -236,7 +243,7 @@ describe('handleUpload', () => {
     vi.stubGlobal('fetch', fetchSpy);
     await upload('plate', bytesOf(1000, JPEG)).run();
     const [, init] = fetchSpy.mock.calls[0];
-    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: 'job-1', p_kind: 'plate' });
+    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: JOB, p_kind: 'plate' });
   });
 
   it('refuses the write when Postgres says no', async () => {
@@ -245,6 +252,19 @@ describe('handleUpload', () => {
     expect((await run()).status).toBe(403);
     expect(stored).toEqual([]);
   });
+
+  /* Postgres takes these spellings as the same row, but they would name a different R2 key. */
+  it.each([JOB.toUpperCase(), `{${JOB}}`, JOB.replaceAll('-', ''), 'job-1'])(
+    'refuses a non-canonical jobId %j with 400, before Postgres or R2',
+    async (jobId) => {
+      const fetchSpy = vi.fn(async () => Response.json(true));
+      vi.stubGlobal('fetch', fetchSpy);
+      const { run, stored } = upload('plate', bytesOf(64, JPEG), '64', jobId);
+      expect((await run()).status).toBe(400);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(stored).toEqual([]);
+    },
+  );
 
   it('checks the length before asking Postgres', async () => {
     const fetchSpy = vi.fn(async () => Response.json(true));

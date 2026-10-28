@@ -6,6 +6,7 @@ import { jwk } from 'hono/jwk';
 import type { JwtVariables } from 'hono/jwt';
 import { handleOcr } from './ocr';
 import { handleUpload } from './upload';
+import { handleVideoAbort, handleVideoComplete, handleVideoPart, handleVideoStart } from './videoUpload';
 import { handleGetPhoto } from './photo';
 import { handleInvite } from './invite';
 import { handleUserActive } from './userActive';
@@ -20,6 +21,8 @@ export interface Env {
   // Per-user rate limits keyed on the JWT `sub`; sizing is in wrangler.toml.
   OCR_LIMITER: RateLimiter;
   UPLOAD_LIMITER: RateLimiter;
+  // /video/start only, in addition to UPLOAD_LIMITER: each start parks R2 storage.
+  VIDEO_START_LIMITER: RateLimiter;
   // Workers AI binding (OCR), typed minimally.
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
   SUPABASE_URL: string;
@@ -65,12 +68,17 @@ const requireAuth = (c: Context<{ Bindings: Env; Variables: Variables }>, next: 
   })(c, next);
 app.use('/ocr', requireAuth);
 app.use('/upload', requireAuth);
+app.use('/video/*', requireAuth);
 app.use('/photo/*', requireAuth);
 app.use('/invite', requireAuth);
 app.use('/user-active', requireAuth);
 
 app.post('/ocr', handleOcr);
 app.post('/upload', handleUpload);
+app.post('/video/start', handleVideoStart);
+app.post('/video/part', handleVideoPart);
+app.post('/video/complete', handleVideoComplete);
+app.post('/video/abort', handleVideoAbort);
 app.get('/photo/:jobId/:kind', handleGetPhoto);
 app.post('/invite', handleInvite);
 app.post('/user-active', handleUserActive);

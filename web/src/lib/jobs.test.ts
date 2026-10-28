@@ -64,13 +64,43 @@ vi.mock('./supabase', () => {
   };
 });
 
+/* The resumable video calls. Each logs what it was sent; tests override with mockImplementationOnce/mockRejectedValueOnce. */
+const w = vi.hoisted(() => {
+  class HttpError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  }
+  return {
+    HttpError,
+    calls: [] as string[],
+    /* The timeout each uploadPhoto call was given (photos: none). */
+    photoTimeouts: [] as unknown[],
+    start: vi.fn(),
+    part: vi.fn(),
+    complete: vi.fn(),
+  };
+});
+const piece = async (b: Blob) => await b.text();
+
 vi.mock('./workerApi', () => ({
-  uploadPhoto: (jobId: string, kind: string) => {
+  HttpError: w.HttpError,
+  PIECE_TIMEOUT_MS: 1000,
+  uploadPhoto: (jobId: string, kind: string, _blob: Blob, timeoutMs?: number) => {
     if (uploadFails) return Promise.reject(new Error('offline'));
     uploads.push(kind);
+    w.photoTimeouts.push(timeoutMs);
     return Promise.resolve(`${jobId}/${kind}.jpg`);
   },
+  startVideoUpload: w.start,
+  uploadVideoPart: w.part,
+  completeVideoUpload: w.complete,
 }));
+
+/* 4-byte pieces, so a 10-byte "video" is three pieces: '0123' '4567' '89'. */
+vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 4 }));
 
 const { submitJob, submitVideo, applyJobFilters, shareFor, findPreviousJob } = await import('./jobs');
 import type { NewJobPayload } from './jobs';
@@ -102,6 +132,20 @@ beforeEach(() => {
   existingVideoRows = [];
   selectEqs.length = 0;
   upsertCalls = 0;
+  w.calls.length = 0;
+  w.photoTimeouts.length = 0;
+  w.start.mockReset().mockImplementation(async (_jobId: string, b: Blob) => {
+    w.calls.push(`start:${await piece(b)}`);
+    return { uploadId: 'up-1', etag: 'e1' };
+  });
+  w.part.mockReset().mockImplementation(async (_jobId: string, uploadId: string, n: number, b: Blob) => {
+    w.calls.push(`part${n}@${uploadId}:${await piece(b)}`);
+    return { etag: `e${n}` };
+  });
+  w.complete.mockReset().mockImplementation(async (jobId: string, uploadId: string, parts: unknown[]) => {
+    w.calls.push(`complete@${uploadId}:${parts.length}`);
+    return { key: `video/${jobId}` };
+  });
 });
 
 /*
@@ -109,7 +153,7 @@ beforeEach(() => {
  * photos are in, and the clip follows from its own queue entry (offlineQueue).
  */
 describe('submitJob / submitVideo — the video follows the job', () => {
-  const video = () => new Blob(['v'], { type: 'video/mp4' });
+  const video = () => new Blob(['0123456789'], { type: 'video/mp4' });
 
   it('submitJob uploads no video and writes no video row, even when the payload has one', async () => {
     await submitJob({ ...payload(), videoBlob: video() });
@@ -117,13 +161,163 @@ describe('submitJob / submitVideo — the video follows the job', () => {
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).not.toContain('video');
   });
 
-  it('submitVideo uploads, then records the row once', async () => {
-    await submitVideo('job-9', video());
+  it('submitVideo sends it in pieces (start, parts, complete), then records the row once', async () => {
+    const saved: unknown[] = [];
+    await submitVideo('job-9', video(), { save: (u) => void saved.push(structuredClone(u)) });
     expect(selectEqs).toEqual([
       ['job_id', 'job-9'],
       ['kind', 'video'],
     ]);
+    // Each piece is exactly its byte range.
+    expect(w.calls).toEqual(['start:0123', 'part2@up-1:4567', 'part3@up-1:89', 'complete@up-1:3']);
+    expect(w.complete).toHaveBeenCalledWith('job-9', 'up-1', [
+      { partNumber: 1, etag: 'e1' },
+      { partNumber: 2, etag: 'e2' },
+      { partNumber: 3, etag: 'e3' },
+    ]);
+    // Saved after every piece, so a cut-off run resumes from the last one.
+    expect(saved.map((u) => (u as { parts: unknown[] }).parts.length)).toEqual([1, 2, 3]);
+    expect(saved[0]).toEqual({ uploadId: 'up-1', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] });
+    expect(uploads).toEqual([]);
+    expect(upsertCalls).toBe(1);
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'video/job-9' }]);
+  });
+
+  it('resumes: sends only the pieces that had not landed', async () => {
+    const upload = { uploadId: 'up-old', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }, { partNumber: 2, etag: 'e2' }] };
+    await submitVideo('job-9', video(), { upload });
+    expect(w.calls).toEqual(['part3@up-old:89', 'complete@up-old:3']);
+  });
+
+  /* Every piece landed but the row write failed last time: just complete again (idempotent on the Worker). */
+  it('resumes with every piece in by going straight to complete', async () => {
+    const parts = [1, 2, 3].map((n) => ({ partNumber: n, etag: `e${n}` }));
+    await submitVideo('job-9', video(), { upload: { uploadId: 'up-old', partSize: 4, parts } });
+    expect(w.calls).toEqual(['complete@up-old:3']);
+    expect(insertedPhotos).toHaveLength(1);
+  });
+
+  /* Cleared first (save(null)), so the queue's progress and attempt rule never read the stale state. */
+  it.each([
+    ['another piece size', { uploadId: 'up-old', partSize: 8, parts: [{ partNumber: 1, etag: 'x' }] }],
+    ['a gap', { uploadId: 'up-old', partSize: 4, parts: [{ partNumber: 2, etag: 'x' }] }],
+    ['more parts than the clip has', { uploadId: 'up-old', partSize: 4, parts: [1, 2, 3, 4].map((n) => ({ partNumber: n, etag: 'x' })) }],
+  ])('starts over, clearing the saved state first, when it has %s', async (_why, upload) => {
+    const saved: unknown[] = [];
+    await submitVideo('job-9', video(), { upload, save: (u) => void saved.push(u) });
+    expect(saved[0]).toBeNull();
+    expect(w.calls).toEqual(['start:0123', 'part2@up-1:4567', 'part3@up-1:89', 'complete@up-1:3']);
+  });
+
+  it('a valid saved state is not cleared', async () => {
+    const saved: unknown[] = [];
+    const upload = { uploadId: 'up-old', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] };
+    await submitVideo('job-9', video(), { upload, save: (u) => void saved.push(u) });
+    expect(saved).not.toContain(null);
+  });
+
+  it('a clip that is an exact multiple of the piece size has no empty last piece', async () => {
+    await submitVideo('job-9', new Blob(['01234567']));
+    expect(w.calls).toEqual(['start:0123', 'part2@up-1:4567', 'complete@up-1:2']);
+  });
+
+  it.each(['012', '0123'])('a clip of one piece or less (%j) is start then complete', async (bytes) => {
+    await submitVideo('job-9', new Blob([bytes]));
+    expect(w.calls).toEqual([`start:${bytes}`, 'complete@up-1:1']);
+    expect(w.part).not.toHaveBeenCalled();
+  });
+
+  /* The piece landed but its response was lost (a later failure ends the run): the next run re-sends that same piece. */
+  it('a lost response re-sends the same piece number', async () => {
+    let state: unknown = null;
+    const save = (u: unknown) => void (state = structuredClone(u));
+    w.part.mockRejectedValueOnce(new w.HttpError(403, 'lost')); // permanent here only so the run ends without backoff
+    await expect(submitVideo('job-9', video(), { save })).rejects.toThrow();
+    expect((state as { parts: unknown[] }).parts).toHaveLength(1);
+
+    w.calls.length = 0;
+    await submitVideo('job-9', video(), { upload: state as never, save });
+    expect(w.calls).toEqual(['part2@up-1:4567', 'part3@up-1:89', 'complete@up-1:3']);
+  });
+
+  it('retries a transient piece failure within the run', async () => {
+    vi.useFakeTimers();
+    try {
+      w.part.mockRejectedValueOnce(new TypeError('network')).mockRejectedValueOnce(new TypeError('network'));
+      const run = submitVideo('job-9', video());
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(6_000);
+      await run;
+      expect(w.part).toHaveBeenCalledTimes(4); // part 2 three times, part 3 once
+      expect(w.calls).toEqual(['start:0123', 'part2@up-1:4567', 'part3@up-1:89', 'complete@up-1:3']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on a piece after three tries', async () => {
+    vi.useFakeTimers();
+    try {
+      w.part.mockRejectedValue(new TypeError('network'));
+      const run = expect(submitVideo('job-9', video())).rejects.toBeInstanceOf(TypeError);
+      await vi.advanceTimersByTimeAsync(8_000);
+      await run;
+      expect(w.part).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /* The start limiter's window is 60 s; the 2 s / 6 s backoffs would only spend more start tokens. */
+  it.each(['start', 'part', 'complete'] as const)('a 429 from %s is not retried within the run', async (step) => {
+    w[step].mockRejectedValueOnce(new w.HttpError(429, 'rate_limited'));
+    await expect(submitVideo('job-9', video())).rejects.toMatchObject({ status: 429 });
+    expect(w[step]).toHaveBeenCalledTimes(1);
+    expect(insertedPhotos).toEqual([]);
+  });
+
+  /* R2 dropped the upload (expired after days in the queue): start that video over, once. */
+  it('restarts from zero once when the upload is gone (410)', async () => {
+    const saved: unknown[] = [];
+    const upload = { uploadId: 'up-old', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] };
+    w.part.mockRejectedValueOnce(new w.HttpError(410, 'gone'));
+    await submitVideo('job-9', video(), { upload, save: (u) => void saved.push(u) });
+    expect(w.part).toHaveBeenCalledTimes(3); // no in-run retry of a 410
+    expect(w.calls).toEqual(['start:0123', 'part2@up-1:4567', 'part3@up-1:89', 'complete@up-1:3']);
+    expect(saved[0]).toBeNull();
+    expect(insertedPhotos).toHaveLength(1);
+  });
+
+  it('a second 410 in the same run is thrown, not looped on', async () => {
+    w.part.mockRejectedValue(new w.HttpError(410, 'gone'));
+    await expect(submitVideo('job-9', video())).rejects.toMatchObject({ status: 410 });
+    expect(w.start).toHaveBeenCalledTimes(2);
+    expect(insertedPhotos).toEqual([]);
+  });
+
+  /* The web app deployed before the Worker had /video/*: send it the old way. */
+  it('falls back to the single-request upload when start answers 404', async () => {
+    w.start.mockRejectedValueOnce(new w.HttpError(404, 'Not Found'));
+    await submitVideo('job-9', video());
     expect(uploads).toEqual(['video']);
+    expect(w.part).not.toHaveBeenCalled();
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'job-9/video.jpg' }]);
+    // A bounded single request: as long as its 3 pieces would have had.
+    expect(w.photoTimeouts).toEqual([3000]);
+  });
+
+  /* The Worker was rolled back after this clip's state was saved: not permanent, send it the old way. */
+  it.each([
+    ['part', () => w.part.mockRejectedValueOnce(new w.HttpError(404, 'Not Found'))],
+    ['complete', () => w.complete.mockRejectedValueOnce(new w.HttpError(404, 'Not Found'))],
+  ])('a 404 from %s clears the state and falls back to the single-request upload', async (_route, fail) => {
+    fail();
+    const saved: unknown[] = [];
+    const upload = { uploadId: 'up-old', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] };
+    await submitVideo('job-9', video(), { upload, save: (u) => void saved.push(u) });
+    expect(saved.at(-1)).toBeNull();
+    expect(uploads).toEqual(['video']);
+    expect(w.start).not.toHaveBeenCalled();
     expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'job-9/video.jpg' }]);
   });
 
@@ -131,8 +325,9 @@ describe('submitJob / submitVideo — the video follows the job', () => {
      deleted) must not send 75MB again. */
   it('skips the upload when the video row already exists', async () => {
     existingVideoRows = [{ id: 'p-1' }];
-    await submitVideo('job-9', video());
+    await submitVideo('job-9', video(), { upload: { uploadId: 'up-1', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] } });
     expect(uploads).toEqual([]);
+    expect(w.calls).toEqual([]);
     expect(insertedPhotos).toEqual([]);
   });
 
@@ -145,7 +340,7 @@ describe('submitJob / submitVideo — the video follows the job', () => {
   });
 
   it('writes no row when the upload fails', async () => {
-    uploadFails = true;
+    w.complete.mockRejectedValueOnce(new w.HttpError(403, 'Forbidden'));
     await expect(submitVideo('job-9', video())).rejects.toThrow();
     expect(insertedPhotos).toEqual([]);
   });

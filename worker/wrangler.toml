@@ -49,6 +49,24 @@ namespace_id = "1002"
   limit = 150
   period = 60
 
+# /video/start only, on top of UPLOAD_LIMITER. Each start opens an R2 multipart
+# upload that parks up to 80 MiB for up to 7 days if never completed, so starts
+# need a far tighter bound than pieces. A legitimate phone starts once per clip
+# (twice after a 410 restart); 10/min covers a backlog of clips flushing in a
+# row while capping how much storage one account can park. Real ceiling:
+# 10/min x 80 MiB = ~800 MiB/min of incomplete uploads per account (~1 TiB/day),
+# soft because counters are per location and eventually consistent. Open to a
+# worker with an own job < 7 days old and no video row, and to any manager/admin.
+# Incomplete uploads expire after 7 days (assumption until the lifecycle check in
+# SECURITY-NOTES §4). namespace_id must not be used by any other Worker on the account.
+[[ratelimits]]
+name = "VIDEO_START_LIMITER"
+namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60
+
 # R2 bucket used for job photos. Create with:
 #   wrangler r2 bucket create car-prep-photos
 [[r2_buckets]]

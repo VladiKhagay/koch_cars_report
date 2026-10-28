@@ -33,7 +33,7 @@ const image = vi.hoisted(() => ({
 }));
 vi.mock('./image', () => image);
 
-const { fetchPhotoUrl, ocrPhoto } = await import('./workerApi');
+const { fetchPhotoUrl, ocrPhoto, completeVideoUpload, uploadPhoto, HttpError, PIECE_TIMEOUT_MS } = await import('./workerApi');
 
 afterEach(() => {
   session = { access_token: 'jwt' };
@@ -218,5 +218,140 @@ describe('ocrPhoto', () => {
     ocrServer({ box: { x0: 0.4, y0: 0.5, x1: 0.7, y1: 0.6 }, reads: [{ text: '81707504', reason: null }] });
     await expect(ocrPhoto(photo, 'plate')).resolves.toEqual({ text: '81707504', reason: null });
     expect(image.cropToBox).toHaveBeenCalled();
+  });
+});
+
+
+/* ---------------------------------------------------------- video complete */
+
+/*
+ * A locked screen can leave /video/complete hanging forever, and with it the
+ * queue's whole flush. Complete is idempotent on the Worker (head() check), so
+ * aborting and retrying it is safe.
+ */
+describe('completeVideoUpload', () => {
+  const parts = [{ partNumber: 1, etag: 'e1' }];
+
+  afterEach(() => vi.useRealTimers());
+
+  it('aborts a hanging request after the timeout, as a transient (non-HTTP) failure', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+      ),
+    );
+    const run = completeVideoUpload('job-1', 'up-1', parts);
+    const settled = run.then(
+      () => 'resolved',
+      (err: unknown) => err,
+    );
+    await vi.advanceTimersByTimeAsync(PIECE_TIMEOUT_MS - 1);
+    expect(vi.getTimerCount()).toBe(1); // still waiting
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await settled;
+    expect(err).toBeInstanceOf(DOMException);
+    expect(err).not.toBeInstanceOf(HttpError);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears its timer on success', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ key: 'video/job-1' }) })));
+    await expect(completeVideoUpload('job-1', 'up-1', parts)).resolves.toEqual({ key: 'video/job-1' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears its timer on an HTTP failure', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 410, json: async () => ({}) })));
+    await expect(completeVideoUpload('job-1', 'up-1', parts)).rejects.toMatchObject({ status: 410 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears its timer on a network failure', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('offline'))));
+    await expect(completeVideoUpload('job-1', 'up-1', parts)).rejects.toBeInstanceOf(TypeError);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('encodes the ids it puts in the URL', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true, status: 200, json: async () => ({ key: 'k' }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    await completeVideoUpload('a b&c=d/e', 'u/p=1&x y', parts);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toContain('/video/complete?jobId=a%20b%26c%3Dd%2Fe&uploadId=u%2Fp%3D1%26x%20y');
+    expect(JSON.parse(init.body as string)).toEqual({ parts });
+  });
+});
+
+/* A piece a locked screen left hanging must reject as transient, or the run never ends (AC-2/AC-8). */
+describe('startVideoUpload / uploadVideoPart timeout', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ['start', () => import('./workerApi').then((m) => m.startVideoUpload('job-1', new Blob(['x'])))],
+    ['part', () => import('./workerApi').then((m) => m.uploadVideoPart('job-1', 'up-1', 2, new Blob(['x'])))],
+  ])('%s aborts a hanging request after PIECE_TIMEOUT_MS as a non-HTTP failure', async (_name, send) => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+      ),
+    );
+    const settled = send().then(
+      () => 'resolved',
+      (err: unknown) => err,
+    );
+    await vi.advanceTimersByTimeAsync(PIECE_TIMEOUT_MS - 1);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await settled;
+    expect(err).toBeInstanceOf(DOMException);
+    expect(err).not.toBeInstanceOf(HttpError);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+/* Only the video's 404 fallback passes a timeout; photo uploads must stay exactly as they were. */
+describe('uploadPhoto timeout', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('a photo upload has no signal and no timer', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true, status: 200, json: async () => ({ key: 'k' }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const run = uploadPhoto('job-1', 'plate', new Blob(['x']));
+    expect(vi.getTimerCount()).toBe(0);
+    await run;
+    expect(fetchSpy.mock.calls[0][1].signal).toBeUndefined();
+  });
+
+  it('with a timeout, a hanging upload rejects as a non-HTTP failure and leaves no timer', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+      ),
+    );
+    const settled = uploadPhoto('job-1', 'video', new Blob(['x']), 5_000).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await settled;
+    expect(err).toBeInstanceOf(DOMException);
+    expect(err).not.toBeInstanceOf(HttpError);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -117,10 +117,12 @@
     "badge_other": "{{count}} ממתינות",
     "offline": "אין חיבור",
     "videoUploading": "מעלה סרטון…",
+    "videoUploadingPercent": "מעלה סרטון… {{percent}}%",
     "videoWaiting": "הסרטון ממתין לקליטה",
     "videoFailed": "הסרטון לא הועלה",
     "badgeVideoFailed": "הסרטון נכשל",
     "badgeVideoUploading": "שולח סרטון",
+    "badgeVideoUploadingPercent": "שולח סרטון {{percent}}%",
     "badgeVideoWaiting": "סרטון ממתין"
   },
   "newJob": {
@@ -229,6 +231,7 @@
     "needsAttention": "נדרש טיפול",
     "needsAttentionHint": "השליחה נכשלה ולא תתבצע שוב באופן אוטומטי — פנו למנהל",
     "videoUploading": "מעלה סרטון",
+    "videoUploadingPercent": "מעלה סרטון {{percent}}%",
     "videoWaiting": "הסרטון ממתין לקליטה",
     "videoFailed": "הסרטון לא הועלה",
     "videoFailedHint": "העבודה נשלחה, אבל הסרטון לא הועלה. הסרטון נמצא רק בטלפון הזה — נסו שוב או מחקו אותו.",

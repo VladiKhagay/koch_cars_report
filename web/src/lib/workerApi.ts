@@ -204,14 +204,83 @@ export class HttpError extends Error {
   }
 }
 
-export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob): Promise<string> {
-  const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
-    method: 'POST',
-    // Informational only: the Worker decides the type from the bytes.
-    headers: { 'Content-Type': image.type || 'application/octet-stream', Authorization: await authHeader() },
-    body: image,
-  });
-  if (!res.ok) throw new HttpError(res.status, `Photo upload failed (${res.status})`);
-  const data = (await res.json()) as { key: string };
-  return data.key;
+/** `timeoutMs` is only passed by the video fallback in jobs.ts; photo uploads keep no timeout. */
+export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob, timeoutMs?: number): Promise<string> {
+  // Not AbortSignal.timeout: it is missing before iOS 16.
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  try {
+    const res = await fetch(`${BASE_URL}/upload?jobId=${encodeURIComponent(jobId)}&kind=${kind}`, {
+      method: 'POST',
+      // Informational only: the Worker decides the type from the bytes.
+      headers: { 'Content-Type': image.type || 'application/octet-stream', Authorization: await authHeader() },
+      body: image,
+      signal: controller?.signal,
+    });
+    if (!res.ok) throw new HttpError(res.status, `Photo upload failed (${res.status})`);
+    const data = (await res.json()) as { key: string };
+    return data.key;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * ponytail: one 8 MiB piece must land within this, so the floor is ~0.37 Mbps up;
+ * below that no piece can ever land. Raise it (or shrink the piece) if yards are that slow.
+ * It exists so a request a locked screen left hanging rejects as transient instead of never.
+ */
+export const PIECE_TIMEOUT_MS = 180_000;
+
+/** POSTs to a /video/* route; a non-2xx throws HttpError (410 = the upload is gone, start over). */
+async function videoCall<T>(path: string, body: BodyInit, contentType: string, timeoutMs?: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  try {
+    const res = await fetch(`${BASE_URL}/video/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType, Authorization: await authHeader() },
+      body,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new HttpError(res.status, `Video ${path.split('?')[0]} failed (${res.status})`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const videoQuery = (jobId: string, uploadId?: string) =>
+  `jobId=${encodeURIComponent(jobId)}${uploadId === undefined ? '' : `&uploadId=${encodeURIComponent(uploadId)}`}`;
+
+/** Opens a resumable video upload with its first piece (the Worker sniffs the type from it). */
+export function startVideoUpload(jobId: string, firstPiece: Blob): Promise<{ uploadId: string; etag: string }> {
+  return videoCall(`start?${videoQuery(jobId)}`, firstPiece, 'application/octet-stream', PIECE_TIMEOUT_MS);
+}
+
+/** Piece n (2..10). Re-sending the same piece under the same number is safe. */
+export function uploadVideoPart(jobId: string, uploadId: string, partNumber: number, piece: Blob): Promise<{ etag: string }> {
+  return videoCall(
+    `part?${videoQuery(jobId, uploadId)}&partNumber=${partNumber}`,
+    piece,
+    'application/octet-stream',
+    PIECE_TIMEOUT_MS,
+  );
+}
+
+/**
+ * Joins the pieces into video/{jobId}. Idempotent on the Worker (head() check), so
+ * a lost response, or one the timeout aborted, can be retried.
+ */
+export function completeVideoUpload(
+  jobId: string,
+  uploadId: string,
+  parts: { partNumber: number; etag: string }[],
+): Promise<{ key: string }> {
+  return videoCall(`complete?${videoQuery(jobId, uploadId)}`, JSON.stringify({ parts }), 'application/json', PIECE_TIMEOUT_MS);
+}
+
+/** Drops an upload the worker gave up on. */
+export async function abortVideoUpload(jobId: string, uploadId: string): Promise<void> {
+  await videoCall(`abort?${videoQuery(jobId, uploadId)}`, '', 'application/octet-stream');
 }

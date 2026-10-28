@@ -13,6 +13,9 @@ export const VIDEO_BITRATE = 4_000_000;
 /** Must match MAX_VIDEO_BYTES in worker/src/upload.ts. Refusing on the phone keeps a certain 413 out of the retry queue. */
 export const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
 
+/** Must match VIDEO_PART_BYTES in worker/src/upload.ts. One resumable piece: an interrupted upload loses at most this much. */
+export const VIDEO_PART_BYTES = 8 * 1024 * 1024;
+
 /** MP4 first (plays everywhere); WebM is the fallback for Androids whose Chrome can only record that. */
 const PREFERRED_TYPES = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
 

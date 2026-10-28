@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueuedJob } from './offlineQueue';
-import type { NewJobPayload } from './jobs';
+import type { NewJobPayload, VideoUpload } from './jobs';
 
 /*
  * The video now follows its job as its own queue entry. What must hold, on a
@@ -13,8 +13,14 @@ import type { NewJobPayload } from './jobs';
  */
 
 vi.mock('./supabase', () => ({ supabase: {} }));
+/* The resume state below uses 10-byte pieces; jobs' validity check must agree. */
+vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 10 }));
 
-const mocks = vi.hoisted(() => ({ submitJob: vi.fn(), submitVideo: vi.fn() }));
+const mocks = vi.hoisted(() => ({ submitJob: vi.fn(), submitVideo: vi.fn(), abortVideoUpload: vi.fn() }));
+vi.mock('./workerApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./workerApi')>()),
+  abortVideoUpload: mocks.abortVideoUpload,
+}));
 vi.mock('./jobs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./jobs')>()),
   submitJob: mocks.submitJob,
@@ -32,6 +38,9 @@ let docListeners: Record<string, () => void>;
 const doc = { visibilityState: 'visible' as DocumentVisibilityState };
 
 const blob = (s = 'x') => new Blob([s]);
+/* What the queue hands submitVideo besides the clip: where it got to, and how to record progress. */
+const withResume = expect.objectContaining({ save: expect.any(Function) });
+let uploadsDb: Map<string, VideoUpload>;
 const video = blob('video');
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
@@ -81,6 +90,11 @@ beforeEach(async () => {
   q.queueStore.getAll = async () => [...db.values()].map((e) => structuredClone(e));
   q.queueStore.put = async (e) => db.set(e.queuedId, structuredClone(e));
   q.queueStore.delete = async (id) => db.delete(id);
+  uploadsDb = new Map();
+  q.queueStore.getUpload = (id) => structuredClone(uploadsDb.get(id) ?? null);
+  q.queueStore.putUpload = (id, u) => void uploadsDb.set(id, structuredClone(u));
+  q.queueStore.deleteUpload = (id) => void uploadsDb.delete(id);
+  mocks.abortVideoUpload.mockReset().mockResolvedValue(undefined);
   q.setQueueOwner('w1');
   await q.flushQueue(); // let setQueueOwner's own flush finish on the empty store
 });
@@ -107,7 +121,7 @@ describe('handoff: a landed job becomes its video entry', () => {
       attempts: 0,
     });
     expect(duringUpload[0].videoBlob).toBeInstanceOf(Blob);
-    expect(mocks.submitVideo).toHaveBeenCalledWith('job-1', expect.any(Blob));
+    expect(mocks.submitVideo).toHaveBeenCalledWith('job-1', expect.any(Blob), withResume);
     expect(stored()).toEqual([]);
   });
 
@@ -152,7 +166,7 @@ describe('handoff: a landed job becomes its video entry', () => {
     seed(base({ jobId: 'job-7', videoBlob: video }));
     await q.flushQueue();
     expect(mocks.submitJob).toHaveBeenCalledTimes(1);
-    expect(mocks.submitVideo).toHaveBeenCalledWith('job-7', expect.any(Blob));
+    expect(mocks.submitVideo).toHaveBeenCalledWith('job-7', expect.any(Blob), withResume);
     expect(stored()).toEqual([]);
   });
 
@@ -191,7 +205,7 @@ describe('a video never blocks a job', () => {
     mocks.submitJob.mockResolvedValueOnce('job-1').mockRejectedValue(new TypeError('network'));
     await q.flushQueue();
     expect(mocks.submitJob).toHaveBeenCalledTimes(2);
-    expect(mocks.submitVideo).toHaveBeenCalledWith('job-1', expect.any(Blob));
+    expect(mocks.submitVideo).toHaveBeenCalledWith('job-1', expect.any(Blob), withResume);
     expect(stored()).toHaveLength(1);
     expect(stored()[0]).toMatchObject({ attempts: 1 });
   });
@@ -234,6 +248,38 @@ describe('video failures', () => {
     mocks.submitVideo.mockRejectedValue(new TypeError('network'));
     await q.flushQueue();
     expect(stored()[0].needsAttention).toBe(true);
+  });
+
+  /* 429: the Worker asking us to slow down. Not a failed attempt, and not retried by this call's reruns. */
+  it('a 429 does not count an attempt, for a video or a job', async () => {
+    const v = videoEntry({ attempts: 4 });
+    const j = base({ attempts: 4 });
+    seed(v, j);
+    mocks.submitJob.mockRejectedValue(new HttpError(429, 'rate_limited'));
+    mocks.submitVideo.mockRejectedValue(new HttpError(429, 'rate_limited'));
+    await q.flushQueue();
+    expect(db.get(v.queuedId)).toMatchObject({ attempts: 4 });
+    expect(db.get(j.queuedId)).toMatchObject({ attempts: 4 });
+    expect(stored().every((e) => !e.needsAttention)).toBe(true);
+  });
+
+  it('a 429 past 24 hours still flags it', async () => {
+    seed(videoEntry({ queuedAt: hoursAgo(25) }));
+    mocks.submitVideo.mockRejectedValue(new HttpError(429, 'rate_limited'));
+    await q.flushQueue();
+    expect(stored()[0].needsAttention).toBe(true);
+  });
+
+  /* Even after landing a piece (an uncounted failure, which otherwise may rerun at once). */
+  it('a 429 video is not rerun by the same call', async () => {
+    seed(videoEntry());
+    mocks.submitVideo.mockImplementation(async (_j: string, _b: Blob, { save }: { save: (u: VideoUpload) => void }) => {
+      save({ uploadId: 'up-1', partSize: 10, parts: [{ partNumber: 1, etag: 'e1' }] });
+      void q.flushQueue(); // mid-run call: asks the run to go round again
+      throw new HttpError(429, 'rate_limited');
+    });
+    await q.flushQueue();
+    expect(mocks.submitVideo).toHaveBeenCalledTimes(1);
   });
 
   /* The screen locked mid-upload: not the upload's fault, so it must not use up the 5 attempts.
@@ -392,7 +438,7 @@ describe('queue mechanics', () => {
 
     release();
     await run;
-    expect(mocks.submitVideo).toHaveBeenCalledWith('job-2', expect.any(Blob));
+    expect(mocks.submitVideo).toHaveBeenCalledWith('job-2', expect.any(Blob), withResume);
     expect(stored()).toEqual([]);
   });
 
@@ -538,5 +584,196 @@ describe('foreground', () => {
     await Promise.resolve();
     expect(mocks.submitVideo).not.toHaveBeenCalled();
     stop();
+  });
+});
+
+describe('resumable video', () => {
+  /* Pieces of 10 bytes against a 100-byte clip: 1 piece = 10%. */
+  const state = (n: number): VideoUpload => ({
+    uploadId: 'up-1',
+    partSize: 10,
+    parts: Array.from({ length: n }, (_, i) => ({ partNumber: i + 1, etag: `e${i + 1}` })),
+  });
+  const clip = new Blob(['x'.repeat(100)]);
+  type Opts = { upload: VideoUpload | null; save: (u: VideoUpload | null) => void };
+
+  it('saves the state after every piece, and clears it once the clip lands', async () => {
+    const entry = videoEntry({ videoBlob: clip });
+    seed(entry);
+    const seen: (VideoUpload | undefined)[] = [];
+    mocks.submitVideo.mockImplementation(async (_j: string, _b: Blob, { save }: Opts) => {
+      for (const n of [1, 2, 3]) {
+        save(state(n));
+        seen.push(uploadsDb.get(entry.queuedId));
+      }
+    });
+    await q.flushQueue();
+    expect(seen.map((u) => u?.parts.length)).toEqual([1, 2, 3]);
+    expect(uploadsDb.size).toBe(0);
+    expect(stored()).toEqual([]);
+  });
+
+  it('keeps the state through a failure and hands it to the next run', async () => {
+    const entry = videoEntry({ videoBlob: clip });
+    seed(entry);
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(state(2));
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(uploadsDb.get(entry.queuedId)).toEqual(state(2));
+
+    await q.flushQueue();
+    expect(mocks.submitVideo).toHaveBeenLastCalledWith('job-v', expect.any(Blob), expect.objectContaining({ upload: state(2) }));
+    expect(uploadsDb.size).toBe(0);
+  });
+
+  /* AC-7: queued by the version before resumable upload, so no state exists. */
+  it('a legacy video entry with no state still uploads', async () => {
+    seed(videoEntry());
+    await q.flushQueue();
+    expect(mocks.submitVideo).toHaveBeenCalledWith('job-v', expect.any(Blob), expect.objectContaining({ upload: null }));
+    expect(stored()).toEqual([]);
+  });
+
+  it('save(null) (a restart) drops the stored state', async () => {
+    const entry = videoEntry({ videoBlob: clip });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(3));
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(null);
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(uploadsDb.has(entry.queuedId)).toBe(false);
+  });
+
+  it('discard drops the state and aborts the upload', async () => {
+    const entry = videoEntry({ needsAttention: true });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(2));
+    await q.discardQueued(entry.queuedId);
+    expect(mocks.abortVideoUpload).toHaveBeenCalledWith('job-v', 'up-1');
+    expect(uploadsDb.size).toBe(0);
+    expect(stored()).toEqual([]);
+  });
+
+  it('discard with no state asks nothing of the Worker', async () => {
+    const entry = videoEntry({ needsAttention: true });
+    seed(entry);
+    await q.discardQueued(entry.queuedId);
+    expect(mocks.abortVideoUpload).not.toHaveBeenCalled();
+  });
+
+  it('a video entry with nothing left to send drops its state too', async () => {
+    const entry = videoEntry({ videoBlob: undefined });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(1));
+    await q.flushQueue();
+    expect(uploadsDb.size).toBe(0);
+  });
+
+  it('publishes the percentage as pieces land, starting from the saved state', async () => {
+    const entry = videoEntry({ videoBlob: clip });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(3));
+    const emitted: (number | null)[] = [];
+    const off = q.subscribeQueue(() => emitted.push(q.getUploadProgress()));
+    let before: number | null = null;
+    mocks.submitVideo.mockImplementation(async (_j: string, _b: Blob, { save }: Opts) => {
+      before = q.getUploadProgress();
+      save(state(4));
+      save(state(10));
+    });
+    await q.flushQueue();
+    off();
+    expect(before).toBe(30);
+    expect(emitted).toContain(40);
+    // Every piece in still reads 99: complete() and the row write are to come. Landed = null.
+    expect(emitted).toContain(99);
+    expect(emitted).not.toContain(100);
+    expect(q.getUploadProgress()).toBeNull();
+  });
+
+  /* Lead decision: a slow link that keeps moving the clip forward must not burn the 5 attempts. */
+  it('a failed run that landed a new piece does not count an attempt', async () => {
+    const entry = videoEntry({ videoBlob: clip, attempts: 4 });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(2));
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(state(3));
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 4 });
+    expect(stored()[0].needsAttention).toBeUndefined();
+  });
+
+  it('a failed run that landed no new piece counts', async () => {
+    const entry = videoEntry({ videoBlob: clip, attempts: 1 });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(2));
+    mocks.submitVideo.mockImplementationOnce(async () => {
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 2 });
+  });
+
+  /* What submitVideo really does on a 410: clear, start over (piece 1 lands again), then fail. Re-sent piece 1 is not progress. */
+  it('a restart that re-lands piece 1 and then fails still counts', async () => {
+    const entry = videoEntry({ videoBlob: clip, attempts: 1 });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, state(2));
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(null);
+      save(state(1));
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 2 });
+  });
+
+  /* A clip of one piece: all of it in still reads 99 until the entry lands. */
+  it('a one-piece clip never reads 100 while complete runs', async () => {
+    seed(videoEntry({ videoBlob: new Blob(['x'.repeat(5)]) }));
+    const emitted: (number | null)[] = [];
+    const off = q.subscribeQueue(() => emitted.push(q.getUploadProgress()));
+    mocks.submitVideo.mockImplementation(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(state(1));
+    });
+    await q.flushQueue();
+    off();
+    expect(emitted).toContain(99);
+    expect(emitted).not.toContain(100);
+    expect(q.getUploadProgress()).toBeNull();
+  });
+
+  /* Stored state from another version: never published before it is validated; submitVideo then clears it. */
+  it('stale stored state publishes no progress, before or after it is cleared', async () => {
+    const entry = videoEntry({ videoBlob: clip, attempts: 1 });
+    seed(entry);
+    uploadsDb.set(entry.queuedId, { ...state(5), partSize: 999 }); // would read as 100% if trusted raw
+    const seen: (number | null)[] = [];
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      seen.push(q.getUploadProgress());
+      save(null);
+      seen.push(q.getUploadProgress());
+      save(state(1));
+      throw new TypeError('network');
+    });
+    await q.flushQueue();
+    expect(seen).toEqual([null, null]);
+    expect(stored()[0]).toMatchObject({ attempts: 2 });
+  });
+
+  it('a permanent failure still flags at once, even after landing a piece', async () => {
+    seed(videoEntry({ videoBlob: clip }));
+    mocks.submitVideo.mockImplementationOnce(async (_j: string, _b: Blob, { save }: Opts) => {
+      save(state(1));
+      throw new HttpError(403, 'Forbidden');
+    });
+    await q.flushQueue();
+    expect(stored()[0].needsAttention).toBe(true);
   });
 });

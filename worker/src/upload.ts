@@ -13,6 +13,15 @@ export function isPhotoKind(value: unknown): value is PhotoKind {
   return typeof value === 'string' && (PHOTO_KINDS as readonly string[]).includes(value);
 }
 
+/**
+ * A job id exactly as Postgres prints a uuid: lowercase 8-4-4-4-12. Postgres also
+ * accepts uppercase, braces or no hyphens for the same row, and the id is
+ * interpolated into the R2 key, so only this one spelling may name a key.
+ */
+export function isCanonicalJobId(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
 /** Videos get their own `video/` prefix so R2 lifecycle rules can expire them separately. */
 export function objectKey(jobId: string, kind: PhotoKind): string {
   return kind === 'video' ? `video/${jobId}` : `${jobId}/${kind}.jpg`;
@@ -84,6 +93,54 @@ export function sniffVideoType(body: ArrayBuffer): string | null {
   return MP4_BRANDS.includes(brand) ? 'video/mp4' : null;
 }
 
+/** Largest piece /video/start and /video/part take. Mirrored as VIDEO_PART_BYTES in web/src/lib/video.ts. */
+export const VIDEO_PART_BYTES = 8 * 1024 * 1024;
+
+/** R2 multipart parts a video can have: every piece but the last is exactly VIDEO_PART_BYTES. */
+export const MAX_VIDEO_PARTS = Math.ceil(MAX_VIDEO_BYTES / VIDEO_PART_BYTES);
+
+/**
+ * Asks Postgres whether the caller may write this slot of this job: the caller's
+ * own JWT is forwarded to `can_write_photo` (migration 0031). A malformed jobId
+ * makes PostgREST answer 400, which fails closed like `false`.
+ */
+export async function mayWritePhoto(c: Context<{ Bindings: Env }>, jobId: string, kind: PhotoKind): Promise<boolean> {
+  const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_write_photo`, {
+    method: 'POST',
+    headers: {
+      apikey: c.env.SUPABASE_ANON_KEY,
+      Authorization: c.req.header('Authorization') ?? '',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_job_id: jobId, p_kind: kind }),
+  });
+  return checkRes.ok ? ((await checkRes.json()) as unknown) === true : false;
+}
+
+/** Reads a whole body into one fresh buffer, or null (stream cancelled) once it passes `max` bytes. */
+export async function readCapped(stream: ReadableStream<Uint8Array>, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  const source = stream.getReader();
+  for (;;) {
+    const { done, value } = await source.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await source.cancel();
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.byteLength;
+  }
+  return out;
+}
+
 /**
  * Accepts a photo or video for a job and writes it to R2.
  *
@@ -100,7 +157,7 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const kind = c.req.query('kind');
   const authHeader = c.req.header('Authorization');
 
-  if (!jobId || !isPhotoKind(kind) || !authHeader) {
+  if (!isCanonicalJobId(jobId) || !isPhotoKind(kind) || !authHeader) {
     return c.json({ error: `Expected ?jobId=&kind=${PHOTO_KINDS.join('|')} with a photo body` }, 400);
   }
 
@@ -123,18 +180,7 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
     if (declared > maxBytes) return c.json({ error: tooLarge }, 413);
   }
 
-  // A malformed jobId makes PostgREST answer 400, which fails closed like `false`.
-  const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_write_photo`, {
-    method: 'POST',
-    headers: {
-      apikey: c.env.SUPABASE_ANON_KEY,
-      Authorization: authHeader,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ p_job_id: jobId, p_kind: kind }),
-  });
-  const mayWrite = checkRes.ok ? ((await checkRes.json()) as unknown) === true : false;
-  if (!mayWrite) {
+  if (!(await mayWritePhoto(c, jobId, kind))) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -142,20 +188,11 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   let body = c.req.raw.body;
   if (lengthHeader === undefined && body) {
     // ponytail: no Content-Length is not expected from browsers; buffer (bounded by maxBytes) instead of failing the upload.
-    const parts: Uint8Array[] = [];
-    const source = body.getReader();
-    for (;;) {
-      const { done, value } = await source.read();
-      if (done) break;
-      declared += value.byteLength;
-      if (declared > maxBytes) {
-        await source.cancel();
-        return c.json({ error: tooLarge }, 413);
-      }
-      parts.push(value);
-    }
-    if (declared === 0) return c.json({ error: 'Empty body' }, 400);
-    body = new Blob(parts as unknown as ArrayBuffer[]).stream();
+    const bytes = await readCapped(body, maxBytes);
+    if (!bytes) return c.json({ error: tooLarge }, 413);
+    if (bytes.byteLength === 0) return c.json({ error: 'Empty body' }, 400);
+    declared = bytes.byteLength;
+    body = new Blob([bytes]).stream();
   }
   if (!body) return c.json({ error: 'Empty body' }, 400);
   const reader = body.getReader();

@@ -1,5 +1,13 @@
 import { supabase } from './supabase';
-import { uploadPhoto, HttpError } from './workerApi';
+import {
+  uploadPhoto,
+  HttpError,
+  startVideoUpload,
+  uploadVideoPart,
+  completeVideoUpload,
+  PIECE_TIMEOUT_MS,
+} from './workerApi';
+import { VIDEO_PART_BYTES } from './video';
 import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
 import type { Job, PhotoKind, PreviousJob } from './types';
@@ -22,6 +30,11 @@ export function isPermanentError(err: unknown): boolean {
   }
   const code = (err as { code?: string } | null | undefined)?.code;
   return code === '42501'; // insufficient_privilege — RLS denied the write
+}
+
+/** The Worker asking us to slow down: not retried within a run, and not a failed attempt. */
+export function isRateLimited(err: unknown): boolean {
+  return err instanceof HttpError && err.status === 429;
 }
 
 export interface NewJobPayload {
@@ -129,12 +142,89 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   return jobId;
 }
 
+/** Where a resumable video upload got to: the R2 upload and every piece that landed, in order. */
+export type VideoUpload = { uploadId: string; partSize: number; parts: { partNumber: number; etag: string }[] };
+
+/**
+ * Saved state is only trusted if it was made with today's piece size and has
+ * pieces exactly 1..k, at most as many as a clip of `size` bytes has.
+ */
+export function resumable(u: VideoUpload | null | undefined, size: number): u is VideoUpload {
+  const totalParts = Math.max(1, Math.ceil(size / VIDEO_PART_BYTES));
+  return (
+    !!u &&
+    typeof u.uploadId === 'string' &&
+    u.partSize === VIDEO_PART_BYTES &&
+    Array.isArray(u.parts) &&
+    u.parts.length >= 1 &&
+    u.parts.length <= totalParts &&
+    u.parts.every((p, i) => p?.partNumber === i + 1 && typeof p.etag === 'string')
+  );
+}
+
+/** Backoff before the 2nd and 3rd try of one request within a run. */
+const RETRY_DELAYS_MS = [2_000, 6_000];
+
+/** A transient failure (dropped signal) is retried here before the whole run gives up. */
+async function withRetries<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const gone = err instanceof HttpError && err.status === 410;
+      // A 429 is not retried here: these backoffs fall inside the same 60 s limiter window.
+      if (gone || isRateLimited(err) || isPermanentError(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+/**
+ * Sends the video in VIDEO_PART_BYTES pieces, continuing `upload` when given.
+ * Returns the stored key. Only one piece is read into memory at a time.
+ */
+async function sendVideoPieces(
+  jobId: string,
+  blob: Blob,
+  upload: VideoUpload | null,
+  save: (u: VideoUpload | null) => void | Promise<void>,
+): Promise<string> {
+  const P = VIDEO_PART_BYTES;
+  const totalParts = Math.max(1, Math.ceil(blob.size / P));
+  let state = upload;
+  if (!state) {
+    const started = await withRetries(() => startVideoUpload(jobId, blob.slice(0, P)));
+    state = { uploadId: started.uploadId, partSize: P, parts: [{ partNumber: 1, etag: started.etag }] };
+    await save(state);
+  }
+  for (let n = state.parts.length + 1; n <= totalParts; n++) {
+    const { uploadId }: VideoUpload = state;
+    // A lost response leaves n unrecorded, so the next try simply re-sends the same piece.
+    const { etag }: { etag: string } = await withRetries(() => uploadVideoPart(jobId, uploadId, n, blob.slice((n - 1) * P, n * P)));
+    state = { ...state, parts: [...state.parts, { partNumber: n, etag }] };
+    await save(state);
+  }
+  const { uploadId, parts } = state;
+  const { key } = await withRetries(() => completeVideoUpload(jobId, uploadId, parts));
+  return key;
+}
+
 /**
  * Uploads a job's condition video and records its row, after the job and its
  * photos already landed. Safe to rerun: when the row exists the clip is in, so
  * nothing is re-sent; the row is written only after the upload succeeded.
+ *
+ * Resumable: `upload` is where an earlier run got to and `save` is called after
+ * every piece, so an interrupted clip continues from its last finished piece.
+ * If R2 no longer has the upload (410) the clip starts over, once per run.
+ * The caller clears the saved state once this resolves: a failed row write can
+ * then rerun complete, which is idempotent on the Worker.
  */
-export async function submitVideo(jobId: string, blob: Blob): Promise<void> {
+export async function submitVideo(
+  jobId: string,
+  blob: Blob,
+  opts: { upload?: VideoUpload | null; save?: (u: VideoUpload | null) => void | Promise<void> } = {},
+): Promise<void> {
   const { data: existing, error: readError } = await supabase
     .from('photos')
     .select('id')
@@ -143,7 +233,34 @@ export async function submitVideo(jobId: string, blob: Blob): Promise<void> {
   if (readError) throw readError;
   if (existing?.length) return;
 
-  const key = await uploadPhoto(jobId, 'video', blob);
+  const save = opts.save ?? (() => {});
+  const totalParts = Math.max(1, Math.ceil(blob.size / VIDEO_PART_BYTES));
+  let upload: VideoUpload | null = null;
+  if (resumable(opts.upload, blob.size)) upload = opts.upload;
+  // Stale or foreign state: clear it so nothing (progress, the queue's attempt rule) reads it again.
+  else if (opts.upload) await save(null);
+  let restarted = false;
+  let key: string;
+  for (;;) {
+    try {
+      key = await sendVideoPieces(jobId, blob, upload, save);
+      break;
+    } catch (err) {
+      // ponytail: a 404 from any /video/* call means the Worker predates (or was rolled back from)
+      // the resumable routes, since web and Worker deploy separately. Send it the old way; remove
+      // once the Worker is everywhere. One request, so allow it as long as its pieces would get.
+      if (err instanceof HttpError && err.status === 404) {
+        await save(null);
+        key = await uploadPhoto(jobId, 'video', blob, totalParts * PIECE_TIMEOUT_MS);
+        break;
+      }
+      if (!(err instanceof HttpError && err.status === 410) || restarted) throw err;
+      restarted = true;
+      upload = null;
+      await save(null);
+    }
+  }
+
   const { error } = await supabase
     .from('photos')
     .upsert({ job_id: jobId, kind: 'video', r2_key: key }, { onConflict: 'job_id,kind', ignoreDuplicates: true });

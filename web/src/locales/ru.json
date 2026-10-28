@@ -117,10 +117,12 @@
     "badge_other": "{{count}} в очереди",
     "offline": "Нет связи",
     "videoUploading": "Загрузка видео…",
+    "videoUploadingPercent": "Загрузка видео… {{percent}}%",
     "videoWaiting": "Видео ждёт связи",
     "videoFailed": "Видео не загружено",
     "badgeVideoFailed": "Видео: ошибка",
     "badgeVideoUploading": "Видео: отправка",
+    "badgeVideoUploadingPercent": "Видео: {{percent}}%",
     "badgeVideoWaiting": "Видео ждёт"
   },
   "newJob": {
@@ -230,6 +232,7 @@
     "needsAttention": "Требуется внимание",
     "needsAttentionHint": "Не удалось отправить, повтор не выполнится автоматически — обратитесь к менеджеру",
     "videoUploading": "Загрузка видео",
+    "videoUploadingPercent": "Загрузка видео {{percent}}%",
     "videoWaiting": "Видео ждёт связи",
     "videoFailed": "Видео не загружено",
     "videoFailedHint": "Работа отправлена, но видео не загрузилось. Ролик есть только на этом телефоне — повторите или удалите его.",

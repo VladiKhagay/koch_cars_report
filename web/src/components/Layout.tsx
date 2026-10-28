@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { startQueueSync } from '../lib/offlineQueue';
-import { useQueuedJobs, useUploadingId } from '../lib/useQueue';
+import { useQueuedJobs, useUploadingId, useUploadProgress } from '../lib/useQueue';
 import { navItemsFor, type NavItem } from '../lib/nav';
 import Icon from './Icon';
 import Logo from './Logo';
@@ -13,6 +13,7 @@ function QueueIndicator({ compact }: { compact?: boolean }) {
   const { t } = useTranslation();
   const queued = useQueuedJobs();
   const uploadingId = useUploadingId();
+  const percent = useUploadProgress();
   const count = queued.length;
   if (count === 0) return null;
 
@@ -27,13 +28,13 @@ function QueueIndicator({ compact }: { compact?: boolean }) {
   const label = {
     failed: t('queue.videoFailed'),
     jobs: t('queue.pending', { count: jobs }),
-    uploading: t('queue.videoUploading'),
+    uploading: percent ? t('queue.videoUploadingPercent', { percent }) : t('queue.videoUploading'),
     waiting: t('queue.videoWaiting'),
   }[state];
   const badge = {
     failed: t('queue.badgeVideoFailed'),
     jobs: t('queue.badge', { count: jobs }),
-    uploading: t('queue.badgeVideoUploading'),
+    uploading: percent ? t('queue.badgeVideoUploadingPercent', { percent }) : t('queue.badgeVideoUploading'),
     waiting: t('queue.badgeVideoWaiting'),
   }[state];
 
