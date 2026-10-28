@@ -7,10 +7,10 @@ import type { PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
-import { submitJob, findPreviousJob, isPermanentError, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { findPreviousJob, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { sendJob as sendJobAndVideo } from '../lib/sendJob';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
-import { enqueueForRetry } from '../lib/offlineQueue';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import { bumpService, pushBrand, recentBrands, serviceUseCounts } from '../lib/recent';
 import PhotoCapture from '../components/PhotoCapture';
@@ -89,6 +89,11 @@ export default function NewJob() {
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
   const [lastIdentifier, setLastIdentifier] = useState('');
+  /* The last car's video went to the background queue: one more line on the success banner. */
+  const [videoQueued, setVideoQueued] = useState(false);
+  /* The video could be neither kept nor sent: 'sent' = the job is in ('failed' banner, own message);
+     'queued' = the job is saved on the phone without it. */
+  const [videoLost, setVideoLost] = useState<'sent' | 'queued' | null>(null);
   const [attempted, setAttempted] = useState(false);
 
   const plateInputRef = useRef<HTMLInputElement>(null);
@@ -347,8 +352,9 @@ export default function NewJob() {
       plateBlob: form.platePhoto,
       vinBlob: form.vinPhoto,
       extraBlobs: form.extraPhotos,
-      videoBlob: form.video,
     };
+    // Sent after the job, from the queue, so Submit never waits on the video.
+    const video = form.video;
 
     bumpService(form.serviceId!);
     pushBrand(form.brand);
@@ -366,17 +372,24 @@ export default function NewJob() {
     };
 
     try {
-      await submitJob(payload);
+      const outcome = await sendJobAndVideo(payload, video);
+      // The job is in, or on the phone, either way: keeping the form would submit the car twice.
+      setVideoQueued(outcome === 'success-video-queued');
+      setVideoLost(
+        outcome === 'video-not-saved'
+          ? 'sent'
+          : outcome === 'queued-video-not-saved' || outcome === 'failed-video-not-saved'
+            ? 'queued'
+            : null,
+      );
       resetForm();
-      setStatus('success');
-    } catch (err) {
-            /* The payload is persisted either way: the photos exist only in memory here
-               and a job row may already exist (submitJob's jobId). A permanent failure
-               skips auto-retry and is flagged for a human (MyJobs.tsx). */
-      const permanent = isPermanentError(err);
-      await enqueueForRetry(payload, { needsAttention: permanent });
-      resetForm();
-      setStatus(permanent ? 'failed' : 'queued');
+      setStatus(
+        outcome === 'success' || outcome === 'success-video-queued'
+          ? 'success'
+          : outcome === 'queued-for-retry' || outcome === 'queued-video-not-saved'
+            ? 'queued'
+            : 'failed',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -718,15 +731,19 @@ export default function NewJob() {
                   {status === 'success'
                     ? t('newJob.submitted')
                     : status === 'failed'
-                      ? t('newJob.failedTitle')
+                      ? t(videoLost === 'sent' ? 'newJob.submitted' : 'newJob.failedTitle')
                       : t('queue.title')}
                 </p>
                 <p className="mt-0.5 text-sm font-medium">
                   {status === 'success'
-                    ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}`
+                    ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}${
+                        videoQueued ? ` ${t('newJob.videoQueued')}` : ''
+                      }`
                     : status === 'failed'
-                      ? t('newJob.failedBody')
-                      : t('newJob.queuedOffline')}
+                      ? videoLost === 'sent'
+                        ? t('newJob.videoNotSaved')
+                        : `${t('newJob.failedBody')}${videoLost === 'queued' ? ` ${t('newJob.videoNotKept')}` : ''}`
+                      : t(videoLost === 'queued' ? 'newJob.queuedVideoNotSaved' : 'newJob.queuedOffline')}
                 </p>
                 {status === 'success' && (
                   <Link to="/mine" className="mt-1 inline-flex min-h-tap items-center text-sm font-bold underline underline-offset-2">

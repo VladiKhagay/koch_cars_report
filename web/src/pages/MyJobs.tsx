@@ -17,7 +17,8 @@ import { buildWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
 import ExportLangSelect from '../components/ExportLangSelect';
 import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
-import { useQueuedJobs } from '../lib/useQueue';
+import { useQueuedJobs, useUploadingId } from '../lib/useQueue';
+import { discardQueued, retryQueued } from '../lib/offlineQueue';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
 import { SERVICE_COLUMNS, type Job, type Service } from '../lib/types';
@@ -42,6 +43,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmAction,
   IconButton,
   EmptyState,
   Group,
@@ -231,6 +233,7 @@ export default function MyJobs() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
   const queued = useQueuedJobs();
+  const uploadingId = useUploadingId();
   const staff = useStaff();
   const { sites } = useSiteScope();
 
@@ -508,33 +511,62 @@ export default function MyJobs() {
       {queued.length > 0 && (
         <section className="space-y-2">
           <SectionHeading icon="sync">{t('queue.title')}</SectionHeading>
-          <p className="text-sm text-ink-600">{t('queue.body')}</p>
-          {queued.map((job) => (
-            <Card key={job.queuedId} className={job.needsAttention ? 'border-danger-600' : 'border-ink-900'}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
-                    {job.plate ?? job.vin ?? '—'}
-                  </p>
-                  <p className="truncate font-mono text-xs text-ink-600">
-                    {(job.plate ? job.vin : null) ?? '—'} · {job.brand ?? '—'}
-                  </p>
-                  <p className="mt-1 text-xs text-ink-600">
-                    {job.needsAttention ? t('myJobs.needsAttentionHint') : t('myJobs.queuedHint')}
-                  </p>
+          {/* "They submit automatically" is about unsent jobs; a video card has its own hint. */}
+          {queued.some((e) => e.stage !== 'video') && <p className="text-sm text-ink-600">{t('queue.body')}</p>}
+          {queued.map((job) => {
+            const video = job.stage === 'video';
+            const failed = Boolean(job.needsAttention);
+            return (
+              <Card key={job.queuedId} className={failed ? 'border-danger-600' : 'border-ink-900'}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-base font-semibold tracking-wide text-ink-900">
+                      {job.plate ?? job.vin ?? '—'}
+                    </p>
+                    <p className="truncate font-mono text-xs text-ink-600">
+                      {(job.plate ? job.vin : null) ?? '—'} · {job.brand ?? '—'}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-600">
+                      {video
+                        ? failed
+                          ? t('myJobs.videoFailedHint')
+                          : t('myJobs.videoPendingHint')
+                        : failed
+                          ? t('myJobs.needsAttentionHint')
+                          : t('myJobs.queuedHint')}
+                    </p>
+                  </div>
+                  {failed ? (
+                    <Badge tone="danger" icon="alertTriangle">
+                      {video ? t('myJobs.videoFailed') : t('myJobs.needsAttention')}
+                    </Badge>
+                  ) : (
+                    <Badge tone="info" icon="sync">
+                      {video
+                        ? uploadingId === job.queuedId
+                          ? t('myJobs.videoUploading')
+                          : t('myJobs.videoWaiting')
+                        : t('queue.title')}
+                    </Badge>
+                  )}
                 </div>
-                {job.needsAttention ? (
-                  <Badge tone="danger" icon="alertTriangle">
-                    {t('myJobs.needsAttention')}
-                  </Badge>
-                ) : (
-                  <Badge tone="info" icon="sync">
-                    {t('queue.title')}
-                  </Badge>
+                {/* Only a video can be given up on: it is the one thing here that is not the record of the car. */}
+                {video && failed && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button variant="secondary" icon="sync" onClick={() => void retryQueued(job.queuedId)}>
+                      {t('common.retry')}
+                    </Button>
+                    <ConfirmAction
+                      trigger={t('myJobs.discard')}
+                      question={t('myJobs.discardConfirm')}
+                      confirmLabel={t('myJobs.discard')}
+                      onConfirm={() => void discardQueued(job.queuedId)}
+                    />
+                  </div>
                 )}
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </section>
       )}
 

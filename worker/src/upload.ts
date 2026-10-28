@@ -88,9 +88,12 @@ export function sniffVideoType(body: ArrayBuffer): string | null {
  * Accepts a photo or video for a job and writes it to R2.
  *
  * Authorization is delegated to Postgres: the caller's own JWT is forwarded to
- * `can_write_job` (migrations 0009/0014), which mirrors the `photos_insert`
- * policy. It asks about writing, not visibility, because a worker can see a
- * job long after its 15-minute edit window closes.
+ * `can_write_photo` (migration 0031), the same function the `photos_insert`
+ * policy calls, so the R2 write and the row insert go through the same rule,
+ * checked at R2-put time and again at row insert. It asks
+ * about writing a given slot, not visibility: a worker can see a job long after
+ * its 15-minute edit window closes, and the deferred video slot has its own,
+ * longer window.
  */
 export async function handleUpload(c: Context<{ Bindings: Env }>) {
   const jobId = c.req.query('jobId');
@@ -121,14 +124,14 @@ export async function handleUpload(c: Context<{ Bindings: Env }>) {
   }
 
   // A malformed jobId makes PostgREST answer 400, which fails closed like `false`.
-  const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_write_job`, {
+  const checkRes = await fetch(`${c.env.SUPABASE_URL}/rest/v1/rpc/can_write_photo`, {
     method: 'POST',
     headers: {
       apikey: c.env.SUPABASE_ANON_KEY,
       Authorization: authHeader,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ p_job_id: jobId }),
+    body: JSON.stringify({ p_job_id: jobId, p_kind: kind }),
   });
   const mayWrite = checkRes.ok ? ((await checkRes.json()) as unknown) === true : false;
   if (!mayWrite) {

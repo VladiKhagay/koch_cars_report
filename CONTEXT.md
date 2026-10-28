@@ -287,6 +287,46 @@ Use it rather than restyling per screen. Notable rules baked in:
   `fieldClass` between inputs and selects leaves the OS arrow misplaced and lets
   long option text slide under it.
 
+### Offline queue and the deferred condition video
+
+Every submission that fails is kept in IndexedDB (`web/src/lib/offlineQueue.ts`,
+store `pending-jobs`) and retried on `online`, on app start and when the app
+returns to the foreground (`visibilitychange`). Submit waits for the job and its
+photos only. The condition video (up to 75MB) follows as its own queue entry
+(`stage: 'video'`, linked by `jobId`) so the worker can start the next car:
+
+- A job entry that lands with a video is rewritten in place into its video
+  entry (same key, photo blobs dropped), so the clip never leaves the disk until
+  it is uploaded or the worker discards it. Entries queued before this existed
+  (video inside the job payload) flush through the same path.
+- Job entries always go first; a video failure never blocks a job.
+- The `photos` row for the video is written only after the upload succeeds, and
+  `submitVideo` skips the upload when the row already exists (safe rerun).
+- A screen wake lock is held while a video uploads. A failure after the page
+  went hidden at any point during the attempt (screen locked) does not count
+  toward the 5-attempt budget: iOS delivers the error after resume, when the
+  page is visible again, so the queue remembers the hide instead of checking
+  visibility at failure time. A failure after the signed-in user changed is not
+  counted either. Past
+  5 attempts / 24 hours the worker sees "Video not uploaded" in My Jobs with
+  Retry (fresh budget) and Discard (with confirmation).
+- No real background upload: iOS cannot do it for a web app. Keep the app open.
+
+This needed migration **0031** (`can_write_photo`): `can_write_job` only lets a
+worker add photos within 15 minutes or while the job has none, which assumed all
+slots land in one batch. A video arriving later would be refused forever. See
+SECURITY-NOTES.md §4 for the window. Only the video gets a longer window: a job
+with no photo rows is NOT video-writable forever (0014's "no photos yet" branch
+covers photos only); its video lands through the 7-day branch like any other.
+**Deploy order: migration 0031 -> Worker -> web, mandatory**: the Worker calls
+`can_write_photo`, which does not exist before 0031, so it would 403 every
+upload and the queue would flag those entries `needsAttention`. **Rollback:
+web -> Worker -> migration**; keep `can_write_job`, and never drop
+`can_write_photo` while the new Worker is live. Keep the mixed-version windows
+short: an old-web queued job past its lock with zero photo rows plus a video,
+soft-deleted or older than 7 days, fails as a whole until the new web is live
+(Retry then sends the photos without the video).
+
 ### Site scoping default
 
 Every role opens site-aware screens on **their own site**. Admins previously

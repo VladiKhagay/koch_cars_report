@@ -89,3 +89,59 @@ and an applied rule are two different things.
       recordkeeping periods sometimes exceed 60 days). This is a business/
       legal call, not a technical one — the rule is easy to widen
       (`--expire-days 365`) if 60 turns out to be too short.
+
+## 4. Deferred video: the video-slot write window (migration 0031)
+
+Photo writes (R2 via the Worker's `/upload`, and the `photos` row via
+`photos_insert`) are both authorized by `can_write_photo(job, kind)`.
+`can_write_job` itself is unchanged (the old Worker path, which calls it, works
+as before). For a worker's own job:
+
+- plate/VIN/extra photos: exactly `can_write_job`'s 0014 rule (lock open, or
+  the job has no photo rows yet), so finished evidence photos stay
+  unreplaceable;
+- the video: only while the 15-minute lock is open, or through the bounded
+  video branch below. The 0014 "no photo rows yet" branch does not apply to
+  the video, so a job with zero photos is not video-writable forever.
+
+The bounded video branch:
+
+- the job is not soft-deleted;
+- no `video` row exists yet: once the row is recorded the slot is closed to
+  the worker;
+- within 7 days of `jobs.created_at`, which the server stamps for workers
+  (0021), so the window cannot be stretched by the client.
+
+The clip is not strictly write-once. Exceptions, accepted (low):
+
+- inside the 15-minute lock the clip can be overwritten, like any photo;
+- R2 write-once TOCTOU: the "no video row" check runs before the up-to-75MB R2
+  put, and the row is written only after it. Until the row lands, a
+  hand-crafted concurrent upload by the same worker can overwrite the clip at
+  the same key. (A conditional R2 put / per-upload nonce would close it; not
+  done.)
+
+Residual risk, accepted: within those 7 days a worker can attach a video to
+any of their own jobs that never got one. Do not widen this without a reason;
+if Worker and policy ever disagree, a clip lands in R2 without a row (or the
+reverse).
+
+Shared phone, accepted: queued entries (with their photos and the clip) sit in
+the browser's IndexedDB. The queue's owner filter only decides what is shown and
+flushed for the signed-in user; it is not access control, and logging out does
+not clear the store. Anyone with the unlocked phone and devtools can read it.
+
+- [ ] Apply 0031 before deploying the Worker that calls `can_write_photo`,
+      then the web build: **migration -> Worker -> web** is mandatory. A Worker
+      deployed before the migration gets a 404 from the missing function and
+      answers 403 to every upload (photos too); the queue treats 403 as
+      permanent and flags those entries `needsAttention`.
+      Check it is applied: an anon call to `rpc/can_write_photo` must be
+      refused with 401 / permission denied, not answer 200 `false`.
+- [ ] Rollback, in reverse: **web -> Worker -> migration**. Keep
+      `can_write_job` in place throughout; never drop `can_write_photo` while
+      the new Worker is live.
+- [ ] Keep the mixed-version windows short: an old-web queued job past its
+      lock with zero photo rows plus a video, soft-deleted or older than 7
+      days, fails as a whole until the new web is live (Retry then sends the
+      photos without the video).

@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { startQueueSync } from '../lib/offlineQueue';
-import { useQueuedCount } from '../lib/useQueue';
+import { useQueuedJobs, useUploadingId } from '../lib/useQueue';
 import { navItemsFor, type NavItem } from '../lib/nav';
 import Icon from './Icon';
 import Logo from './Logo';
@@ -11,8 +11,31 @@ import Logo from './Logo';
 /** Pending-sync indicator, shown in the shell. Near-black on white so it reads as neither an error nor a success, and survives direct sun. */
 function QueueIndicator({ compact }: { compact?: boolean }) {
   const { t } = useTranslation();
-  const count = useQueuedCount();
+  const queued = useQueuedJobs();
+  const uploadingId = useUploadingId();
+  const count = queued.length;
   if (count === 0) return null;
+
+  /* Videos follow their job on their own, so they get their own words and never
+     count as unsent jobs. Priority: a failed video (only the worker can act on
+     it: My Jobs, Retry / Discard), then unsent jobs, then the video uploading,
+     then a video waiting. */
+  const videos = queued.filter((e) => e.stage === 'video');
+  const jobs = count - videos.length;
+  const videoFailed = videos.some((e) => e.needsAttention);
+  const state = videoFailed ? 'failed' : jobs > 0 ? 'jobs' : uploadingId ? 'uploading' : 'waiting';
+  const label = {
+    failed: t('queue.videoFailed'),
+    jobs: t('queue.pending', { count: jobs }),
+    uploading: t('queue.videoUploading'),
+    waiting: t('queue.videoWaiting'),
+  }[state];
+  const badge = {
+    failed: t('queue.badgeVideoFailed'),
+    jobs: t('queue.badge', { count: jobs }),
+    uploading: t('queue.badgeVideoUploading'),
+    waiting: t('queue.badgeVideoWaiting'),
+  }[state];
 
   return (
     <NavLink
@@ -21,8 +44,9 @@ function QueueIndicator({ compact }: { compact?: boolean }) {
         compact ? 'text-xs' : 'w-full text-sm'
       }`}
     >
-      <Icon name="sync" size={16} className="shrink-0" />
-      <span className="truncate">{compact ? t('queue.badge', { count }) : t('queue.pending', { count })}</span>
+      <Icon name={videoFailed ? 'alertTriangle' : 'sync'} size={16} className="shrink-0" />
+      <span className="truncate">{compact ? badge : label}</span>
+      {compact && <span className="sr-only">{label}</span>}
     </NavLink>
   );
 }

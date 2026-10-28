@@ -105,12 +105,17 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
     ...(payload.plateBlob ? [{ kind: 'plate' as PhotoKind, blob: payload.plateBlob }] : []),
     ...(payload.vinBlob ? [{ kind: 'vin' as PhotoKind, blob: payload.vinBlob }] : []),
     ...extras.map((blob, i) => ({ kind: EXTRA_KINDS[i], blob })),
-    ...(payload.videoBlob ? [{ kind: 'video' as PhotoKind, blob: payload.videoBlob }] : []),
+    // The video is never sent here: it follows as its own queue entry (submitVideo),
+    // so Submit does not wait on a 75MB upload. videoBlob stays on the payload
+    // only so a queued entry can hand it over (see flushQueue).
   ];
 
   /* ponytail: a retry re-sends every upload, even ones that landed. Skip kinds already in R2 if mobile data becomes a concern. */
 
   const keys = await Promise.all(uploads.map((u) => uploadPhoto(jobId, u.kind, u.blob)));
+
+  // A car with no photos at all (plate and VIN photos are optional) has nothing to record.
+  if (uploads.length === 0) return jobId;
 
   // Unique on (job_id, kind) since 0022: a retry that already wrote these rows is a no-op.
   const { error: photoError } = await supabase
@@ -122,6 +127,27 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   if (photoError) throw photoError;
 
   return jobId;
+}
+
+/**
+ * Uploads a job's condition video and records its row, after the job and its
+ * photos already landed. Safe to rerun: when the row exists the clip is in, so
+ * nothing is re-sent; the row is written only after the upload succeeded.
+ */
+export async function submitVideo(jobId: string, blob: Blob): Promise<void> {
+  const { data: existing, error: readError } = await supabase
+    .from('photos')
+    .select('id')
+    .eq('job_id', jobId)
+    .eq('kind', 'video');
+  if (readError) throw readError;
+  if (existing?.length) return;
+
+  const key = await uploadPhoto(jobId, 'video', blob);
+  const { error } = await supabase
+    .from('photos')
+    .upsert({ job_id: jobId, kind: 'video', r2_key: key }, { onConflict: 'job_id,kind', ignoreDuplicates: true });
+  if (error) throw error;
 }
 
 /**

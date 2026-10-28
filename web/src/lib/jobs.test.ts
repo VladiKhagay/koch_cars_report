@@ -18,6 +18,12 @@ const rpcCalls: unknown[] = [];
 let jobIdSeq = 0;
 let uploadFails = false;
 let rpcFails = false;
+const uploads: string[] = [];
+/* Rows the stub claims already exist when submitVideo looks for the video row. */
+let existingVideoRows: unknown[] = [];
+/* Every .eq(column, value) on a photos select, and every upsert call (an empty upsert pushes no rows). */
+const selectEqs: [string, unknown][] = [];
+let upsertCalls = 0;
 
 vi.mock('./supabase', () => {
   const jobsInsert = (row: unknown) => {
@@ -34,9 +40,18 @@ vi.mock('./supabase', () => {
           return Promise.resolve({ error: null });
         },
         upsert: (rows: unknown) => {
-          insertedPhotos.push(...(rows as unknown[]));
+          upsertCalls++;
+          insertedPhotos.push(...(Array.isArray(rows) ? rows : [rows]));
           return Promise.resolve({ error: null });
         },
+        select: () => ({
+          eq: (c1: string, v1: unknown) => ({
+            eq: (c2: string, v2: unknown) => {
+              selectEqs.push([c1, v1], [c2, v2]);
+              return Promise.resolve({ data: existingVideoRows, error: null });
+            },
+          }),
+        }),
       }),
       /* Always claims an earlier job, so the "never asked" assertions are real
          rather than passing because the stub returns nothing. */
@@ -52,11 +67,12 @@ vi.mock('./supabase', () => {
 vi.mock('./workerApi', () => ({
   uploadPhoto: (jobId: string, kind: string) => {
     if (uploadFails) return Promise.reject(new Error('offline'));
+    uploads.push(kind);
     return Promise.resolve(`${jobId}/${kind}.jpg`);
   },
 }));
 
-const { submitJob, applyJobFilters, shareFor, findPreviousJob } = await import('./jobs');
+const { submitJob, submitVideo, applyJobFilters, shareFor, findPreviousJob } = await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
 const blob = () => new Blob(['x'], { type: 'image/jpeg' });
@@ -82,6 +98,57 @@ beforeEach(() => {
   rpcCalls.length = 0;
   jobIdSeq = 0;
   uploadFails = false;
+  uploads.length = 0;
+  existingVideoRows = [];
+  selectEqs.length = 0;
+  upsertCalls = 0;
+});
+
+/*
+ * The video no longer rides with the job: Submit returns once the job and its
+ * photos are in, and the clip follows from its own queue entry (offlineQueue).
+ */
+describe('submitJob / submitVideo — the video follows the job', () => {
+  const video = () => new Blob(['v'], { type: 'video/mp4' });
+
+  it('submitJob uploads no video and writes no video row, even when the payload has one', async () => {
+    await submitJob({ ...payload(), videoBlob: video() });
+    expect(uploads).toEqual(['plate', 'vin']);
+    expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).not.toContain('video');
+  });
+
+  it('submitVideo uploads, then records the row once', async () => {
+    await submitVideo('job-9', video());
+    expect(selectEqs).toEqual([
+      ['job_id', 'job-9'],
+      ['kind', 'video'],
+    ]);
+    expect(uploads).toEqual(['video']);
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'job-9/video.jpg' }]);
+  });
+
+  /* A rerun after the row landed (the phone locked before the queue entry was
+     deleted) must not send 75MB again. */
+  it('skips the upload when the video row already exists', async () => {
+    existingVideoRows = [{ id: 'p-1' }];
+    await submitVideo('job-9', video());
+    expect(uploads).toEqual([]);
+    expect(insertedPhotos).toEqual([]);
+  });
+
+  /* Plate/VIN photos are optional: a car with neither writes no photos at all, not an empty upsert. */
+  it('submitJob makes no photos call for a car with no photos', async () => {
+    await submitJob({ ...payload(), plateBlob: null, vinBlob: null, videoBlob: video() });
+    expect(insertedJobs).toHaveLength(1);
+    expect(uploads).toEqual([]);
+    expect(upsertCalls).toBe(0);
+  });
+
+  it('writes no row when the upload fails', async () => {
+    uploadFails = true;
+    await expect(submitVideo('job-9', video())).rejects.toThrow();
+    expect(insertedPhotos).toEqual([]);
+  });
 });
 
 describe('submitJob — retry after a failed upload', () => {

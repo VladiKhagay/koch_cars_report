@@ -219,6 +219,33 @@ describe('handleUpload', () => {
     expect(photo.stored).toEqual([]);
   });
 
+  /* The video slot has its own window (0031), so Postgres must be told which slot is written. */
+  it('asks can_write_photo about this exact slot', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => Response.json(true));
+    vi.stubGlobal('fetch', fetchSpy);
+    await upload('video', bytesOf(1000, MP4)).run();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://sb.test/rest/v1/rpc/can_write_photo');
+    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: 'job-1', p_kind: 'video' });
+  });
+
+  /* A photo slot must name its kind too: without p_kind PostgREST finds no one-argument can_write_photo. */
+  it('asks can_write_photo with the kind for a photo slot as well', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init: RequestInit) => Response.json(true));
+    vi.stubGlobal('fetch', fetchSpy);
+    await upload('plate', bytesOf(1000, JPEG)).run();
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init.body as string)).toEqual({ p_job_id: 'job-1', p_kind: 'plate' });
+  });
+
+  it('refuses the write when Postgres says no', async () => {
+    vi.stubGlobal('fetch', async () => Response.json(false));
+    const { run, stored } = upload('video', bytesOf(1000, MP4));
+    expect((await run()).status).toBe(403);
+    expect(stored).toEqual([]);
+  });
+
   it('checks the length before asking Postgres', async () => {
     const fetchSpy = vi.fn(async () => Response.json(true));
     vi.stubGlobal('fetch', fetchSpy);
