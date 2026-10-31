@@ -777,3 +777,39 @@ describe('resumable video', () => {
     expect(stored()[0].needsAttention).toBe(true);
   });
 });
+
+/*
+ * iOS freezes the page when the screen locks; a request in flight then never
+ * settles. Back in the foreground the queue must not sit behind that dead request
+ * until its 3-minute timeout: it should drop it and resume from the saved pieces.
+ */
+describe('coming back after a lock with a frozen request', () => {
+  it('resumes at once instead of waiting for the frozen request', async () => {
+    const stop = q.startQueueSync();
+    await vi.waitFor(() => expect(docListeners.visibilitychange).toBeTypeOf('function'));
+    await settle(); // startQueueSync's own flush of the empty store
+    seed(videoEntry());
+    // A real fetch honours its abort signal; a frozen one just never answers on its own.
+    mocks.submitVideo
+      .mockImplementationOnce(
+        (_jobId: string, _blob: Blob, opts?: { signal?: AbortSignal }) =>
+          new Promise<void>((_resolve, reject) => {
+            opts?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+      )
+      .mockResolvedValue(undefined);
+
+    const run = q.flushQueue();
+    await vi.waitFor(() => expect(mocks.submitVideo).toHaveBeenCalledTimes(1));
+    doc.visibilityState = 'hidden';
+    docListeners.visibilitychange(); // screen locks
+    await new Promise((r) => setTimeout(r, 30));
+    doc.visibilityState = 'visible';
+    docListeners.visibilitychange(); // unlocked, app reopened
+
+    await vi.waitFor(() => expect(mocks.submitVideo).toHaveBeenCalledTimes(2), { timeout: 500 });
+    await run;
+    expect(stored()).toEqual([]);
+    stop();
+  });
+});

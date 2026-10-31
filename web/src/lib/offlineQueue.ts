@@ -274,6 +274,8 @@ function releaseWakeLock(): void {
  * page is already visible again.
  */
 let hiddenDuringAttempt = false;
+/** The video attempt in flight. iOS freezes its request on lock and may never settle it, so coming back aborts it. */
+let attemptAbort: AbortController | null = null;
 
 /** Records a failed attempt. Returns true when the entry is now flagged for a human. */
 async function recordFailure(entry: QueuedJob, err: unknown, countAttempt: boolean): Promise<boolean> {
@@ -368,8 +370,9 @@ export async function flushQueue(): Promise<void> {
           else queueStore.deleteUpload(queuedId);
           setProgress(u, videoBlob.size);
         };
+        const abort = (attemptAbort = new AbortController());
         try {
-          await submitVideo(entry.jobId, videoBlob, { upload, save });
+          await submitVideo(entry.jobId, videoBlob, { upload, save, signal: abort.signal });
           await queueStore.delete(queuedId);
           queueStore.deleteUpload(queuedId);
           changed = true;
@@ -384,6 +387,7 @@ export async function flushQueue(): Promise<void> {
             break;
           }
         } finally {
+          attemptAbort = null;
           uploadingId = null;
           uploadProgress = null;
           releaseWakeLock();
@@ -419,6 +423,8 @@ export function startQueueSync(): () => void {
     if (document.visibilityState === 'hidden') hiddenDuringAttempt = true;
     if (document.visibilityState !== 'visible') return;
     if (uploadingId) void holdWakeLock();
+    // Before flushQueue, which only marks a rerun while the frozen attempt is still pending.
+    if (hiddenDuringAttempt) attemptAbort?.abort();
     void flushQueue().catch(() => {}).then(refreshQueue);
   };
   window.addEventListener('online', onOnline);

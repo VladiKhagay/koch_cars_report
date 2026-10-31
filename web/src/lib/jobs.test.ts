@@ -174,7 +174,7 @@ describe('submitJob / submitVideo — the video follows the job', () => {
       { partNumber: 1, etag: 'e1' },
       { partNumber: 2, etag: 'e2' },
       { partNumber: 3, etag: 'e3' },
-    ]);
+    ], undefined);
     // Saved after every piece, so a cut-off run resumes from the last one.
     expect(saved.map((u) => (u as { parts: unknown[] }).parts.length)).toEqual([1, 2, 3]);
     expect(saved[0]).toEqual({ uploadId: 'up-1', partSize: 4, parts: [{ partNumber: 1, etag: 'e1' }] });

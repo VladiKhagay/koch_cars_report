@@ -166,14 +166,14 @@ export function resumable(u: VideoUpload | null | undefined, size: number): u is
 const RETRY_DELAYS_MS = [2_000, 6_000];
 
 /** A transient failure (dropped signal) is retried here before the whole run gives up. */
-async function withRetries<T>(fn: () => Promise<T>): Promise<T> {
+async function withRetries<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
       const gone = err instanceof HttpError && err.status === 410;
       // A 429 is not retried here: these backoffs fall inside the same 60 s limiter window.
-      if (gone || isRateLimited(err) || isPermanentError(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
+      if (signal?.aborted || gone || isRateLimited(err) || isPermanentError(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
     }
   }
@@ -188,24 +188,25 @@ async function sendVideoPieces(
   blob: Blob,
   upload: VideoUpload | null,
   save: (u: VideoUpload | null) => void | Promise<void>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const P = VIDEO_PART_BYTES;
   const totalParts = Math.max(1, Math.ceil(blob.size / P));
   let state = upload;
   if (!state) {
-    const started = await withRetries(() => startVideoUpload(jobId, blob.slice(0, P)));
+    const started = await withRetries(() => startVideoUpload(jobId, blob.slice(0, P), signal), signal);
     state = { uploadId: started.uploadId, partSize: P, parts: [{ partNumber: 1, etag: started.etag }] };
     await save(state);
   }
   for (let n = state.parts.length + 1; n <= totalParts; n++) {
     const { uploadId }: VideoUpload = state;
     // A lost response leaves n unrecorded, so the next try simply re-sends the same piece.
-    const { etag }: { etag: string } = await withRetries(() => uploadVideoPart(jobId, uploadId, n, blob.slice((n - 1) * P, n * P)));
+    const { etag }: { etag: string } = await withRetries(() => uploadVideoPart(jobId, uploadId, n, blob.slice((n - 1) * P, n * P), signal), signal);
     state = { ...state, parts: [...state.parts, { partNumber: n, etag }] };
     await save(state);
   }
   const { uploadId, parts } = state;
-  const { key } = await withRetries(() => completeVideoUpload(jobId, uploadId, parts));
+  const { key } = await withRetries(() => completeVideoUpload(jobId, uploadId, parts, signal), signal);
   return key;
 }
 
@@ -223,7 +224,12 @@ async function sendVideoPieces(
 export async function submitVideo(
   jobId: string,
   blob: Blob,
-  opts: { upload?: VideoUpload | null; save?: (u: VideoUpload | null) => void | Promise<void> } = {},
+  opts: {
+    upload?: VideoUpload | null;
+    save?: (u: VideoUpload | null) => void | Promise<void>;
+    /** Aborts the attempt in flight; the saved pieces stay, so a rerun resumes. */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<void> {
   const { data: existing, error: readError } = await supabase
     .from('photos')
@@ -243,7 +249,7 @@ export async function submitVideo(
   let key: string;
   for (;;) {
     try {
-      key = await sendVideoPieces(jobId, blob, upload, save);
+      key = await sendVideoPieces(jobId, blob, upload, save, opts.signal);
       break;
     } catch (err) {
       // ponytail: a 404 from any /video/* call means the Worker predates (or was rolled back from)

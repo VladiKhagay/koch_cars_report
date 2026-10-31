@@ -233,9 +233,18 @@ export async function uploadPhoto(jobId: string, kind: PhotoKind, image: Blob, t
 export const PIECE_TIMEOUT_MS = 180_000;
 
 /** POSTs to a /video/* route; a non-2xx throws HttpError (410 = the upload is gone, start over). */
-async function videoCall<T>(path: string, body: BodyInit, contentType: string, timeoutMs?: number): Promise<T> {
+async function videoCall<T>(
+  path: string,
+  body: BodyInit,
+  contentType: string,
+  timeoutMs?: number,
+  signal?: AbortSignal,
+): Promise<T> {
   const controller = new AbortController();
   const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort);
   try {
     const res = await fetch(`${BASE_URL}/video/${path}`, {
       method: 'POST',
@@ -247,6 +256,7 @@ async function videoCall<T>(path: string, body: BodyInit, contentType: string, t
     return (await res.json()) as T;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -254,17 +264,28 @@ const videoQuery = (jobId: string, uploadId?: string) =>
   `jobId=${encodeURIComponent(jobId)}${uploadId === undefined ? '' : `&uploadId=${encodeURIComponent(uploadId)}`}`;
 
 /** Opens a resumable video upload with its first piece (the Worker sniffs the type from it). */
-export function startVideoUpload(jobId: string, firstPiece: Blob): Promise<{ uploadId: string; etag: string }> {
-  return videoCall(`start?${videoQuery(jobId)}`, firstPiece, 'application/octet-stream', PIECE_TIMEOUT_MS);
+export function startVideoUpload(
+  jobId: string,
+  firstPiece: Blob,
+  signal?: AbortSignal,
+): Promise<{ uploadId: string; etag: string }> {
+  return videoCall(`start?${videoQuery(jobId)}`, firstPiece, 'application/octet-stream', PIECE_TIMEOUT_MS, signal);
 }
 
 /** Piece n (2..10). Re-sending the same piece under the same number is safe. */
-export function uploadVideoPart(jobId: string, uploadId: string, partNumber: number, piece: Blob): Promise<{ etag: string }> {
+export function uploadVideoPart(
+  jobId: string,
+  uploadId: string,
+  partNumber: number,
+  piece: Blob,
+  signal?: AbortSignal,
+): Promise<{ etag: string }> {
   return videoCall(
     `part?${videoQuery(jobId, uploadId)}&partNumber=${partNumber}`,
     piece,
     'application/octet-stream',
     PIECE_TIMEOUT_MS,
+    signal,
   );
 }
 
@@ -276,8 +297,15 @@ export function completeVideoUpload(
   jobId: string,
   uploadId: string,
   parts: { partNumber: number; etag: string }[],
+  signal?: AbortSignal,
 ): Promise<{ key: string }> {
-  return videoCall(`complete?${videoQuery(jobId, uploadId)}`, JSON.stringify({ parts }), 'application/json', PIECE_TIMEOUT_MS);
+  return videoCall(
+    `complete?${videoQuery(jobId, uploadId)}`,
+    JSON.stringify({ parts }),
+    'application/json',
+    PIECE_TIMEOUT_MS,
+    signal,
+  );
 }
 
 /** Drops an upload the worker gave up on. */
