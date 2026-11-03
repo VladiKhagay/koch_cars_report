@@ -14,7 +14,7 @@ import { Button, IconButton, SearchField } from './ui';
  * dropdown, so you had to open it to see what the search had found.
  *
  * Staff from every site are offered, the submitter's own site first (that is
- * who they worked with). Only active staff can be added, but someone already on
+ * who they worked with). Only active workers can be added (no managers, admins or Carasso), but someone already on
  * the job stays listed and removable.
  */
 export default function CoworkerPicker({
@@ -52,6 +52,7 @@ export default function CoworkerPicker({
     .filter(
       (s) =>
         s.active &&
+        s.role === 'worker' &&
         s.id !== submitterId &&
         !value.includes(s.id) &&
         (!term || label(s).toLowerCase().includes(term)),

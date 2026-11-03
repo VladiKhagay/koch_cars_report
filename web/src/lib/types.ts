@@ -140,6 +140,7 @@ export interface StaffMember {
   name: string;
   site_id: string | null;
   active: boolean;
+  role: UserRole;
 }
 
 /** A row of `jobs_carasso` (0028): the only job shape Carasso (and admin exports) can read. No pay, no manager note, no duplicate flag. */
