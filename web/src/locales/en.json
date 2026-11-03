@@ -12,7 +12,7 @@
     "signingIn": "Signing in…",
     "error": "Couldn't sign in — check your email and password.",
     "signOut": "Sign out",
-    "forgotHelp": "Forgotten your password? Ask your manager or an admin to send you a new invitation — there is no self-service reset."
+    "forgotLink": "Forgot your password?"
   },
   "nav": {
     "newJob": "New Job",
@@ -231,6 +231,8 @@
     "videoPendingHint": "The job is in. Only the video is still sending — keep this app open until it is done.",
     "discard": "Discard video",
     "discardConfirm": "Delete this video from the phone? It hasn't been uploaded, so it will be gone for good. The job stays.",
+    "discardJob": "Discard car",
+    "discardJobConfirm": "Delete this car from the phone? It was never submitted, so it will be gone for good and won't be counted. Tell your manager first if you're unsure.",
     "noService": "No service recorded",
     "emptyMonthTitle": "No jobs this month",
     "status": "Status",
@@ -264,8 +266,7 @@
     "jobCount_one": "{{count}} job today",
     "jobCount_other": "{{count}} jobs today",
     "prevDay": "Previous day",
-    "nextDay": "Next day",
-    "backToToday": "Back to today"
+    "nextDay": "Next day"
   },
   "jobs": {
     "filtersActive": "Active",
@@ -520,5 +521,13 @@
     "hideLabel": "Hide worker names from Carasso",
     "hideHelp": "When on, Carasso users can't see who worked a job: the crew is removed from All jobs and Job details, the worker filter goes, and the Worker column is left out of their exports.",
     "saved": "Saved"
+  },
+  "forgot": {
+    "title": "Reset your password",
+    "lead": "Enter your email and we'll send you a link to choose a new password.",
+    "send": "Send reset link",
+    "sent": "If that email has an account, a reset link is on its way. Check your inbox (and spam).",
+    "error": "Couldn't send the link — try again in a minute.",
+    "back": "Back to sign in"
   }
 }

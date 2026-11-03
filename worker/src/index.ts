@@ -9,6 +9,7 @@ import { handleUpload } from './upload';
 import { handleVideoAbort, handleVideoComplete, handleVideoPart, handleVideoStart } from './videoUpload';
 import { handleGetPhoto } from './photo';
 import { handleInvite } from './invite';
+import { handleForgotPassword } from './forgotPassword';
 import { handleUserActive } from './userActive';
 
 /** Typed minimally so a workers-types bump can't break it. */
@@ -23,6 +24,8 @@ export interface Env {
   UPLOAD_LIMITER: RateLimiter;
   // /video/start only, in addition to UPLOAD_LIMITER: each start parks R2 storage.
   VIDEO_START_LIMITER: RateLimiter;
+  // /forgot-password only: public route, keyed on the target email.
+  RESET_LIMITER: RateLimiter;
   // Workers AI binding (OCR), typed minimally.
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> };
   SUPABASE_URL: string;
@@ -81,6 +84,8 @@ app.post('/video/complete', handleVideoComplete);
 app.post('/video/abort', handleVideoAbort);
 app.get('/photo/:jobId/:kind', handleGetPhoto);
 app.post('/invite', handleInvite);
+// Public (no JWT): the user has forgotten their password.
+app.post('/forgot-password', handleForgotPassword);
 app.post('/user-active', handleUserActive);
 
 app.onError((err, c) => {

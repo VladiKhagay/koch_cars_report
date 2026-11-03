@@ -67,6 +67,16 @@ namespace_id = "1003"
   limit = 10
   period = 60
 
+# /forgot-password (public), keyed on the target email: stops mailbox spam to one
+# address. 3/min is ample for a human retrying. namespace_id must be unique on the account.
+[[ratelimits]]
+name = "RESET_LIMITER"
+namespace_id = "1004"
+
+  [ratelimits.simple]
+  limit = 3
+  period = 60
+
 # R2 bucket used for job photos. Create with:
 #   wrangler r2 bucket create car-prep-photos
 [[r2_buckets]]

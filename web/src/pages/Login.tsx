@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import Logo from '../components/Logo';
@@ -99,10 +99,10 @@ export default function Login() {
         </Button>
       </form>
 
-      {/* There is no self-service reset, so the screen has to say what to do
-          instead of showing a "Forgot password?" link that goes nowhere. */}
-      <p className="mt-8 border-t border-line pt-6 text-sm leading-relaxed text-ink-600">
-        {t('auth.forgotHelp')}
+      <p className="mt-8 border-t border-line pt-6 text-sm">
+        <Link to="/forgot" className="font-medium text-ink-900 underline">
+          {t('auth.forgotLink')}
+        </Link>
       </p>
     </AuthShell>
   );
