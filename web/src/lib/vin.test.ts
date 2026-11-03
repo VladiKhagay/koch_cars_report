@@ -80,3 +80,18 @@ describe('isValidPlate (default pattern)', () => {
     expect(stripPlate('123-45-678')).toBe('12345678');
   });
 });
+
+/* Format validation is brand-neutral: any ISO 3779 17-character VIN passes, and
+   the check digit (which Renault, Nissan and Chinese makes often don't satisfy)
+   is only a warning, never a rejection. */
+describe('VINs from different makes', () => {
+  it.each([
+    ['Renault', 'VF1RFB00X58123456'],
+    ['Nissan', 'JN1TCNT32U0123456'],
+    ['Chery', 'LVVDB11B4ND123456'],
+    ['Xpeng', 'LNBSCCAK5NA123456'],
+  ])('%s passes the format check', (_make, v) => {
+    expect(isValidVinFormat(v)).toBe(true);
+    expect(isValidVinFormat(v.toLowerCase())).toBe(true);
+  });
+});

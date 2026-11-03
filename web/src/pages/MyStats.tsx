@@ -119,11 +119,15 @@ export default function MyStats() {
   const prevTotal = countFor(shiftMonth(month, -1));
   const change = percentChange(monthTotal, prevTotal);
 
-  // Twelve months ending at the selected one, so stepping back moves the
+  // Up to twelve months ending at the selected one, so stepping back moves the
   // window with it instead of always showing the run-up to today.
   const trend = useMemo(() => {
-    const months = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11));
     const byMonth = new Map(rows.map((r) => [monthKey(r.month), r.job_count]));
+    // Start at the first month with data, not 12 back: a new worker would otherwise scroll past empty bars.
+    const first = [...byMonth.keys()].sort()[0] ?? month;
+    const months = Array.from({ length: 12 }, (_, i) => shiftMonth(month, i - 11)).filter(
+      (m) => m >= first || m === month,
+    );
     return months.map((m) => ({ label: monthLabel(m, i18n.language), value: byMonth.get(m) ?? 0 }));
   }, [rows, month, i18n.language]);
 
