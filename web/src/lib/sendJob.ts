@@ -1,5 +1,5 @@
 import { submitJob, submitVideo, isPermanentError, type NewJobPayload } from './jobs';
-import { enqueueForRetry, enqueueVideo, flushQueue } from './offlineQueue';
+import { enqueueForRetry, enqueueVideo, errorText, flushQueue } from './offlineQueue';
 
 /**
  * What Submit tells the worker:
@@ -43,15 +43,15 @@ export async function sendJob(
     const permanent = deps.isPermanentError(err);
     const outcome = permanent ? 'failed' : 'queued-for-retry';
     if (!video) {
-      await deps.enqueueForRetry(payload, { needsAttention: permanent });
+      await deps.enqueueForRetry(payload, { needsAttention: permanent, error: errorText(err) });
       return outcome;
     }
     try {
-      await deps.enqueueForRetry({ ...payload, videoBlob: video }, { needsAttention: permanent });
+      await deps.enqueueForRetry({ ...payload, videoBlob: video }, { needsAttention: permanent, error: errorText(err) });
       return outcome;
     } catch {
       // No room for the clip (up to 75MB): keep the car, which matters more.
-      await deps.enqueueForRetry({ ...payload, videoBlob: null }, { needsAttention: permanent });
+      await deps.enqueueForRetry({ ...payload, videoBlob: null }, { needsAttention: permanent, error: errorText(err) });
       return permanent ? 'failed-video-not-saved' : 'queued-video-not-saved';
     }
   }

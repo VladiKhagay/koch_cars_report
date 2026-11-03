@@ -553,16 +553,19 @@ export default function MyJobs() {
                     </Badge>
                   )}
                 </div>
-                {/* Only a video can be given up on: it is the one thing here that is not the record of the car. */}
-                {video && failed && (
+                {failed && job.lastError && <p className="mt-2 break-words font-mono text-xs text-ink-600">{job.lastError}</p>}
+                {/* A video can be given up on; a job only once it has failed for good, with a louder warning. */}
+                {failed && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button variant="secondary" icon="sync" onClick={() => void retryQueued(job.queuedId)}>
-                      {t('common.retry')}
-                    </Button>
+                    {video && (
+                      <Button variant="secondary" icon="sync" onClick={() => void retryQueued(job.queuedId)}>
+                        {t('common.retry')}
+                      </Button>
+                    )}
                     <ConfirmAction
-                      trigger={t('myJobs.discard')}
-                      question={t('myJobs.discardConfirm')}
-                      confirmLabel={t('myJobs.discard')}
+                      trigger={video ? t('myJobs.discard') : t('myJobs.discardJob')}
+                      question={video ? t('myJobs.discardConfirm') : t('myJobs.discardJobConfirm')}
+                      confirmLabel={video ? t('myJobs.discard') : t('myJobs.discardJob')}
                       onConfirm={() => void discardQueued(job.queuedId)}
                     />
                   </div>

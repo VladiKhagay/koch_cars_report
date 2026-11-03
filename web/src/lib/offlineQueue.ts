@@ -16,6 +16,8 @@ export interface QueuedJob extends NewJobPayload {
   attempts?: number;
     /** Set once retrying stopped making sense (permanent error, or the attempts/age bound); flushQueue skips it. */
   needsAttention?: boolean;
+  /** Why the last attempt failed, shown on the card so a stuck car can be diagnosed. */
+  lastError?: string;
   /**
    * 'video': the job and its photos are in; only the condition video (videoBlob)
    * is left to send, for `jobId`. Missing = a job entry, which is every entry
@@ -130,13 +132,14 @@ export async function refreshQueue(): Promise<QueuedJob[]> {
  * captured photo is never dropped. `needsAttention` skips auto-retry for a
  * failure already known to be permanent (see isPermanentError).
  */
-export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAttention?: boolean }): Promise<void> {
+export async function enqueueForRetry(payload: NewJobPayload, opts?: { needsAttention?: boolean; error?: string }): Promise<void> {
   const queued: QueuedJob = {
     ...payload,
     queuedId: crypto.randomUUID(),
     queuedAt: new Date().toISOString(),
     attempts: opts?.needsAttention ? 1 : 0,
     needsAttention: opts?.needsAttention,
+    lastError: opts?.error,
   };
   await queueStore.put(queued);
   await refreshQueue();
@@ -175,10 +178,10 @@ export async function retryQueued(queuedId: string): Promise<void> {
   await flushQueue();
 }
 
-/** Drops a video entry for good (the clip exists only here). Job entries are never discarded. */
+/** Drops a failed entry for good (it exists only on this phone). A job entry only once it is flagged `needsAttention`. */
 export async function discardQueued(queuedId: string): Promise<void> {
   const entry = (await queueStore.getAll()).find((e) => e.queuedId === queuedId);
-  if (entry?.stage !== 'video') return;
+  if (!entry || (entry.stage !== 'video' && !entry.needsAttention)) return;
   const upload = queueStore.getUpload(queuedId);
   // Best effort: an upload nobody aborts is dropped by the bucket's own rule after 7 days.
   // ponytail: Discard while this entry is the one uploading does not stop that run: it may still
@@ -277,13 +280,19 @@ let hiddenDuringAttempt = false;
 /** The video attempt in flight. iOS freezes its request on lock and may never settle it, so coming back aborts it. */
 let attemptAbort: AbortController | null = null;
 
+export function errorText(err: unknown): string {
+  const status = (err as { status?: number } | null)?.status;
+  const msg = (err as { message?: string } | null)?.message ?? String(err);
+  return `${status ? `${status}: ` : ''}${msg}`.slice(0, 200);
+}
+
 /** Records a failed attempt. Returns true when the entry is now flagged for a human. */
 async function recordFailure(entry: QueuedJob, err: unknown, countAttempt: boolean): Promise<boolean> {
   // A 429 is the Worker asking us to slow down, not a failed attempt; the age bound still applies.
   const attempts = (entry.attempts ?? 0) + (countAttempt && !isRateLimited(err) ? 1 : 0);
   const age = Date.now() - new Date(entry.queuedAt).getTime();
   const exhausted = isPermanentError(err) || attempts >= MAX_ATTEMPTS || age >= MAX_AGE_MS;
-  await queueStore.put({ ...entry, attempts, needsAttention: exhausted || undefined });
+  await queueStore.put({ ...entry, attempts, needsAttention: exhausted || undefined, lastError: errorText(err) });
   return exhausted;
 }
 

@@ -294,9 +294,13 @@ export async function findPreviousJob(vehicle: { plate?: string | null; vin?: st
   if (!plate && !vin) return null;
   try {
     const { data, error } = await supabase.rpc('find_previous_job', { p_plate: plate, p_vin: vin });
-    if (error) return null;
+    if (error) {
+      console.warn('find_previous_job failed', error);
+      return null;
+    }
     return ((data ?? []) as PreviousJob[])[0] ?? null;
-  } catch {
+  } catch (e) {
+    console.warn('find_previous_job failed', e);
     return null;
   }
 }

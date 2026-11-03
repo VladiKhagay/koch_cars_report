@@ -92,23 +92,24 @@ describe('sendJob: the job does not land', () => {
     expect(deps.enqueueForRetry).toHaveBeenCalledTimes(1);
     expect(deps.enqueueForRetry).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: 'job-1', videoBlob: video }),
-      { needsAttention: false },
+      expect.objectContaining({ needsAttention: false }),
     );
   });
 
   it('transient without a video: queued with the job id', async () => {
     deps.submitJob.mockImplementation(rowThenFail(new TypeError('network')));
     expect(await send(payload(), null)).toBe('queued-for-retry');
-    expect(deps.enqueueForRetry).toHaveBeenCalledWith(expect.objectContaining({ jobId: 'job-1' }), {
-      needsAttention: false,
-    });
+    expect(deps.enqueueForRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: 'job-1' }),
+      expect.objectContaining({ needsAttention: false }),
+    );
   });
 
   it('permanent: queued flagged for a human', async () => {
     deps.submitJob.mockRejectedValue(new Error('denied'));
     deps.isPermanentError.mockReturnValue(true);
     expect(await send(payload(), null)).toBe('failed');
-    expect(deps.enqueueForRetry).toHaveBeenCalledWith(expect.anything(), { needsAttention: true });
+    expect(deps.enqueueForRetry).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ needsAttention: true }));
   });
 
   /* 75MB attached and the phone is full: the rejection must not escape (no reset, a second Submit duplicates the job). */
@@ -130,7 +131,7 @@ describe('sendJob: the job does not land', () => {
     expect(await send(payload(), video)).toBe('failed-video-not-saved');
     expect(deps.enqueueForRetry).toHaveBeenLastCalledWith(
       expect.objectContaining({ jobId: 'job-1', videoBlob: null }),
-      { needsAttention: true },
+      expect.objectContaining({ needsAttention: true }),
     );
   });
 

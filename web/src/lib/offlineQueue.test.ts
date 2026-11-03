@@ -405,12 +405,19 @@ describe('retry and discard', () => {
     expect(stored()).toEqual([]);
   });
 
-  /* A job entry is the only record of the car: it can never be thrown away from here. */
-  it('discard leaves a job entry alone', async () => {
-    const job = base({ needsAttention: true });
+  /* A job entry is the only record of the car: it is only dropped once it has failed for good. */
+  it('discard leaves a job entry that is still retrying alone', async () => {
+    const job = base();
     seed(job);
     await q.discardQueued(job.queuedId);
     expect(stored()).toHaveLength(1);
+  });
+
+  it('discard removes a job entry flagged for attention', async () => {
+    const job = base({ needsAttention: true });
+    seed(job);
+    await q.discardQueued(job.queuedId);
+    expect(stored()).toEqual([]);
   });
 });
 
