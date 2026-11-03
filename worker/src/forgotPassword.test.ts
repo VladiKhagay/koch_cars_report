@@ -13,7 +13,7 @@ const ctx = (body: unknown) =>
 
 afterEach(() => vi.unstubAllGlobals());
 
-function run(email: string, authUsers: { id: string; email: string }[], activeProfiles: unknown[]) {
+function run(email: string, authUsers: { id: string; email: string; email_confirmed_at?: string }[], activeProfiles: unknown[]) {
   const urls: string[] = [];
   vi.stubGlobal('fetch', async (url: string) => {
     urls.push(url);
@@ -26,9 +26,14 @@ function run(email: string, authUsers: { id: string; email: string }[], activePr
 
 describe('handleForgotPassword', () => {
   it('sends for an invited, active user', async () => {
-    const { r, urls } = await run('Dana@Example.com', [{ id: 'a1', email: 'dana@example.com' }], [{ id: 'u1' }]);
+    const { r, urls } = await run('Dana@Example.com', [{ id: 'a1', email: 'dana@example.com', email_confirmed_at: '2026-01-01' }], [{ id: 'u1' }]);
     expect(r).toEqual({ data: { ok: true }, status: 200 });
     expect(urls.some((u) => u.includes('/auth/v1/recover'))).toBe(true);
+  });
+  it('re-sends the invitation to someone who never accepted it', async () => {
+    const { urls } = await run('dana@example.com', [{ id: 'a1', email: 'dana@example.com' }], [{ id: 'u1' }]);
+    expect(urls.some((u) => u.includes('/auth/v1/invite'))).toBe(true);
+    expect(urls.some((u) => u.includes('/recover'))).toBe(false);
   });
   it.each([
     ['unknown email', [], []],

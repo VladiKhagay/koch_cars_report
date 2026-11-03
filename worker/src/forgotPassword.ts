@@ -28,7 +28,7 @@ export async function handleForgotPassword(c: Context<{ Bindings: Env }>) {
     console.error('forgot-password: user lookup failed', listRes.status);
     return c.json({ error: 'Internal error' }, 500);
   }
-  const { users = [] } = (await listRes.json()) as { users?: { id: string; email?: string }[] };
+  const { users = [] } = (await listRes.json()) as { users?: { id: string; email?: string; email_confirmed_at?: string | null }[] };
   const authUser = users.find((u) => u.email?.toLowerCase() === email);
 
   if (authUser) {
@@ -38,15 +38,21 @@ export async function handleForgotPassword(c: Context<{ Bindings: Env }>) {
     );
     const profiles = profRes.ok ? ((await profRes.json()) as unknown[]) : [];
     if (profiles.length > 0) {
+      // Never accepted the invite (e.g. the link expired): recovery would not
+      // work for them, so re-send the invitation itself. Otherwise a plain reset.
+      const invitePending = !authUser.email_confirmed_at;
+      const redirectTo = encodeURIComponent(`${c.env.APP_URL ?? ''}/welcome`);
       const res = await fetch(
-        `${c.env.SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(`${c.env.APP_URL ?? ''}/welcome`)}`,
+        `${c.env.SUPABASE_URL}/auth/v1/${invitePending ? 'invite' : 'recover'}?redirect_to=${redirectTo}`,
         {
           method: 'POST',
-          headers: { apikey: c.env.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+          headers: invitePending
+            ? { ...service, 'Content-Type': 'application/json' }
+            : { apikey: c.env.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
         },
       );
-      if (!res.ok) console.error('forgot-password: recover failed', res.status);
+      if (!res.ok) console.error('forgot-password: send failed', res.status);
     }
   }
   return c.json({ ok: true });
