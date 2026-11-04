@@ -243,7 +243,9 @@ export default function MyJobs() {
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<Sort>({ key: 'created_at', asc: false });
   const [loading, setLoading] = useState(true);
-  const [services, setServices] = useState<Service[]>([]);
+  /** The whole catalog, retired services included, so an old job still names its service. `null` until loaded. */
+  const [catalog, setCatalog] = useState<Service[] | null>(null);
+  const services = useMemo(() => (catalog ?? []).filter((s) => s.active && !s.deleted_at), [catalog]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     note: string;
@@ -353,18 +355,20 @@ export default function MyJobs() {
     void supabase
       .from('services')
       .select(SERVICE_COLUMNS)
-      .eq('active', true)
       .order('sort_order')
-      .then(({ data }) => setServices(data ?? []));
+      .then(({ data }) => setCatalog(data ?? []));
     // Re-render every 20s so the remaining edit time counts down live.
     const interval = setInterval(() => forceTick((n) => n + 1), 20_000);
     return () => clearInterval(interval);
   }, [appUser]);
 
   const serviceLabel = useCallback(
-    (id: string | null) =>
-      (id ? serviceName(services.find((s) => s.id === id), i18n.language) : null) ?? t('myJobs.noService'),
-    [services, i18n.language, t],
+    (id: string | null) => {
+      // Rows can arrive before the catalog does; "no service" would be wrong for that moment.
+      if (id && catalog === null) return '…';
+      return (id ? serviceName(catalog?.find((s) => s.id === id), i18n.language) : null) ?? t('myJobs.noService');
+    },
+    [catalog, i18n.language, t],
   );
 
   const crewLabel = useCallback(
@@ -435,7 +439,7 @@ export default function MyJobs() {
       if (!rows) throw new Error('query failed');
 
       const sheetRows = buildMyJobsSheet(
-        rows.map((job) => ({ ...job, service: exportServiceName(services.find((x) => x.id === job.service_id), exportLang) })),
+        rows.map((job) => ({ ...job, service: exportServiceName(catalog?.find((x) => x.id === job.service_id), exportLang) })),
         // The file's headers, in the language chosen for exports (Hebrew by default).
         MY_JOBS_HEADERS[exportLang],
       );

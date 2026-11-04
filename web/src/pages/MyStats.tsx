@@ -134,6 +134,7 @@ export default function MyStats() {
   const byService = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of serviceRows) counts.set(r.service_id, (counts.get(r.service_id) ?? 0) + r.job_count);
+    if (Object.keys(serviceLabels).length === 0) return []; // labels still loading: don't call every service "none"
     return shares(counts, (id) => serviceLabels[id] ?? t('myJobs.noService'));
   }, [serviceRows, serviceLabels, t]);
 
@@ -142,6 +143,7 @@ export default function MyStats() {
   const earningsByService = useMemo(() => {
     const totals = new Map<string, number>();
     for (const r of serviceRows) totals.set(r.service_id, (totals.get(r.service_id) ?? 0) + r.worker_cost);
+    if (Object.keys(serviceLabels).length === 0) return []; // labels still loading: don't call every service "none"
     return shares(totals, (id) => serviceLabels[id] ?? t('myJobs.noService'));
   }, [serviceRows, serviceLabels, t]);
 
