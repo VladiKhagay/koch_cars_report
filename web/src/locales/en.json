@@ -42,7 +42,11 @@
     "mismatch": "Passwords don't match",
     "invalidTitle": "This link no longer works",
     "invalidLink": "This invitation link is invalid or has expired. Ask your admin to send a new one.",
-    "goToSignIn": "Go to sign in"
+    "goToSignIn": "Go to sign in",
+    "weak": "Password is too weak. Use at least 8 characters, mixing letters and numbers.",
+    "pwned": "This password appeared in a data leak. Choose a different one.",
+    "same": "Choose a password different from your current one.",
+    "failed": "Couldn't save the password. Try again."
   },
   "profile": {
     "title": "Profile",

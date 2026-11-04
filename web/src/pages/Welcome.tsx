@@ -53,7 +53,17 @@ export default function Welcome() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
     setSaving(false);
     if (updateError) {
-      setError(updateError.message);
+      // Supabase's own messages are long, English and list every rule; show a short translated one.
+      const reasons = (updateError as { reasons?: string[] }).reasons ?? [];
+      setError(
+        reasons.includes('pwned')
+          ? t('welcome.pwned')
+          : updateError.code === 'same_password'
+            ? t('welcome.same')
+            : updateError.code === 'weak_password'
+              ? t('welcome.weak')
+              : t('welcome.failed'),
+      );
       return;
     }
     navigate('/', { replace: true });
