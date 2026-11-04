@@ -332,8 +332,9 @@ export default function Jobs() {
     void q.then(({ data }) => setWorkers(data ?? []));
   }, [effectiveSite, isCarasso, hideNames]);
 
-    /* The service filter reads the same catalog the job form writes. Retired
-       services are included: this grid is mostly read backwards through history. */
+    /* The service filter reads the same catalog the job form writes. A retired
+       (inactive) service stays listed only if some job used it: this grid is read
+       backwards through history, but a service nobody ever logged is just noise. */
   useEffect(() => {
     if (isCarasso) {
       void fetchCarassoServices().then(setServices);
@@ -341,10 +342,27 @@ export default function Jobs() {
     }
     void supabase
       .from('services')
-      .select('id,name_en,name_ru,name_he')
+      .select('id,name_en,name_ru,name_he,active')
       .is('deleted_at', null)
       .order('sort_order')
-      .then(({ data }) => setServices(data ?? []));
+      .then(async ({ data }) => {
+        const all = data ?? [];
+        const retired = all.filter((s) => !s.active);
+        const used = new Set(
+          (
+            await Promise.all(
+              retired.map(async (s) => {
+                const { count } = await supabase
+                  .from('jobs')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('service_id', s.id);
+                return count === null || count > 0 ? s.id : null; // on error keep it: hiding a used service is worse
+              }),
+            )
+          ).filter(Boolean),
+        );
+        setServices(all.filter((s) => s.active || used.has(s.id)));
+      });
   }, [isCarasso]);
 
   /* --------------------------------------------------------------- actions */
