@@ -22,6 +22,8 @@ function clock(seconds: number): string {
 
 export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
   const { t } = useTranslation();
+  // `ready`: camera open and showing a preview, waiting for the worker to press Start.
+  const [ready, setReady] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -29,6 +31,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
   const liveRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const mimeRef = useRef<string>('');
 
   function releaseCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -49,8 +52,11 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
   }, [video]);
 
   useEffect(() => {
+    if (ready && liveRef.current) liveRef.current.srcObject = streamRef.current;
+  }, [ready]);
+
+  useEffect(() => {
     if (!recording) return;
-    if (liveRef.current) liveRef.current.srcObject = streamRef.current;
     const startedAt = Date.now();
     const timer = setInterval(() => {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
@@ -60,7 +66,8 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
     return () => clearInterval(timer);
   }, [recording]);
 
-  async function start() {
+  /** Opens the camera for a live preview; recording starts only on the Start button. */
+  async function openCamera() {
     setProblem(null);
     const mimeType = pickVideoMimeType(
       typeof MediaRecorder === 'undefined' ? undefined : (type) => MediaRecorder.isTypeSupported(type),
@@ -81,7 +88,19 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
       return;
     }
     streamRef.current = stream;
+    mimeRef.current = mimeType;
+    setReady(true);
+  }
 
+  function cancelPreview() {
+    releaseCamera();
+    setReady(false);
+  }
+
+  function startRecording() {
+    const stream = streamRef.current;
+    const mimeType = mimeRef.current;
+    if (!stream) return;
     const recorder = new MediaRecorder(stream, {
       ...(mimeType ? { mimeType } : {}),
       videoBitsPerSecond: VIDEO_BITRATE,
@@ -93,6 +112,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
     recorder.onstop = () => {
       releaseCamera();
       setRecording(false);
+      setReady(false);
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/mp4' });
       if (blob.size === 0) return;
       // A clip the Worker is certain to refuse would sit in the offline queue
@@ -121,7 +141,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
 
   return (
     <div>
-      {recording && (
+      {(ready || recording) && (
         <div
           role="dialog"
           aria-modal="true"
@@ -131,19 +151,41 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
           <video ref={liveRef} autoPlay muted playsInline className="min-h-0 w-full flex-1 object-cover" />
           {/* viewport-fit=cover puts this under the notch / Dynamic Island; the inset keeps the timer below it. */}
           <div className="absolute inset-x-0 top-0 flex items-center justify-center p-4 pt-[max(1rem,calc(env(safe-area-inset-top)+0.5rem))]">
-            <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 font-mono text-base font-bold text-white">
-              <span aria-hidden className="h-3 w-3 rounded-full bg-danger-600" />
-              {clock(elapsed)} / {clock(MAX_VIDEO_SECONDS)}
-            </span>
+            {recording && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-black/70 px-4 py-2 font-mono text-base font-bold text-white">
+                <span aria-hidden className="h-3 w-3 rounded-full bg-danger-600" />
+                {clock(elapsed)} / {clock(MAX_VIDEO_SECONDS)}
+              </span>
+            )}
           </div>
-          <div className="absolute inset-x-0 bottom-0 flex justify-center p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-            <button
-              type="button"
-              onClick={stop}
-              className="inline-flex min-h-tap items-center justify-center rounded-full bg-white px-8 py-4 text-base font-bold text-black"
-            >
-              {t('newJob.stopRecording')}
-            </button>
+          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-3 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            {recording ? (
+              <button
+                type="button"
+                onClick={stop}
+                className="inline-flex min-h-tap items-center justify-center rounded-full bg-white px-8 py-4 text-base font-bold text-black"
+              >
+                {t('newJob.stopRecording')}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={cancelPreview}
+                  className="inline-flex min-h-tap items-center justify-center rounded-full bg-black/70 px-6 py-4 text-base font-bold text-white"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="inline-flex min-h-tap items-center justify-center gap-2 rounded-full bg-white px-8 py-4 text-base font-bold text-black"
+                >
+                  <span aria-hidden className="h-3 w-3 rounded-full bg-danger-600" />
+                  {t('newJob.startRecording')}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -154,7 +196,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
            the photos, not a 176px tile to scroll past. */
         <button
           type="button"
-          onClick={() => void start()}
+          onClick={() => void openCamera()}
           className="flex min-h-control-lg w-full items-center gap-3 rounded-xl border-2 border-ink-900 bg-surface px-4 py-3 text-start text-ink-900 active:bg-ink-50"
         >
           <Icon name="video" size={28} className="shrink-0" />
@@ -182,7 +224,7 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
             />
           )}
           <div className="mt-auto flex flex-wrap items-center gap-x-3 pt-1">
-            <button type="button" onClick={() => void start()} className={textAction}>
+            <button type="button" onClick={() => void openCamera()} className={textAction}>
               <Icon name="video" size={16} />
               {t('newJob.recordAgain')}
             </button>

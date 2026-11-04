@@ -207,7 +207,8 @@
     "previousJob": "הרכב הזה כבר תועד ב-{{date}} באתר {{site}} ({{service}}). אפשר עדיין לשלוח.",
     "duplicateConfirm": "הרכב הזה כבר תועד ב-{{date}} באתר {{site}} ({{service}}). לשלוח שוב בכל זאת?",
     "duplicateTitle": "הרכב כבר תועד",
-    "submitAnyway": "לשלוח בכל זאת"
+    "submitAnyway": "לשלוח בכל זאת",
+    "startRecording": "התחל הקלטה"
   },
   "myJobs": {
     "title": "העבודות שלי",

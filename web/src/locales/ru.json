@@ -208,7 +208,8 @@
     "previousJob": "Эта машина уже записана {{date}} на площадке {{site}} ({{service}}). Отправить всё равно можно.",
     "duplicateConfirm": "Эта машина уже записана {{date}} на площадке {{site}} ({{service}}). Отправить ещё раз?",
     "duplicateTitle": "Машина уже записана",
-    "submitAnyway": "Всё равно отправить"
+    "submitAnyway": "Всё равно отправить",
+    "startRecording": "Начать запись"
   },
   "myJobs": {
     "title": "Мои работы",

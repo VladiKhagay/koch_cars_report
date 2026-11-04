@@ -200,7 +200,8 @@
     "previousJob": "This car was already logged on {{date}} at {{site}} ({{service}}). You can still submit it.",
     "duplicateConfirm": "This car was already logged on {{date}} at {{site}} ({{service}}). Submit it again anyway?",
     "duplicateTitle": "Car already logged",
-    "submitAnyway": "Submit anyway"
+    "submitAnyway": "Submit anyway",
+    "startRecording": "Start recording"
   },
   "myJobs": {
     "title": "My Jobs",
