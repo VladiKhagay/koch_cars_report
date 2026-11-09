@@ -139,6 +139,8 @@ export interface Photo {
   r2_key: string;
   created_at: string;
   expires_at: string;
+  /** Set when a manager/admin removed the slot; the row stays as a tombstone. */
+  removed_at: string | null;
 }
 
 export interface JobMonthlyStat {

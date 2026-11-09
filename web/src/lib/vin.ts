@@ -46,3 +46,31 @@ export function stripPlate(plate: string): string {
 export function isValidPlate(plate: string): boolean {
   return PLATE_REGEX.test(stripPlate(plate));
 }
+
+export interface NormalizedVehicle {
+  /** Bare 8 digits, or null when left empty. Never '': '' would collide in the duplicate check. */
+  plate: string | null;
+  vin: string | null;
+  /** Check digit result for jobs.vin_valid_checksum; null when there is no VIN. */
+  vinChecksum: boolean | null;
+  /** Blocking: a started plate that is not 8 digits. */
+  plateError: boolean;
+  /** Blocking: a started VIN that is not 17 valid characters. A bad check digit is only `vinChecksum: false`. */
+  vinError: boolean;
+  /** Blocking: a job needs a plate or a VIN. */
+  missingBoth: boolean;
+}
+
+/** The New Job rules for a plate/VIN pair, for any screen that edits them. */
+export function normalizeVehicle(input: { plate: string | null; vin: string | null }): NormalizedVehicle {
+  const plate = stripPlate(input.plate ?? '') || null;
+  const vin = (input.vin ?? '').trim().toUpperCase() || null;
+  return {
+    plate,
+    vin,
+    vinChecksum: vin ? vinChecksumValid(vin) : null,
+    plateError: plate !== null && !isValidPlate(plate),
+    vinError: vin !== null && !isValidVinFormat(vin),
+    missingBoth: !plate && !vin,
+  };
+}

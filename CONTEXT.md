@@ -151,6 +151,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0003_tighten_worker_job_select.sql` | **Security fix** (see §6), `find_recent_duplicate()` |
 | `0004_user_mgmt_services_softdelete_stats.sql` | Service soft-delete, `update_my_name()`, `set_user_active()`, `job_daily_stats` |
 | `0033_multi_service_jobs.sql` | `job_services` + `job_service_client_prices` (per-line price snapshots, backfilled), `create_job()` / `set_job_services()`, `job_service_lines`, `job_daily_totals`; `job_daily_stats` per service; drops `job_service_stats` |
+| `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -182,8 +183,9 @@ jobs(id, site_id, worker_id, created_at, plate, vin, brand,
 job_services(job_id, service_id, worker_price, created_at)   -- PK (job, service), >= 1 per job
 job_service_client_prices(job_id, service_id, unit_price, total_price)  -- admin/Carasso
 job_client_prices(job_id, unit_price, total_price)  -- per-job sum, NULL if any line unpriced
-photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at)
-audit_log(id, job_id, user_id, action, changes_jsonb, at)
+photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at,
+       removed_at)            -- tombstone (0034): slot removed by a manager/admin
+audit_log(id, job_id, user_id, action, changes_jsonb, at)   -- trigger-written (0034)
 ```
 
 **Several services per job (0033).** 0005 collapsed jobs to one service; the
@@ -212,7 +214,7 @@ job twice — and `job_daily_totals` is per job for job/car counts and pay.
 `jobs.service_id` is **deprecated**, kept only for builds still in the field:
 an old-build insert seeds the first line, and an old-build change of it
 *replaces the job's services with that one service*. New code must not write
-it. Drop it in 0034 once no old build can be running.
+it. Drop it in 0035 once no old build can be running.
 
 **Deploy order: 0033 -> web. Rollback: web only; 0033 is roll-forward only.**
 0033 alone keeps the previous web build working. Until the new web is live, two
@@ -222,14 +224,55 @@ edit (recomputed on the next line change). Never drop `job_services` while any
 job has more than one service — that is the 0005 data loss again. Run
 `supabase/verify_0033.sql` (read-only) after applying.
 
+**Manager/admin full edit and audit (0034).** Managers (own site) and admins
+edit every job field and every media slot at any age; workers keep the
+15-minute window and column guard unchanged. Two decisions:
+
+- *Remove is a tombstone*, `photos.removed_at`, not a row delete: the R2
+  object is left to the 60-day lifecycle (no hard deletes from the app), the
+  row keeps the slot's unique `(job_id, kind)` so re-adding is an update, and
+  history keeps what was there. Because the object outlives the removal, the
+  Worker's GET `/photo` asks `can_view_photo(job, kind)` (= `can_view_job` and
+  the slot not tombstoned) instead of `can_view_job`. Readers of `photos` must
+  filter `removed_at is null`. Replace is an upsert without `ignoreDuplicates`
+  (an update of the live row); `photos_guard_update` pins id/job/kind/R2 key and
+  restarts `expires_at` on a live row (the overwrite restarts the lifecycle).
+  Workers have no update policy on `photos`.
+- *Audit is written by the database*, not the client. The old
+  `recordAudit` insert was best-effort (any failure silently dropped the row),
+  forgeable, and impossible after a manager moved a job off their site. Now
+  AFTER security-definer triggers on `jobs`, `job_billing`, `job_services`,
+  `job_service_client_prices` and `photos` log every manager/admin change as
+  `changes = {field: {from, to}}` (actions `update`, `soft_delete`,
+  `restore`, `media_add`, `media_replace`, `media_remove`,
+  `client_price_update`), inside the same transaction as the row change: if
+  the audit write fails, that save fails. (A media replace writes R2 before
+  the row, so a failed row write can leave new bytes live without an audit
+  row; see SECURITY-NOTES §6.) Worker edits and the trusted context are not
+  audited. `audit_log_insert` is dropped. `audit_log_select` hides
+  `client_price_update` rows (and legacy rows carrying `unit_price` /
+  `total_price`) from managers: client prices stay admin-only.
+
+A manager/admin cannot move a job date more than 5 minutes into the future
+(`jobs_guard_date`): it would hold the worker's 7-day video window open.
+
+The duplicate flag (0029) also re-runs when a manager/admin changes plate, VIN
+or the date, matching only *earlier* jobs. Soft, never blocks.
+
+**Deploy order: 0034 -> Worker -> web. Rollback: web -> Worker -> migration.**
+The old web keeps working on 0034 (its `recordAudit` inserts fail silently
+while the triggers log). A Worker before 0034 403s every photo view. Run
+`supabase/verify_0034.sql` (read-only) after applying.
+
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.
 
 ### Roles
 - **worker** — creates jobs at their own site; edits/deletes their own job
   within 15 min; sees only their own rows. Cannot see billing codes.
-- **manager** — everything within their own site: view/search/edit jobs, fill
-  billing codes, view photos, export, analytics, manage services, activate and
+- **manager** — everything within their own site: view/search/edit jobs (every
+  field, including plate, VIN, brand, worker note and date, at any age — 0034),
+  add/replace/remove media, read the job's edit history, fill billing codes, view photos, export, analytics, manage services, activate and
   deactivate *worker-role* users at their site.
 - **admin** — all sites, plus user/site management and invitations.
 
@@ -432,7 +475,7 @@ Other standing rules:
 - The R2 bucket is private; photos are only served through the Worker after an
   RLS-backed permission check.
 - `ALLOWED_ORIGINS` should be pinned to the app origin, not `*`.
-- Job mutations are audit-logged (who / what / when).
+- Manager/admin job and media changes are audit-logged by database triggers (who / what / when, 0034); worker edits are not.
 
 ---
 

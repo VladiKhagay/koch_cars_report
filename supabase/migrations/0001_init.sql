@@ -296,6 +296,9 @@ create policy photos_insert on photos for insert
 -- service-role key involved) for exactly the same set of jobs that user is
 -- allowed to update — see web/src/lib/audit.ts, called right after every
 -- jobs/job_services mutation in JobDetail and MyJobs.
+-- Superseded by 0034: audit_log_insert is dropped and rows are written by
+-- security-definer triggers on jobs, job_billing, job_services,
+-- job_service_client_prices and photos.
 create policy audit_log_select on audit_log for select
   using (exists (
     select 1 from jobs j

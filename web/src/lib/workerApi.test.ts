@@ -92,6 +92,16 @@ describe('fetchPhotoUrl', () => {
     await expect(fetchPhotoUrl('job-1', 'plate')).resolves.toEqual({ failure: 'denied' });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('bypasses the HTTP cache only when asked for a fresh copy', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: () => 'blob:photo' });
+    respondWith(200);
+    await fetchPhotoUrl('job-1', 'plate');
+    await fetchPhotoUrl('job-1', 'plate', { fresh: true });
+    const calls = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    expect(calls[0][1].cache).toBeUndefined();
+    expect(calls[1][1].cache).toBe('reload');
+  });
 });
 
 /* ------------------------------------------------------------------ OCR read */

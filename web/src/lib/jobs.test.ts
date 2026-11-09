@@ -26,6 +26,13 @@ let existingVideoRows: unknown[] = [];
 /* Every .eq(column, value) on a photos select, and every upsert call (an empty upsert pushes no rows). */
 const selectEqs: [string, unknown][] = [];
 let upsertCalls = 0;
+const upsertOpts: unknown[] = [];
+/* What an upsert(...).select('id') answers: [] is RLS quietly refusing the write. */
+let selectRows: unknown[] = [{ id: 'p1' }];
+/* What that .select('id') errors with (PostgREST / RLS error); null = none. */
+let selectError: { message: string } | null = null;
+/* Every photos update (removeMedia), with its filters. */
+const updates: { fields: Record<string, unknown>; eqs: [string, unknown][] }[] = [];
 
 vi.mock('./supabase', () => {
   return {
@@ -36,10 +43,26 @@ vi.mock('./supabase', () => {
           insertedPhotos.push(...(rows as unknown[]));
           return Promise.resolve({ error: null });
         },
-        upsert: (rows: unknown) => {
+        upsert: (rows: unknown, opts?: unknown) => {
           upsertCalls++;
+          upsertOpts.push(opts);
           insertedPhotos.push(...(Array.isArray(rows) ? rows : [rows]));
-          return Promise.resolve({ error: null });
+          // Awaitable as-is (submitJob) or with .select('id') (media edits, which count the rows back).
+          return Object.assign(Promise.resolve({ error: null }), {
+            select: () => Promise.resolve({ data: selectError ? null : selectRows, error: selectError }),
+          });
+        },
+        update: (fields: Record<string, unknown>) => {
+          const call = { fields, eqs: [] as [string, unknown][] };
+          updates.push(call);
+          const chain = {
+            eq: (c: string, v: unknown) => {
+              call.eqs.push([c, v]);
+              return chain;
+            },
+            select: () => Promise.resolve({ data: selectError ? null : selectRows, error: selectError }),
+          };
+          return chain;
         },
         select: () => ({
           eq: (c1: string, v1: unknown) => ({
@@ -105,7 +128,8 @@ vi.mock('./workerApi', () => ({
 /* 4-byte pieces, so a 10-byte "video" is three pieces: '0123' '4567' '89'. */
 vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 4 }));
 
-const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal } = await import('./jobs');
+const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal, setMedia, removeMedia, slotExists } =
+  await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
 const blob = () => new Blob(['x'], { type: 'image/jpeg' });
@@ -135,6 +159,10 @@ beforeEach(() => {
   existingVideoRows = [];
   selectEqs.length = 0;
   upsertCalls = 0;
+  upsertOpts.length = 0;
+  selectRows = [{ id: 'p1' }];
+  selectError = null;
+  updates.length = 0;
   setServicesError = null;
   w.calls.length = 0;
   w.photoTimeouts.length = 0;
@@ -777,5 +805,116 @@ describe('serviceTotal — rounding', () => {
     const catalog = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, worker_price: 0.1 }));
     expect(serviceTotal(catalog, catalog.map((s) => s.id))).toBe(1);
     expect(serviceTotal([{ id: 'a', worker_price: 19.99 }, { id: 'b', worker_price: 0.01 }], ['a', 'b'])).toBe(20);
+  });
+});
+
+describe('setMedia / removeMedia — manager edits of a slot', () => {
+  it('uploads a photo and marks its row live, overwriting rather than ignoring a duplicate', async () => {
+    await setMedia('job-9', 'extra_2', blob());
+    expect(uploads).toEqual(['extra_2']);
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'extra_2', r2_key: 'job-9/extra_2.jpg', removed_at: null }]);
+    expect(upsertOpts).toEqual([{ onConflict: 'job_id,kind' }]);
+  });
+
+  it('treats zero rows back as a failed write', async () => {
+    selectRows = [];
+    await expect(setMedia('job-9', 'plate', blob())).rejects.toThrow();
+    await expect(removeMedia('job-9', 'plate')).rejects.toThrow();
+  });
+
+  it('removes by tombstoning the existing row, never uploading or inserting', async () => {
+    await removeMedia('job-9', 'vin');
+    expect(uploads).toEqual([]);
+    expect(upsertCalls).toBe(0);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].eqs).toEqual([['job_id', 'job-9'], ['kind', 'vin']]);
+    expect(Number.isNaN(Date.parse(String(updates[0].fields.removed_at)))).toBe(false);
+  });
+
+  it('replaces a video even when its row already exists', async () => {
+    existingVideoRows = [{ id: 'old' }];
+    await setMedia('job-9', 'video', new Blob(['0123456789'], { type: 'video/mp4' }));
+    expect(selectEqs).toEqual([]);
+    expect(w.calls).toContain('complete@up-1:3');
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'video/job-9', removed_at: null }]);
+    expect(upsertOpts).toEqual([{ onConflict: 'job_id,kind' }]);
+  });
+
+  it('leaves the worker path alone: an existing video row still means already sent', async () => {
+    existingVideoRows = [{ id: 'old' }];
+    await submitVideo('job-9', new Blob(['0123456789'], { type: 'video/mp4' }));
+    expect(w.calls).toEqual([]);
+    expect(upsertCalls).toBe(0);
+  });
+});
+
+describe('setMedia / removeMedia — failure paths (test-engineer)', () => {
+  it('a failed upload writes no row, so the slot is not marked live over the old object', async () => {
+    uploadFails = true;
+    await expect(setMedia('job-9', 'extra_1', blob())).rejects.toThrow('offline');
+    expect(upsertCalls).toBe(0);
+    expect(insertedPhotos).toEqual([]);
+  });
+
+  it('a PostgREST error on the row write or the tombstone rejects (never a silent success)', async () => {
+    selectError = { message: 'new row violates row-level security policy' };
+    await expect(setMedia('job-9', 'vin', blob())).rejects.toMatchObject({ message: selectError.message });
+    await expect(removeMedia('job-9', 'extra_3')).rejects.toMatchObject({ message: selectError.message });
+  });
+
+  it('removing a slot that has no row (a legacy plate, an empty extra) throws instead of claiming success', async () => {
+    selectRows = [];
+    await expect(removeMedia('job-9', 'extra_1')).rejects.toThrow(/extra_1/);
+    expect(updates[0].eqs).toEqual([['job_id', 'job-9'], ['kind', 'extra_1']]);
+  });
+
+  it('a video replace whose upload fails permanently writes no row', async () => {
+    w.start.mockRejectedValueOnce(new w.HttpError(403, 'Forbidden'));
+    await expect(setMedia('job-9', 'video', new Blob(['0123456789'], { type: 'video/mp4' }))).rejects.toThrow('Forbidden');
+    expect(upsertCalls).toBe(0);
+  });
+
+  it('a video replace against an old Worker (404) falls back to /upload and still overwrites the row live', async () => {
+    w.start.mockRejectedValueOnce(new w.HttpError(404, 'Not Found'));
+    await setMedia('job-9', 'video', new Blob(['0123456789'], { type: 'video/mp4' }));
+    expect(uploads).toEqual(['video']);
+    expect(insertedPhotos).toEqual([{ job_id: 'job-9', kind: 'video', r2_key: 'job-9/video.jpg', removed_at: null }]);
+    expect(upsertOpts).toEqual([{ onConflict: 'job_id,kind' }]);
+  });
+
+  it('a video replace that RLS refuses (zero rows back) rejects', async () => {
+    selectRows = [];
+    await expect(setMedia('job-9', 'video', new Blob(['0123456789'], { type: 'video/mp4' }))).rejects.toThrow(/video/);
+  });
+});
+
+describe('slotExists — other slots never leak (test-engineer)', () => {
+  const gone = '2026-01-01T00:00:00Z';
+  it('a tombstone on one slot does not hide another', () => {
+    const rows = [{ kind: 'vin' as const, removed_at: gone }, { kind: 'extra_1' as const, removed_at: gone }];
+    expect(slotExists(rows, 'plate')).toBe(true);
+    expect(slotExists(rows, 'extra_2')).toBe(false);
+    expect(slotExists(rows, 'vin')).toBe(false);
+  });
+  it('a live plate/VIN/extra row reads as present; a re-added (un-tombstoned) slot too', () => {
+    expect(slotExists([{ kind: 'plate', removed_at: null }], 'plate')).toBe(true);
+    expect(slotExists([{ kind: 'extra_3', removed_at: null }], 'extra_3')).toBe(true);
+  });
+});
+
+describe('slotExists', () => {
+  const gone = '2026-01-01T00:00:00Z';
+  it('plate and VIN with no row are legacy: still probed', () => {
+    expect(slotExists([], 'plate')).toBe(true);
+    expect(slotExists([], 'vin')).toBe(true);
+  });
+  it('extras and video need a live row', () => {
+    expect(slotExists([], 'extra_1')).toBe(false);
+    expect(slotExists([], 'video')).toBe(false);
+    expect(slotExists([{ kind: 'video', removed_at: null }], 'video')).toBe(true);
+  });
+  it('a removed slot is empty, plate included', () => {
+    expect(slotExists([{ kind: 'plate', removed_at: gone }], 'plate')).toBe(false);
+    expect(slotExists([{ kind: 'extra_2', removed_at: gone }], 'extra_2')).toBe(false);
   });
 });

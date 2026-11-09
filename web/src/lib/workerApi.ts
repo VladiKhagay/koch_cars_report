@@ -123,8 +123,12 @@ export type PhotoFailure =
 /** `type` is what the Worker sniffed at upload — the video download names its extension from it. */
 export type PhotoResult = { url: string; type: string } | { failure: PhotoFailure };
 
-/** Fetches a private R2 photo through the Worker and returns a local object URL. */
-export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<PhotoResult> {
+/**
+ * Fetches a private R2 photo through the Worker and returns a local object URL.
+ * `fresh` skips the browser's HTTP cache (the Worker sends max-age=300), for a
+ * slot that was just replaced under the same key.
+ */
+export async function fetchPhotoUrl(jobId: string, kind: PhotoKind, opts: { fresh?: boolean } = {}): Promise<PhotoResult> {
   // Separate from the request: a lapsed login must not read as a network problem.
   let authorization: string;
   try {
@@ -134,7 +138,10 @@ export async function fetchPhotoUrl(jobId: string, kind: PhotoKind): Promise<Pho
   }
 
   try {
-    const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, { headers: { Authorization: authorization } });
+    const res = await fetch(`${BASE_URL}/photo/${jobId}/${kind}`, {
+      headers: { Authorization: authorization },
+      ...(opts.fresh ? { cache: 'reload' as const } : {}),
+    });
     if (res.ok) {
       const blob = await res.blob();
       return { url: URL.createObjectURL(blob), type: blob.type };

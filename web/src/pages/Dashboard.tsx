@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { saveBilling } from '../lib/jobs';
 import { useAuth } from '../context/AuthContext';
-import { recordAudit } from '../lib/audit';
 import { staffNames, useStaff } from '../lib/useStaff';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { Job } from '../lib/types';
@@ -56,7 +55,6 @@ export default function Dashboard() {
     const billing_code = value || null;
     const { error } = await saveBilling(job.id, { billing_code });
     if (error) return false;
-    await recordAudit(job.id, appUser.id, 'update', { billing_code });
     setJustSaved((prev) => new Set(prev).add(job.id));
     setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, billing_code } : j)));
     return true;

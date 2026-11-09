@@ -6,17 +6,25 @@ import { supabase } from '../lib/supabase';
 import { fetchDuplicateSummary, saveBilling, setJobServices } from '../lib/jobs';
 import { fetchServiceClientPrices, parsePrice } from '../lib/clientPrices';
 import { serviceLabel } from '../lib/serviceRows';
-import { recordAudit } from '../lib/audit';
+import { stripPlate } from '../lib/vin';
+import { toLocalInput } from '../lib/formatDate';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { SERVICE_COLUMNS, type ClientPrices, type Job, type PreviousJob, type Service } from '../lib/types';
 import JobMedia from '../components/JobMedia';
+import EditHistory from '../components/EditHistory';
 import CarassoJobDetail from './CarassoJobDetail';
 import { describePreviousJob } from '../components/previousJob';
 import { formatMoney } from '../components/money';
 import CoworkerPicker from '../components/CoworkerPicker';
 import ServiceChips from '../components/ServiceChips';
-import { lineWrites as planLineWrites, missingServices, type LineMoney } from './jobDetailLines';
+import {
+  lineWrites as planLineWrites,
+  missingServices,
+  planJobEdit,
+  type JobFieldDraft,
+  type LineMoney,
+} from './jobDetailLines';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
 import {
@@ -26,11 +34,13 @@ import {
   DetailRow,
   EmptyState,
   Field,
+  FieldNotice,
   Page,
   SectionHeading,
   Select,
   Skeleton,
   fieldClass,
+  fieldErrorClass,
 } from '../components/ui';
 
 const priceText = (n: number | null | undefined) => (n == null ? '' : String(n));
@@ -77,6 +87,16 @@ function StaffJobDetail() {
   const [earlier, setEarlier] = useState<PreviousJob | null>(null);
   const [billingCode, setBillingCode] = useState('');
   const [managerNote, setManagerNote] = useState('');
+  /* The car itself and when it was done: managers/admins correct these too.
+     Same plate/VIN rules as New Job (normalizeVehicle); the database re-runs
+     the duplicate flag and logs the change. */
+  const [plate, setPlate] = useState('');
+  const [vin, setVin] = useState('');
+  const [brand, setBrand] = useState('');
+  const [workerNote, setWorkerNote] = useState('');
+  const [date, setDate] = useState('');
+  /** Bumped after every write so an open Edit history re-reads. */
+  const [historyKey, setHistoryKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -122,6 +142,11 @@ function StaffJobDetail() {
     setJob(j);
     setBillingCode(j.billing_code ?? '');
     setManagerNote(j.manager_note ?? '');
+    setPlate(j.plate ?? '');
+    setVin(j.vin ?? '');
+    setBrand(j.brand ?? '');
+    setWorkerNote(j.worker_note ?? '');
+    setDate(toLocalInput(j.created_at));
     setCatalog((active ?? []) as Service[]);
     setServiceIds(lines.map((l) => l.service_id));
     setLineDefaults(defaults);
@@ -140,9 +165,28 @@ function StaffJobDetail() {
   const setLineValue = (serviceId: string, field: keyof LineMoney, value: string) =>
     setLineDrafts((d) => ({ ...d, [serviceId]: { ...d[serviceId], [field]: value } }));
 
+  /* The jobs-row update and its validation gate (see planJobEdit); the inline
+     errors read from the same plan. No job yet: no plan, no errors. */
+  const draft: JobFieldDraft = {
+    plate,
+    vin,
+    brand,
+    workerNote,
+    date,
+    workerId: selectedWorkerId,
+    coworkerIds,
+    siteId,
+  };
+  const edit = job ? planJobEdit(job, draft, Date.now()) : null;
+  const vehicle = edit?.vehicle ?? { plateError: false, vinError: false, missingBoth: false, vinChecksum: null };
+  const dateError = edit?.dateError ?? false;
+  const vinChanged = edit?.vinChanged ?? false;
+
   async function handleSave() {
-    if (!job || !appUser) return;
+    if (!job || !appUser || !edit) return;
     const isAdmin = appUser.role === 'admin';
+    // Shown inline already; the check digit is a warning and never blocks.
+    if (edit.blocked) return;
     const originalServiceIds = job.service_ids ?? (job.services ?? []).map((l) => l.service_id);
     // A job keeps at least one service (the database refuses none); a legacy job
     // that never had one may still save its other fields.
@@ -163,30 +207,9 @@ function StaffJobDetail() {
     setSaving(true);
     const servicesChanged = !sameSet(serviceIds, originalServiceIds);
     const billing = { billing_code: billingCode || null, manager_note: managerNote || null };
-    const jobChanges = {
-      worker_id: selectedWorkerId || job.worker_id,
-      // The new submitter can't also be their own co-worker — the trigger would
-      // drop them anyway; dropping them here keeps the screen honest.
-      coworker_ids: coworkerIds.filter((id) => id !== (selectedWorkerId || job.worker_id)),
-      site_id: siteId || job.site_id,
-    };
-    // jobs.worker_price is the line sum (a trigger), so pay is audited per line, never on the job.
-    const lines = lineWrites.map((w) => ({
-      service_id: w.sid,
-      ...(w.payChanged ? { worker_price: parsePrice(w.pay) } : {}),
-      ...(w.pricesChanged ? { unit_price: parsePrice(w.unit), total_price: parsePrice(w.total) } : {}),
-    }));
-    const changes = {
-      ...billing,
-      ...jobChanges,
-      ...(servicesChanged ? { service_ids: serviceIds } : {}),
-      ...(lines.length > 0 ? { service_lines: lines } : {}),
-    };
-    /* A manager moving a job to another site can't write its audit row
-       afterwards — audit_log_insert is scoped to their own site, and the job
-       has just left it. So a move is audited first, while they still can. */
-    const moving = changes.site_id !== job.site_id;
-    if (moving) await recordAudit(job.id, appUser.id, 'update', changes);
+    const { changes: jobChanges, plateChanged, vehicle: stored } = edit;
+    // Every write below is logged by database triggers (audit_log), in the same transaction.
+    const moving = jobChanges.site_id !== job.site_id;
     /* Order matters: a manager who moves the job away loses access to its
        billing row and its services, so those go first and the jobs update (which
        carries the site) goes last. Each step stops the rest on failure. */
@@ -208,36 +231,58 @@ function StaffJobDetail() {
             { onConflict: 'job_id,service_id' },
           ));
     }
-    if (!error) ({ error } = await supabase.from('jobs').update(jobChanges).eq('id', job.id));
+    if (!error) {
+      if (moving && !isAdmin) {
+        /* No RETURNING here: the moved row fails the manager's select policy,
+           which would refuse the whole update. So a zero-row update can't be
+           told apart on a move; RLS errors still surface. */
+        ({ error } = await supabase.from('jobs').update(jobChanges).eq('id', job.id));
+      } else {
+        const res = await supabase.from('jobs').update(jobChanges).eq('id', job.id).select('id');
+        // Zero rows back is RLS quietly refusing the update: a failed save, not a saved one.
+        error = res.error ?? (res.data?.length ? null : { message: 'job not updated' });
+      }
+    }
     setSaving(false);
+    setHistoryKey((k) => k + 1);
     if (error) {
       setSaveError(true);
       return;
     }
-    if (!moving) await recordAudit(job.id, appUser.id, 'update', changes);
     setSaveError(false);
     // Re-read: the pay sum and new lines' snapshots are the database's. A
     // manager who moved the job off their site can no longer read it.
     if (moving && !isAdmin) {
       setJob({ ...job, ...jobChanges });
       setCoworkerIds(jobChanges.coworker_ids);
+      // The stored form, so the fields don't read as changed against the new job.
+      if (plateChanged) setPlate(stored.plate ?? '');
+      if (vinChanged) setVin(stored.vin ?? '');
     } else await load(job.id, true);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
 
+  /** Delete / restore. Zero rows back is RLS quietly refusing: a failure, not a success. */
+  async function setDeleted(deleted: boolean): Promise<boolean> {
+    if (!job || !appUser) return false;
+    const res = await supabase
+      .from('jobs')
+      .update({ deleted_at: deleted ? new Date().toISOString() : null })
+      .eq('id', job.id)
+      .select('id');
+    const ok = !res.error && !!res.data?.length;
+    setSaveError(!ok);
+    setHistoryKey((k) => k + 1);
+    return ok;
+  }
+
   async function handleDelete() {
-    if (!job || !appUser) return;
-    await supabase.from('jobs').update({ deleted_at: new Date().toISOString() }).eq('id', job.id);
-    await recordAudit(job.id, appUser.id, 'soft_delete');
-    navigate(-1);
+    if (await setDeleted(true)) navigate(-1);
   }
 
   async function handleRestore() {
-    if (!job || !appUser) return;
-    await supabase.from('jobs').update({ deleted_at: null }).eq('id', job.id);
-    await recordAudit(job.id, appUser.id, 'restore');
-    void load(job.id);
+    if (job && (await setDeleted(false))) void load(job.id);
   }
 
   if (loading) {
@@ -338,6 +383,8 @@ function StaffJobDetail() {
           <JobMedia
             jobId={job.id}
             downloadName={`${job.plate ?? job.vin ?? job.id}_${job.created_at.slice(0, 10)}`}
+            editable={canManage}
+            onChanged={() => setHistoryKey((k) => k + 1)}
           />
 
           <Card>
@@ -349,7 +396,94 @@ function StaffJobDetail() {
               value column further.
             */}
             <dl className="space-y-3">
-              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <Field
+                    htmlFor="job-date"
+                    label={t('jobDetail.date')}
+                    error={dateError ? t('jobDetail.dateInvalid') : undefined}
+                  >
+                    <input
+                      id="job-date"
+                      type="datetime-local"
+                      value={date}
+                      max={toLocalInput(new Date())}
+                      onChange={(e) => setDate(e.target.value)}
+                      className={`${fieldClass} ${dateError ? fieldErrorClass : ''}`}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              )}
+              {canManage && (
+                <>
+                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                    <Field
+                      htmlFor="job-plate"
+                      label={t('newJob.plate')}
+                      optional
+                      error={
+                        vehicle.plateError
+                          ? t('newJob.plateInvalid')
+                          : vehicle.missingBoth
+                            ? t('newJob.needIdentifier')
+                            : undefined
+                      }
+                    >
+                      <input
+                        id="job-plate"
+                        value={plate}
+                        inputMode="numeric"
+                        maxLength={8}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onChange={(e) => setPlate(stripPlate(e.target.value).slice(0, 8))}
+                        className={`${fieldClass} font-mono tracking-wider ${
+                          vehicle.plateError || vehicle.missingBoth ? fieldErrorClass : ''
+                        }`}
+                      />
+                    </Field>
+                  </div>
+                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                    <Field
+                      htmlFor="job-vin"
+                      label={t('newJob.vin')}
+                      optional
+                      error={vehicle.vinError ? t('newJob.vinInvalid') : undefined}
+                    >
+                      <input
+                        id="job-vin"
+                        value={vin}
+                        maxLength={17}
+                        inputMode="text"
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onChange={(e) => setVin(e.target.value.toUpperCase())}
+                        className={`${fieldClass} font-mono tracking-wider uppercase ${
+                          vehicle.vinError ? fieldErrorClass : ''
+                        }`}
+                      />
+                      {/* Advisory only, as on New Job: imports can fail the check digit. */}
+                      {vinChanged && vehicle.vinChecksum === false && !vehicle.vinError && (
+                        <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>
+                      )}
+                    </Field>
+                  </div>
+                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                    <Field htmlFor="job-brand" label={t('newJob.brand')} optional>
+                      <input
+                        id="job-brand"
+                        value={brand}
+                        onChange={(e) => setBrand(e.target.value)}
+                        className={fieldClass}
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
               {canManage ? (
                 <div className="border-b border-line pb-3 last:border-0 last:pb-0">
                   <label htmlFor="job-worker" className="text-sm font-medium text-ink-600">
@@ -408,7 +542,7 @@ function StaffJobDetail() {
               ) : (
                 <DetailRow label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
               )}
-              <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />
+              {!canManage && <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />}
               {canManage ? (
                 <div className="border-b border-line pb-3 last:border-0 last:pb-0">
                   <p className="mb-1.5 text-sm font-medium text-ink-600">{t('jobDetail.services')}</p>
@@ -431,7 +565,21 @@ function StaffJobDetail() {
               ) : (
                 <DetailRow label={t('jobDetail.services')} value={serviceLabel(job.services, i18n.language) || '—'} />
               )}
-              {job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />}
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <Field htmlFor="worker-note" label={t('jobDetail.workerNote')} optional>
+                    <textarea
+                      id="worker-note"
+                      value={workerNote}
+                      onChange={(e) => setWorkerNote(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
+                    />
+                  </Field>
+                </div>
+              ) : (
+                job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />
+              )}
             </dl>
           </Card>
         </div>
@@ -499,7 +647,12 @@ function StaffJobDetail() {
               </div>
             )}
 
-            {saveError && <StatusBanner tone="error">{t('common.error')}</StatusBanner>}
+            {(vehicle.plateError || vehicle.vinError || vehicle.missingBoth || dateError) && (
+              <StatusBanner tone="error" live>
+                {t('jobDetail.fixFields')}
+              </StatusBanner>
+            )}
+            {saveError && <StatusBanner tone="error">{t('jobDetail.saveFailed')}</StatusBanner>}
 
             <Button size="lg" block busy={saving} icon={saved ? 'check' : undefined} onClick={() => void handleSave()}>
               {saved ? t('jobDetail.saved') : t('jobDetail.save')}
@@ -529,6 +682,8 @@ function StaffJobDetail() {
           </Card>
         )}
       </div>
+
+      {canManage && <EditHistory jobId={job.id} refreshKey={historyKey} services={chipServices} sites={sites} />}
     </Page>
   );
 }

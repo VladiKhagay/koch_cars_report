@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { carassoRow, gridColumnPlan, gridRows, managerRow } from './jobsGrid';
 import { customerRows, mergeColumnSubset, paymentJobs } from './exportColumns';
 import { countRows } from './statsSource';
-import { lineWrites, missingServices } from './jobDetailLines';
+import { lineWrites, missingServices, planJobEdit, type JobFieldDraft, type JobFieldsBase } from './jobDetailLines';
+import { toLocalInput } from '../lib/formatDate';
 import { describePreviousJob } from '../components/previousJob';
 import type { CarassoJob, JobDailyStat, JobDailyTotal } from '../lib/types';
 import { buildCustomerReport, buildWorkerPaymentReport, type Cell } from '../lib/exports';
@@ -397,5 +398,87 @@ describe('previous job text — several services (0033)', () => {
   it('a zero-service earlier job says —', () => {
     const p = { created_at: '2026-03-02T08:00:00Z', site_name: 'Haifa', service_name_en: null, service_name_ru: null, service_name_he: null };
     expect(describePreviousJob(p, 'en').service).toBe('—');
+  });
+});
+
+describe('job detail field edit (planJobEdit)', () => {
+  // A legacy 7-digit plate: from before today's 8-digit rule.
+  const base: JobFieldsBase = {
+    plate: '1234567',
+    vin: null,
+    brand: 'Kia',
+    worker_note: 'scratch',
+    created_at: '2026-03-02T08:00:00Z',
+    worker_id: 'w1',
+    site_id: 's1',
+  };
+  const now = new Date('2026-03-10T12:00:00Z').getTime();
+  const untouched: JobFieldDraft = {
+    plate: '1234567',
+    vin: '',
+    brand: 'Kia',
+    workerNote: 'scratch',
+    date: toLocalInput(base.created_at),
+    workerId: '',
+    coworkerIds: [],
+    siteId: '',
+  };
+  const plan = (d: Partial<JobFieldDraft>) => planJobEdit(base, { ...untouched, ...d }, now);
+  const VALID_VIN = '1M8GDM9AXKP042788';
+  const BAD_CHECK_DIGIT_VIN = '1M8GDM9A1KP042788';
+
+  it('sends no plate, VIN or date when untouched, and an old invalid plate still saves', () => {
+    const r = plan({});
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toEqual({ worker_id: 'w1', coworker_ids: [], site_id: 's1' });
+  });
+
+  it('blocks a changed invalid plate, sends a changed valid one bare', () => {
+    expect(plan({ plate: '123456' }).blocked).toBe(true);
+    expect(plan({ plate: '123456' }).vehicle.plateError).toBe(true);
+    const r = plan({ plate: '12345678' });
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toMatchObject({ plate: '12345678' });
+  });
+
+  it('blocks a changed VIN with a bad format; a check-digit failure alone only flags it', () => {
+    expect(plan({ vin: 'ABC' }).blocked).toBe(true);
+    expect(plan({ vin: 'ABC' }).vehicle.vinError).toBe(true);
+    const r = plan({ vin: BAD_CHECK_DIGIT_VIN });
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toMatchObject({ vin: BAD_CHECK_DIGIT_VIN, vin_valid_checksum: false });
+    expect(plan({ vin: VALID_VIN }).changes).toMatchObject({ vin: VALID_VIN, vin_valid_checksum: true });
+  });
+
+  it('sends vin_valid_checksum only with a VIN change', () => {
+    expect(plan({ plate: '12345678' }).changes).not.toHaveProperty('vin_valid_checksum');
+    expect(plan({ plate: '12345678' }).changes).not.toHaveProperty('vin');
+  });
+
+  it('blocks an empty or future date; sends a changed past one as ISO', () => {
+    expect(plan({ date: '' }).dateError).toBe(true);
+    expect(plan({ date: '' }).blocked).toBe(true);
+    expect(plan({ date: toLocalInput(new Date(now + 3_600_000)) }).blocked).toBe(true);
+    const past = toLocalInput(new Date('2026-03-01T09:30:00Z'));
+    const r = plan({ date: past });
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toMatchObject({ created_at: new Date(past).toISOString() });
+  });
+
+  it('trims brand and note, empty becomes null, unchanged-after-trim is not sent', () => {
+    expect(plan({ brand: '  Kia ', workerNote: ' scratch ' }).changes).not.toHaveProperty('brand');
+    expect(plan({ brand: '  Kia ', workerNote: ' scratch ' }).changes).not.toHaveProperty('worker_note');
+    expect(plan({ brand: ' VW ', workerNote: '   ' }).changes).toMatchObject({ brand: 'VW', worker_note: null });
+  });
+
+  it('drops the (new) submitter from the co-workers', () => {
+    expect(plan({ coworkerIds: ['w1', 'c1'] }).changes.coworker_ids).toEqual(['c1']);
+    const r = plan({ workerId: 'c1', coworkerIds: ['w1', 'c1'] });
+    expect(r.changes).toMatchObject({ worker_id: 'c1', coworker_ids: ['w1'] });
+  });
+
+  it('blocks clearing both plate and VIN', () => {
+    expect(plan({ plate: '' }).vehicle.missingBoth).toBe(true);
+    expect(plan({ plate: '' }).blocked).toBe(true);
   });
 });

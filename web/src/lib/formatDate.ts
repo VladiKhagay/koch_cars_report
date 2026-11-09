@@ -8,3 +8,10 @@ export const LONG_DATE: Intl.DateTimeFormatOptions = { day: 'numeric', month: 's
 export function formatDate(date: Date | string, locale: string, opts?: Intl.DateTimeFormatOptions): string {
   return (typeof date === 'string' ? new Date(date) : date).toLocaleDateString(locale, opts);
 }
+
+/** A timestamp as a `datetime-local` value: local time, minute precision. */
+export function toLocalInput(when: string | Date): string {
+  const d = new Date(when);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

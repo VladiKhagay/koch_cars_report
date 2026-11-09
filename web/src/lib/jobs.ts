@@ -268,15 +268,24 @@ export async function submitVideo(
     save?: (u: VideoUpload | null) => void | Promise<void>;
     /** Aborts the attempt in flight; the saved pieces stay, so a rerun resumes. */
     signal?: AbortSignal;
+    /**
+     * Manager/admin edit: overwrite whatever the slot holds (live, removed or
+     * nothing) instead of treating an existing row as "already sent".
+     */
+    replace?: boolean;
   } = {},
 ): Promise<void> {
-  const { data: existing, error: readError } = await supabase
-    .from('photos')
-    .select('id')
-    .eq('job_id', jobId)
-    .eq('kind', 'video');
-  if (readError) throw readError;
-  if (existing?.length) return;
+  if (!opts.replace) {
+    const { data: existing, error: readError } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('job_id', jobId)
+      .eq('kind', 'video');
+    if (readError) throw readError;
+    // Deliberately counts a removed (tombstoned) row too: a manager who removed
+    // the clip must not have it re-sent from a worker's queue.
+    if (existing?.length) return;
+  }
 
   const save = opts.save ?? (() => {});
   const totalParts = Math.max(1, Math.ceil(blob.size / VIDEO_PART_BYTES));
@@ -306,10 +315,64 @@ export async function submitVideo(
     }
   }
 
+  if (opts.replace) return writeSlot(jobId, 'video', { r2_key: key, removed_at: null });
   const { error } = await supabase
     .from('photos')
     .upsert({ job_id: jobId, kind: 'video', r2_key: key }, { onConflict: 'job_id,kind', ignoreDuplicates: true });
   if (error) throw error;
+}
+
+export type SlotRow = { kind: PhotoKind; removed_at: string | null };
+
+/**
+ * Whether a slot holds media. A removed slot keeps a tombstoned row (removed_at
+ * set) and /photo refuses it, so it must never be fetched. Plate and VIN tiles
+ * were always shown without a row (legacy jobs), so for those "no row" still
+ * means "try R2"; an extra or the video exists only with a live row.
+ */
+export function slotExists(rows: SlotRow[], kind: PhotoKind): boolean {
+  const row = rows.find((r) => r.kind === kind);
+  if (!row) return kind === 'plate' || kind === 'vin';
+  return row.removed_at === null;
+}
+
+/**
+ * Upserts one slot's row live. Never ignoreDuplicates: that would turn a
+ * replace into a silent no-op. Zero rows back means RLS refused it.
+ */
+async function writeSlot(jobId: string, kind: PhotoKind, fields: { r2_key: string; removed_at: null }) {
+  const { data, error } = await supabase
+    .from('photos')
+    .upsert({ job_id: jobId, kind, ...fields }, { onConflict: 'job_id,kind' })
+    .select('id');
+  if (error) throw error;
+  if (!data?.length) throw new Error(`photo slot ${kind} was not saved`);
+}
+
+/**
+ * Manager/admin: adds or replaces one media slot. The object overwrites the
+ * same R2 key; the row is (re)marked live. The database logs the change.
+ */
+export async function setMedia(jobId: string, kind: PhotoKind, blob: Blob): Promise<void> {
+  if (kind === 'video') return submitVideo(jobId, blob, { replace: true });
+  const key = await uploadPhoto(jobId, kind, blob);
+  await writeSlot(jobId, kind, { r2_key: key, removed_at: null });
+}
+
+/**
+ * Manager/admin: clears a slot by tombstoning its row; the R2 object is left
+ * to the 60-day lifecycle. Needs a row: a legacy plate/VIN with none can only
+ * be replaced (which writes one). Zero rows back means nothing was removed.
+ */
+export async function removeMedia(jobId: string, kind: PhotoKind): Promise<void> {
+  const { data, error } = await supabase
+    .from('photos')
+    .update({ removed_at: new Date().toISOString() })
+    .eq('job_id', jobId)
+    .eq('kind', kind)
+    .select('id');
+  if (error) throw error;
+  if (!data?.length) throw new Error(`photo slot ${kind} was not removed`);
 }
 
 /**

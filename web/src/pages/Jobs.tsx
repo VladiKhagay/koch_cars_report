@@ -11,7 +11,6 @@ import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-tab
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
-import { recordAudit } from '../lib/audit';
 import { serviceLabel, useServiceRowMode, type ServiceRowMode } from '../lib/serviceRows';
 import { applyJobFilters, fetchDuplicateSummary, saveBilling } from '../lib/jobs';
 import {
@@ -28,6 +27,7 @@ import { describePreviousJob } from '../components/previousJob';
 import { carassoRow, gridColumnPlan, gridRows, managerRow, type JobRow } from './jobsGrid';
 import BillingInput from '../components/BillingInput';
 import JobCard from '../components/JobCard';
+import StatusBanner from '../components/StatusBanner';
 import {
   CellMuted,
   CellTitle,
@@ -240,6 +240,7 @@ export default function Jobs() {
 
   // The duplicate panel: which row is open, and the job it is a duplicate of.
   const [dupeFor, setDupeFor] = useState<string | null>(null);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   /** `null` = still loading, `'missing'` = the original can't be read. */
   const [original, setOriginal] = useState<PreviousJob | 'missing' | null>(null);
 
@@ -398,7 +399,6 @@ export default function Jobs() {
       const billing_code = value || null;
       const { error } = await saveBilling(job.id, { billing_code });
       if (error) return false;
-      await recordAudit(job.id, appUser.id, 'update', { billing_code });
       // Patch in place instead of refetching: a reload would move the row out
       // from under a manager who is typing down the column.
       setRows((prev) => prev.map((r) => (r.id === job.id ? { ...r, billing_code } : r)));
@@ -409,6 +409,7 @@ export default function Jobs() {
 
   const openDuplicate = useCallback((jobId: string) => {
     setOriginal(null);
+    setDeleteFailed(false);
     setDupeFor((current) => (current === jobId ? null : jobId));
   }, []);
 
@@ -428,8 +429,16 @@ export default function Jobs() {
 
   async function deleteCopy(job: JobRow) {
     if (!appUser) return;
-    await supabase.from('jobs').update({ deleted_at: new Date().toISOString() }).eq('id', job.id);
-    await recordAudit(job.id, appUser.id, 'soft_delete', { reason: 'duplicate' });
+    const res = await supabase
+      .from('jobs')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', job.id)
+      .select('id');
+    // Zero rows back is RLS quietly refusing: keep the panel and the row.
+    if (res.error || !res.data?.length) {
+      setDeleteFailed(true);
+      return;
+    }
     setDupeFor(null);
     setRows((prev) => prev.filter((r) => r.id !== job.id));
     setTotal((n) => Math.max(0, n - 1));
@@ -485,6 +494,13 @@ export default function Jobs() {
           onConfirm={() => void deleteCopy(job)}
           onCancel={() => setDupeFor(null)}
         />
+      )}
+      {deleteFailed && (
+        <div className="mt-3">
+          <StatusBanner tone="error" live>
+            {t('jobs.saveFailed')}
+          </StatusBanner>
+        </div>
       )}
     </>
   );

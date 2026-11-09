@@ -11,7 +11,7 @@ import { Spinner } from './ui';
  * URL, since <video src> can't send the Authorization header. Download is an
  * explicit link (opens the share sheet on iPhone).
  */
-export default function VideoViewer({ jobId, downloadName }: { jobId: string; downloadName: string }) {
+export default function VideoViewer({ jobId, downloadName, fresh }: { jobId: string; downloadName: string; fresh?: boolean }) {
   const { t } = useTranslation();
   const [requested, setRequested] = useState(false);
   const [video, setVideo] = useState<{ url: string; type: string } | null>(null);
@@ -25,7 +25,7 @@ export default function VideoViewer({ jobId, downloadName }: { jobId: string; do
     setVideo(null);
     setFailure(null);
 
-    void fetchPhotoUrl(jobId, 'video').then((result) => {
+    void fetchPhotoUrl(jobId, 'video', { fresh }).then((result) => {
       if (cancelled) {
         if ('url' in result) URL.revokeObjectURL(result.url);
         return;
@@ -42,7 +42,7 @@ export default function VideoViewer({ jobId, downloadName }: { jobId: string; do
       cancelled = true;
       if (revoke) URL.revokeObjectURL(revoke);
     };
-  }, [jobId, requested, attempt]);
+  }, [jobId, requested, attempt, fresh]);
 
   // Plates and VINs are already [A-Z0-9-], but this lands in a filename on
   // someone's device, so nothing else gets through.

@@ -6,7 +6,20 @@ import Icon from './Icon';
 import { Skeleton } from './ui';
 
 /** Loading and "gone" are different pictures: photos expire after 60 days (R2 lifecycle), so the failed state is routine and must not look like loading. */
-export default function PhotoViewer({ jobId, kind, label, downloadName }: { jobId: string; kind: PhotoKind; label: string; downloadName?: string }) {
+export default function PhotoViewer({
+  jobId,
+  kind,
+  label,
+  downloadName,
+  fresh,
+}: {
+  jobId: string;
+  kind: PhotoKind;
+  label: string;
+  downloadName?: string;
+  /** Just replaced under the same key: skip the HTTP cache. */
+  fresh?: boolean;
+}) {
   const { t } = useTranslation();
   const [url, setUrl] = useState<string | null>(null);
   const [failure, setFailure] = useState<PhotoFailure | null>(null);
@@ -19,7 +32,7 @@ export default function PhotoViewer({ jobId, kind, label, downloadName }: { jobI
     setUrl(null);
     setFailure(null);
 
-    void fetchPhotoUrl(jobId, kind).then((result) => {
+    void fetchPhotoUrl(jobId, kind, { fresh }).then((result) => {
       if (cancelled) {
         if ('url' in result) URL.revokeObjectURL(result.url);
         return;
@@ -36,7 +49,7 @@ export default function PhotoViewer({ jobId, kind, label, downloadName }: { jobI
       cancelled = true;
       if (revoke) URL.revokeObjectURL(revoke);
     };
-  }, [jobId, kind, attempt]);
+  }, [jobId, kind, attempt, fresh]);
 
   return (
     <figure className="m-0">

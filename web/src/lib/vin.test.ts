@@ -53,6 +53,8 @@ describe('no vehicle inference from the VIN', () => {
     expect(Object.keys(vin).sort()).toEqual([
       'isValidPlate',
       'isValidVinFormat',
+      // Composes the validators above; decodes nothing.
+      'normalizeVehicle',
       'stripPlate',
       'vinChecksumValid',
     ]);
@@ -93,5 +95,39 @@ describe('VINs from different makes', () => {
   ])('%s passes the format check', (_make, v) => {
     expect(isValidVinFormat(v)).toBe(true);
     expect(isValidVinFormat(v.toLowerCase())).toBe(true);
+  });
+});
+
+describe('normalizeVehicle', () => {
+  it('strips plate separators and uppercases the VIN', () => {
+    expect(vin.normalizeVehicle({ plate: '123-45-678', vin: ' 1hgcm82633a004352 ' })).toEqual({
+      plate: '12345678',
+      vin: '1HGCM82633A004352',
+      vinChecksum: true,
+      plateError: false,
+      vinError: false,
+      missingBoth: false,
+    });
+  });
+
+  it('turns empty values into null, never an empty string', () => {
+    const r = vin.normalizeVehicle({ plate: '', vin: '   ' });
+    expect(r.plate).toBeNull();
+    expect(r.vin).toBeNull();
+    expect(r.vinChecksum).toBeNull();
+    expect(r.missingBoth).toBe(true);
+    expect(r.plateError || r.vinError).toBe(false);
+  });
+
+  it('blocks a malformed plate or VIN', () => {
+    expect(vin.normalizeVehicle({ plate: '1234', vin: null }).plateError).toBe(true);
+    expect(vin.normalizeVehicle({ plate: null, vin: '1HGCM82633A00435' }).vinError).toBe(true);
+    expect(vin.normalizeVehicle({ plate: null, vin: '1HGCM82633A0O4352' }).vinError).toBe(true);
+  });
+
+  it('only flags a bad check digit, it does not block', () => {
+    const r = vin.normalizeVehicle({ plate: null, vin: '1HGCM82633A004353' });
+    expect(r.vinError).toBe(false);
+    expect(r.vinChecksum).toBe(false);
   });
 });

@@ -317,5 +317,72 @@ before `create_job`.
 - [ ] Rollback: **web only**. 0033 is roll-forward only — never drop
       `job_services` while any job has more than one service (the 0005 data
       loss again). A rolled-back web is an old build, with the caveats above.
-- [ ] Drop the deprecated `jobs.service_id` and its triggers in 0034, once no
+- [ ] Drop the deprecated `jobs.service_id` and its triggers in 0035, once no
       old build can still be running.
+
+---
+
+## 6. Manager/admin full edit, photo tombstones, trigger-written audit (migration 0034)
+
+Managers (own site) and admins can now edit plate, VIN, brand, worker note and
+the job date, and add, replace or remove any media slot at any age. Workers are
+unchanged: 15-minute window, column guard (0021/0028/0033), `can_write_photo`
+(0031), insert-only on `photos`.
+
+What the database enforces:
+
+- `photos_update`: admin, or manager at the job's site (USING and WITH CHECK).
+  No worker branch, and still **no DELETE policy** on `photos`. Removal sets
+  `removed_at` (server-stamped); the R2 object is left to the 60-day lifecycle.
+- `photos_guard_update` pins `id`, `job_id`, `kind`, `r2_key`, `created_at`, so
+  a row can never be repointed at another job's object.
+- GET `/photo` asks `can_view_photo(job, kind)`: `can_view_job` AND the slot is
+  not tombstoned. A removed photo stops streaming at once even though the
+  object is still in R2. The Worker also refuses (404) any job id that is not a
+  canonical lowercase uuid before calling Postgres or R2. Note: responses carry
+  `Cache-Control: private, max-age=300`, so a browser that already fetched a
+  removed/replaced photo may show the old bytes for up to 5 minutes.
+- `audit_log` rows are written only by security-definer AFTER triggers on
+  `jobs`, `job_billing`, `job_services`, `job_service_client_prices` and
+  `photos`, for manager/admin callers (`caller.id is not null`, never
+  `caller is null`). They run in the same transaction as the row change, so
+  a row edit cannot land unaudited. Exception, accepted (low): a media
+  add/replace writes the R2 object (Worker `/upload`) *before* the `photos`
+  row; if the row write then fails, the new bytes are live at the slot's key
+  with no audit row (the user sees an error). `audit_log_insert` is dropped:
+  clients can no longer write or forge audit rows. `audit_diff()` is not
+  executable by `anon`/`authenticated`. Worker edits are no longer audited at
+  all (they were client-written before; workers stay limited by the 15-minute
+  window).
+- `audit_log_select` (redefined in 0034): admins read every row; a manager at
+  the job's site reads every row except client prices, i.e. never action
+  `client_price_update` (the `job_service_client_prices` trigger's own
+  action) and never a legacy client-written row whose `changes` text mentions
+  a `"unit_price"` / `"total_price"` key (e.g. inside `service_lines`). Without
+  this, a manager could read admin-only client prices from the log. Check:
+  `verify_0034.sql`.
+- Job date: `jobs_guard_date` refuses (errcode 22023) a manager/admin update
+  that moves `jobs.created_at` more than 5 minutes into the future, so the
+  worker's 7-day video window (§4, keyed on `created_at`) cannot be held open.
+  Accepted (low): a manager can still re-date an old job to the recent past,
+  which reopens that window for its worker; managers are a trusted, own-site
+  role.
+- Accepted (low), 0034 review L-2: `jobs_flag_duplicate` searches every site,
+  so a manager editing plate/VIN can learn that the car was done earlier
+  elsewhere (the flag is set; the other job's details stay hidden by RLS).
+- Accepted (low): a worker's offline queue retrying a photo/video upload
+  inside the job's 15-minute window can overwrite a manager's replacement of
+  that slot in R2 (the worker's `can_write_photo` allows it while the lock is
+  open; the worker's row insert is ignoreDuplicates, so no audit row).
+- Accepted (noise): a manager's own new job writes `media_add` audit rows for
+  its photos (the photos trigger cannot tell creation from a later add; job
+  services use the same-transaction rule, photos land in later requests).
+
+- [ ] Deploy order: **0034 -> Worker -> web**. The old web keeps working (its
+      audit inserts are refused and swallowed; the triggers log instead). A
+      Worker deployed before 0034 403s every photo view.
+- [ ] Run `supabase/verify_0034.sql` (read-only, SQL editor): every row `ok`.
+- [ ] Rollback in reverse: **web -> Worker -> migration**. Never drop
+      `can_view_photo` while the new Worker is live. Before redeploying an old
+      web on a rolled-back database, recreate `audit_log_insert` (0001) or its
+      audit rows are lost.
