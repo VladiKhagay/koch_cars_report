@@ -25,7 +25,7 @@ function payload(): NewJobPayload {
     vin: null,
     brand: null,
     workerNote: null,
-    serviceId: 'svc',
+    serviceIds: ['svc'],
     plateBlob: new Blob(['p']),
     vinBlob: null,
   };

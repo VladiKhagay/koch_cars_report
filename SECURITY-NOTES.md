@@ -242,3 +242,80 @@ not clear the store. Anyone with the unlocked phone and devtools can read it.
 - [ ] Confirm no other Worker on the Cloudflare account uses ratelimit
       `namespace_id` 1003 (`VIDEO_START_LIMITER`); a shared namespace would
       share its counters.
+
+## 5. Multi-service jobs (migration 0033)
+
+A job's services live in `job_services` (one row per job and service), each
+line carrying its own pay snapshot; client prices per line in
+`job_service_client_prices`. RLS is on for both and anon is revoked.
+
+`job_services` policies mirror `jobs`:
+
+- select: whoever can read the job (the subquery runs under `jobs_select`);
+- insert / delete: the `jobs_update` rule — admin; manager at the job's site;
+  the submitter while the 15-minute lock is open and the job is not deleted.
+  Co-workers never. Insert's submitter branch also covers a manager who logs a
+  job at another site (allowed by `jobs_insert`);
+- update (a line's pay): admin only.
+
+`job_service_client_prices`: admin all; Carasso select via `can_view_job`.
+Workers and managers have no access. `jobs_carasso.services` carries names and
+client prices, never worker pay.
+
+Price snapshot (trigger `job_services_guard`, security definer): on insert,
+every signed-in caller gets the catalog `services.worker_price`, whatever the
+client sent; only the trusted context (no app user: SQL editor, service role)
+may insert a line at a given price. On update, a line cannot be moved to
+another job/service, and a non-admin's pay change is silently reverted. Client
+prices are snapshotted from `service_client_prices` by a security-definer
+trigger on insert. `jobs.worker_price` and `job_client_prices` are recomputed
+sums, so neither can be set directly any more. At least one line per job is
+enforced by trigger (with a row lock on the job against concurrent deletes).
+
+Writes go through `create_job` / `set_job_services`, both **security
+invoker**, so RLS and the triggers above apply as-is; execute is revoked from
+public/anon and granted to `authenticated`. `set_job_services` refuses (42501)
+when the caller's `jobs` update touches no row (window closed, deleted job,
+co-worker). A manager's job insert, including their own job at another site,
+now gets the server's `locked_at` (now + 15 minutes) from
+`jobs_guard_worker_columns`, the same as a worker's, so the submitter branch of
+`job_services_insert` closes after 15 minutes there too; manager updates are
+unchanged. Both guards test `caller.id` (no app user = trusted context),
+never the composite (`caller is [not] null`): on a row variable that tests
+every column, so with `is not null` a signed-in user with a null column (no
+`site_id`: Carasso, staff without a site) would pass as the trusted context.
+`is null` was safe but is changed for consistency.
+
+A job queued offline whose service is soft-deleted before the phone syncs is
+refused by `create_job` (23514, permanent): the entry stays on the device,
+flagged `needsAttention`, until an admin restores the service or the worker
+re-picks.
+
+Mixed-version window: the PWA caches its app shell, so phones keep running the
+previous build until they reload after the web deploy. That build writes the
+deprecated `jobs.service_id`:
+
+- a new job from it gets its first line from the seed trigger (price stamped
+  as above), so submissions keep working;
+- an edit of `service_id` from it **replaces the job's services with that one
+  service**: a multi-service job (logged from a new build) that a manager or
+  admin on the old build re-services loses its other lines. Unchanged
+  `service_id` on save does nothing (the trigger fires only on a change);
+- an old-build admin's per-job pay override and direct `job_client_prices`
+  edit do not stick (recomputed from the lines).
+
+Old offline-queue entries (single `serviceId`) are normalised by the new web
+before `create_job`.
+
+- [ ] Deploy order: **0033 -> web**. 0033 alone keeps the previous web working.
+- [ ] Run `supabase/verify_0033.sql` (read-only, SQL editor): every row `ok`
+      (line/job parity, RLS on, policies present, anon cannot execute
+      `create_job`, views `security_invoker`, no worker pay in `jobs_carasso`).
+- [ ] Keep the mixed-version window short: right after the web deploy, ask
+      managers and admins (and workers) to reload the app (close and reopen
+      from the home screen) so no old build edits a multi-service job.
+- [ ] Rollback: **web only**. 0033 is roll-forward only — never drop
+      `job_services` while any job has more than one service (the 0005 data
+      loss again). A rolled-back web is an old build, with the caveats above.
+- [ ] Drop the deprecated `jobs.service_id` and its triggers in 0034, once no
+      old build can still be running.

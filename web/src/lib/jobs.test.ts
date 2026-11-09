@@ -18,6 +18,8 @@ const rpcCalls: unknown[] = [];
 let jobIdSeq = 0;
 let uploadFails = false;
 let rpcFails = false;
+/* What set_job_services answers; null = success. */
+let setServicesError: { message: string; code?: string } | null = null;
 const uploads: string[] = [];
 /* Rows the stub claims already exist when submitVideo looks for the video row. */
 let existingVideoRows: unknown[] = [];
@@ -26,16 +28,11 @@ const selectEqs: [string, unknown][] = [];
 let upsertCalls = 0;
 
 vi.mock('./supabase', () => {
-  const jobsInsert = (row: unknown) => {
-    insertedJobs.push(row);
-    const id = `job-${++jobIdSeq}`;
-    return { select: () => ({ single: () => Promise.resolve({ data: { id }, error: null }) }) };
-  };
   return {
     supabase: {
       from: (table: string) => ({
         insert: (rows: unknown) => {
-          if (table === 'jobs') return jobsInsert(rows);
+          if (table === 'jobs') throw new Error('jobs are created through create_job, never inserted directly');
           insertedPhotos.push(...(rows as unknown[]));
           return Promise.resolve({ error: null });
         },
@@ -57,6 +54,12 @@ vi.mock('./supabase', () => {
          rather than passing because the stub returns nothing. */
       rpc: (fn: string, args: Record<string, unknown>) => {
         rpcCalls.push({ fn, ...args });
+        // create_job (0033) is the job insert: it returns the new id as a scalar.
+        if (fn === 'create_job') {
+          insertedJobs.push(args);
+          return Promise.resolve({ data: `job-${++jobIdSeq}`, error: null });
+        }
+        if (fn === 'set_job_services') return Promise.resolve({ data: null, error: setServicesError });
         if (fn === 'find_previous_job' && rpcFails) return Promise.reject(new Error('offline'));
         return Promise.resolve({ data: [{ created_at: '2026-01-01T00:00:00Z', site_name: 'North', service_name_en: 'Wash' }], error: null });
       },
@@ -102,7 +105,7 @@ vi.mock('./workerApi', () => ({
 /* 4-byte pieces, so a 10-byte "video" is three pieces: '0123' '4567' '89'. */
 vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 4 }));
 
-const { submitJob, submitVideo, applyJobFilters, shareFor, findPreviousJob } = await import('./jobs');
+const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal } = await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
 const blob = () => new Blob(['x'], { type: 'image/jpeg' });
@@ -115,7 +118,7 @@ function payload(extras: Blob[] = []): NewJobPayload {
     vin: 'WVWZZZ1JZXW000001',
     brand: 'VW',
     workerNote: null,
-    serviceId: 'svc-1',
+    serviceIds: ['svc-1'],
     plateBlob: blob(),
     vinBlob: blob(),
     extraBlobs: extras,
@@ -132,6 +135,7 @@ beforeEach(() => {
   existingVideoRows = [];
   selectEqs.length = 0;
   upsertCalls = 0;
+  setServicesError = null;
   w.calls.length = 0;
   w.photoTimeouts.length = 0;
   w.start.mockReset().mockImplementation(async (_jobId: string, b: Blob) => {
@@ -366,13 +370,93 @@ describe('submitJob — retry after a failed upload', () => {
 describe('submitJob — crew', () => {
   it('writes the co-workers in the same insert as the job', async () => {
     await submitJob({ ...payload(), coworkerIds: ['w-2', 'w-3'] });
-    expect(insertedJobs[0]).toMatchObject({ coworker_ids: ['w-2', 'w-3'] });
+    expect(insertedJobs[0]).toMatchObject({ p_coworker_ids: ['w-2', 'w-3'] });
   });
 
   /* Payloads queued offline before the crew existed have no coworkerIds. */
   it('lands an old queued payload with an empty crew', async () => {
     await submitJob(payload());
-    expect(insertedJobs[0]).toMatchObject({ coworker_ids: [] });
+    expect(insertedJobs[0]).toMatchObject({ p_coworker_ids: [] });
+  });
+});
+
+describe('lineShareFor', () => {
+  const line = { submitter_share: 20.01, coworker_share: 20 };
+  it('gives the submitter the submitter share of the line, a co-worker the even share', () => {
+    expect(lineShareFor({ worker_id: 'dana' }, line, 'dana')).toBe(20.01);
+    expect(lineShareFor({ worker_id: 'dana' }, line, 'avi')).toBe(20);
+  });
+});
+
+/* ---------------------------------------------------------- services (0033) */
+
+describe('submitJob — services', () => {
+  const row = () => insertedJobs[0] as Record<string, unknown>;
+
+  it('sends every picked service in the one create_job call', async () => {
+    await submitJob({ ...payload(), serviceIds: ['svc-1', 'svc-2'] });
+    expect(rpcCalls).toHaveLength(1);
+    expect(row().p_service_ids).toEqual(['svc-1', 'svc-2']);
+  });
+
+  /* The price is the database's to stamp: nothing the phone sends can set pay. */
+  it('sends no price', async () => {
+    await submitJob(payload());
+    expect(Object.keys(row()).some((k) => /price|share/.test(k))).toBe(false);
+  });
+
+  it('drops a service picked twice', async () => {
+    await submitJob({ ...payload(), serviceIds: ['svc-1', 'svc-2', 'svc-1'] });
+    expect(row().p_service_ids).toEqual(['svc-1', 'svc-2']);
+  });
+
+  /* A car queued offline before 0033 sits in IndexedDB with one serviceId and no list. */
+  it('lands a pre-0033 queued payload with its single service', async () => {
+    const old = { ...payload(), serviceIds: undefined, serviceId: 'svc-9' } as unknown as NewJobPayload;
+    await submitJob(old);
+    expect(row().p_service_ids).toEqual(['svc-9']);
+  });
+
+  it('refuses a job with no service, before asking the database', async () => {
+    await expect(submitJob({ ...payload(), serviceIds: [] })).rejects.toThrow();
+    expect(rpcCalls).toEqual([]);
+  });
+
+  /* The row (and its services) already exists: a retry only finishes the photos. */
+  it('a retry with the job id set does not create the job again', async () => {
+    await submitJob({ ...payload(), jobId: 'job-7', serviceIds: [] });
+    expect(rpcCalls).toEqual([]);
+    expect(uploads).toEqual(['plate', 'vin']);
+  });
+});
+
+describe('setJobServices', () => {
+  it('replaces the set in one call, without duplicates', async () => {
+    const { error } = await setJobServices('job-1', ['svc-1', 'svc-2', 'svc-1']);
+    expect(error).toBeNull();
+    expect(rpcCalls).toEqual([{ fn: 'set_job_services', p_job_id: 'job-1', p_service_ids: ['svc-1', 'svc-2'] }]);
+  });
+
+  it('refuses an empty list without asking the database', async () => {
+    const { error } = await setJobServices('job-1', []);
+    expect(error).not.toBeNull();
+    expect(rpcCalls).toEqual([]);
+  });
+});
+
+describe('serviceTotal', () => {
+  const catalog = [
+    { id: 'a', worker_price: 0.1 },
+    { id: 'b', worker_price: 0.2 },
+    { id: 'c', worker_price: 25 },
+  ];
+  it('adds up the picked services in whole cents', () => {
+    expect(serviceTotal(catalog, ['a', 'b'])).toBe(0.3);
+    expect(serviceTotal(catalog, ['a', 'b', 'c'])).toBe(25.3);
+  });
+  it('counts a service once and ignores ids not in the catalog', () => {
+    expect(serviceTotal(catalog, ['c', 'c', 'gone'])).toBe(25);
+    expect(serviceTotal(catalog, [])).toBe(0);
   });
 });
 
@@ -449,33 +533,33 @@ describe('submitJob — a car with no readable VIN', () => {
 
   it('stores NULL, not an empty string or a placeholder', async () => {
     await submitJob({ ...payload(), vin: null });
-    expect(row().vin).toBeNull();
-    expect(row().vin_valid_checksum).toBeNull();
+    expect(row().p_vin).toBeNull();
+    expect(row().p_vin_valid_checksum).toBeNull();
   });
 
   it('treats a blank typed VIN the same as no VIN at all', async () => {
     await submitJob({ ...payload(), vin: '   ' });
-    expect(row().vin).toBeNull();
+    expect(row().p_vin).toBeNull();
   });
 
   /* The flag is the database's job (0029 insert trigger): the client sends none,
      so an offline-queued job is flagged exactly like an online one. */
   it('does not send a duplicate flag or ask the duplicate check on submit', async () => {
     await submitJob({ ...payload(), vin: null });
-    expect(row()).not.toHaveProperty('duplicate_of_job_id');
-    expect(rpcCalls).toEqual([]);
+    expect(row()).not.toHaveProperty('p_duplicate_of_job_id');
+    expect(rpcCalls.map((c) => (c as { fn: string }).fn)).toEqual(['create_job']);
   });
 
   it('still records everything else about the car', async () => {
     await submitJob({ ...payload(), vin: null });
-    expect(row()).toMatchObject({ plate: '12-345-67', brand: 'VW', service_id: 'svc-1' });
+    expect(row()).toMatchObject({ p_plate: '12-345-67', p_brand: 'VW', p_service_ids: ['svc-1'] });
     expect(insertedPhotos).toHaveLength(2);
   });
 
   it('leaves a job that does have a VIN untouched', async () => {
     await submitJob(payload());
-    expect(row().vin).toBe('WVWZZZ1JZXW000001');
-    expect(row().vin_valid_checksum).toBe(false); // real VIN, non-ISO check digit
+    expect(row().p_vin).toBe('WVWZZZ1JZXW000001');
+    expect(row().p_vin_valid_checksum).toBe(false); // real VIN, non-ISO check digit
   });
 });
 
@@ -489,17 +573,17 @@ describe('submitJob — a car with no plate', () => {
 
   it('stores NULL, not an empty string or a placeholder', async () => {
     await submitJob({ ...payload(), plate: null, plateBlob: null });
-    expect(row().plate).toBeNull();
+    expect(row().p_plate).toBeNull();
   });
 
   it('treats a blank typed plate the same as no plate at all', async () => {
     await submitJob({ ...payload(), plate: '   ', plateBlob: null });
-    expect(row().plate).toBeNull();
+    expect(row().p_plate).toBeNull();
   });
 
   it('still submits with no plate to compare', async () => {
     await submitJob({ ...payload(), plate: null, plateBlob: null });
-    expect(row()).not.toHaveProperty('duplicate_of_job_id');
+    expect(row()).not.toHaveProperty('p_duplicate_of_job_id');
   });
 
   it('skips the plate photo slot entirely when no plate photo was taken', async () => {
@@ -562,7 +646,7 @@ function recorder() {
   const q = {
     calls,
     eq: (c: string, v: string) => (calls.push(['eq', c, v]), q),
-    in: (c: string, v: string[]) => (calls.push(['in', c, v.join('|')]), q),
+    overlaps: (c: string, v: string[]) => (calls.push(['overlaps', c, v.join('|')]), q),
     gte: (c: string, v: string) => (calls.push(['gte', c, v]), q),
     lte: (c: string, v: string) => (calls.push(['lte', c, v]), q),
     or: (f: string) => (calls.push(['or', f]), q),
@@ -578,15 +662,16 @@ describe('applyJobFilters', () => {
 
   it('narrows by service in the query, not afterwards', () => {
     const q = applyJobFilters(recorder(), { serviceIds: ['svc-7'] });
-    expect(q.calls).toEqual([['in', 'service_id', 'svc-7']]);
+    expect(q.calls).toEqual([['overlaps', 'service_ids', 'svc-7']]);
   });
 
   /* The worker screen lets several services be ticked at once. Several ids have
-     to reach the database as one `in` — narrowing to the first of them would
+     to reach the database as one any-match (`ov`) over every service on the job,
+     not just its first (0033) — narrowing to the first of them would
      quietly show a subset of the month and look like missing work. */
   it('sends every ticked service, not just the first', () => {
     const q = applyJobFilters(recorder(), { serviceIds: ['svc-7', 'svc-9'] });
-    expect(q.calls).toEqual([['in', 'service_id', 'svc-7|svc-9']]);
+    expect(q.calls).toEqual([['overlaps', 'service_ids', 'svc-7|svc-9']]);
   });
 
   it('combines the service filter with the others', () => {
@@ -599,7 +684,7 @@ describe('applyJobFilters', () => {
     expect(q.calls).toEqual([
       ['eq', 'site_id', 'site-1'],
       ['or', 'worker_id.eq.aaaaaaaa-bbbb-cccc-dddd-000000000002,coworker_ids.cs.{aaaaaaaa-bbbb-cccc-dddd-000000000002}'],
-      ['in', 'service_id', 'svc-7'],
+      ['overlaps', 'service_ids', 'svc-7'],
       ['or', 'plate.ilike.%12345%,vin.ilike.%12345%,billing_code.ilike.%12345%'],
     ]);
   });
@@ -635,5 +720,62 @@ describe('applyJobFilters', () => {
     expect(q.calls.map((c) => c[0])).toEqual(['gte', 'lte']);
     expect(q.calls[0][2]).toBe(new Date('2026-03-01T00:00:00').toISOString());
     expect(q.calls[1][2]).toBe(new Date('2026-03-31T23:59:59.999').toISOString());
+  });
+});
+
+/* ------------------------------------------- services: edge cases (0033 QA) */
+
+describe('submitJob — service ids, edge cases', () => {
+  const row = () => insertedJobs[0] as Record<string, unknown>;
+
+  /* An empty list is not "absent": a pre-0033 queued payload may carry serviceIds: [] next to its serviceId. */
+  it('falls back to the legacy serviceId when serviceIds is an empty list', async () => {
+    await submitJob({ ...payload(), serviceIds: [], serviceId: 'svc-9' });
+    expect(row().p_service_ids).toEqual(['svc-9']);
+  });
+
+  it('prefers the serviceIds list over a stale legacy serviceId', async () => {
+    await submitJob({ ...payload(), serviceIds: ['svc-1', 'svc-2'], serviceId: 'svc-9' });
+    expect(row().p_service_ids).toEqual(['svc-1', 'svc-2']);
+  });
+
+  it('keeps the order the worker picked while dropping repeats', async () => {
+    await submitJob({ ...payload(), serviceIds: ['svc-3', 'svc-1', 'svc-3', 'svc-2', 'svc-1'] });
+    expect(row().p_service_ids).toEqual(['svc-3', 'svc-1', 'svc-2']);
+  });
+
+  /* A queued payload from before 0005 with neither field must not reach the database as a service-less job. */
+  it('refuses a payload with neither serviceIds nor serviceId, before asking the database', async () => {
+    const bare = { ...payload(), serviceIds: undefined } as unknown as NewJobPayload;
+    await expect(submitJob(bare)).rejects.toThrow();
+    expect(rpcCalls).toEqual([]);
+    expect(uploads).toEqual([]);
+  });
+
+  it('sends no price or share for a multi-service legacy-shaped payload either', async () => {
+    await submitJob({ ...payload(), serviceIds: ['svc-1', 'svc-2'], serviceId: 'svc-1' });
+    expect(Object.keys(row()).filter((k) => /price|share|duplicate/.test(k))).toEqual([]);
+  });
+});
+
+describe('setJobServices — errors', () => {
+  /* The edit window closed: the database says 42501, and the caller must see that code (MyJobs shows it). */
+  it('passes the database error through unchanged', async () => {
+    setServicesError = { message: 'job not found or not editable', code: '42501' };
+    const { error } = await setJobServices('job-1', ['svc-1']);
+    expect(error).toEqual({ message: 'job not found or not editable', code: '42501' });
+  });
+
+  it('sends ids only, never a price', async () => {
+    await setJobServices('job-1', ['svc-1']);
+    expect(Object.keys(rpcCalls[0] as object).sort()).toEqual(['fn', 'p_job_id', 'p_service_ids']);
+  });
+});
+
+describe('serviceTotal — rounding', () => {
+  it('sums cents exactly across many small prices', () => {
+    const catalog = Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, worker_price: 0.1 }));
+    expect(serviceTotal(catalog, catalog.map((s) => s.id))).toBe(1);
+    expect(serviceTotal([{ id: 'a', worker_price: 19.99 }, { id: 'b', worker_price: 0.01 }], ['a', 'b'])).toBe(20);
   });
 });

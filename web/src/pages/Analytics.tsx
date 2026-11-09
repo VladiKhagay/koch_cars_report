@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { serviceName, type ServiceNames } from '../lib/serviceName';
 import { useSiteScope } from '../lib/useSiteScope';
-import type { JobDailyStat } from '../lib/types';
+import type { JobDailyStat, JobDailyTotal } from '../lib/types';
+import { countRows } from './statsSource';
 import { SHEET_NAMES, buildStatsSheet } from '../lib/exports';
 import { downloadWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
@@ -25,8 +26,9 @@ function monthKey(dayIso: string) {
 
 /**
  * Analytics for managers (own site) and admins (site picker, all-sites export).
- * Reads job_daily_stats, a security_invoker view: RLS decides what each role
- * sees and the filters only narrow.
+ * Reads job_daily_totals (job and car counts) and job_daily_stats (per service),
+ * both security_invoker views: RLS decides what each role sees and the filters
+ * only narrow. See countRows for which one a figure comes from.
  */
 export default function Analytics() {
   const { t, i18n } = useTranslation();
@@ -37,6 +39,7 @@ export default function Analytics() {
   const [serviceFilter, setServiceFilter] = useState('');
 
   const [rows, setRows] = useState<JobDailyStat[]>([]);
+  const [totals, setTotals] = useState<JobDailyTotal[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportLang, setExportLang] = useExportLang();
@@ -85,15 +88,13 @@ export default function Analytics() {
 
   async function load(site: string, fromDay: string, toDay: string) {
     setLoading(true);
-    const { data } = await supabase
-      .from('job_daily_stats')
-      .select('*')
-      .eq('site_id', site)
-      .gte('day', fromDay)
-      .lte('day', toDay)
-      .order('day');
+    const [{ data }, { data: totalData }] = await Promise.all([
+      supabase.from('job_daily_stats').select('*').eq('site_id', site).gte('day', fromDay).lte('day', toDay).order('day'),
+      supabase.from('job_daily_totals').select('*').eq('site_id', site).gte('day', fromDay).lte('day', toDay).order('day'),
+    ]);
     const stats = (data ?? []) as JobDailyStat[];
     setRows(stats);
+    setTotals((totalData ?? []) as JobDailyTotal[]);
     setLoading(false);
 
     // Chart labels only: rows can reference a soft-deleted service or a user
@@ -122,6 +123,7 @@ export default function Analytics() {
     serviceOptions.find((s) => s.id === id)?.label ??
     '—';
 
+  /** Per service, for the by-service chart only: a multi-service job is in it once per service. */
   const filtered = useMemo(
     () =>
       rows.filter(
@@ -129,20 +131,25 @@ export default function Analytics() {
       ),
     [rows, workerFilter, serviceFilter],
   );
+  /** Job grain: the totals, the month trend and the by-worker chart. */
+  const counted = useMemo(
+    () => countRows(totals, rows, workerFilter, serviceFilter),
+    [totals, rows, workerFilter, serviceFilter],
+  );
 
-    /* The view has one row per person on a job (0019), so a shared car appears
+    /* The views have one row per person on a job (0019), so a shared car appears
        twice. Site-wide figures count cars (`car_count`, the submitter's row);
        with a worker picked it is their `job_count`, shared jobs included. */
-  const countOf = (r: JobDailyStat) => (workerFilter ? r.job_count : r.car_count);
+  const countOf = (r: { job_count: number; car_count: number }) => (workerFilter ? r.job_count : r.car_count);
   const total = useMemo(
-    () => filtered.reduce((sum, r) => sum + countOf(r), 0),
+    () => counted.reduce((sum, r) => sum + countOf(r), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filtered, workerFilter],
+    [counted, workerFilter],
   );
 
   const monthlyTrend = useMemo(() => {
     const byMonth = new Map<string, number>();
-    for (const r of filtered) byMonth.set(monthKey(r.day), (byMonth.get(monthKey(r.day)) ?? 0) + countOf(r));
+    for (const r of counted) byMonth.set(monthKey(r.day), (byMonth.get(monthKey(r.day)) ?? 0) + countOf(r));
     return [...byMonth.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([m, v]) => ({
@@ -150,14 +157,14 @@ export default function Analytics() {
         value: v,
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, workerFilter, i18n.language]);
+  }, [counted, workerFilter, i18n.language]);
 
   const byWorker = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of filtered) map.set(r.worker_id, (map.get(r.worker_id) ?? 0) + r.job_count);
+    for (const r of counted) map.set(r.worker_id, (map.get(r.worker_id) ?? 0) + r.job_count);
     return [...map.entries()].map(([id, v]) => ({ label: labelFor(id), value: v })).sort((a, b) => b.value - a.value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, extraLabels, workerOptions]);
+  }, [counted, extraLabels, workerOptions]);
 
   const byService = useMemo(() => {
     const map = new Map<string, number>();

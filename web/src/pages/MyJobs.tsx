@@ -11,7 +11,10 @@ import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-tab
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
-import { applyJobFilters, crewIds } from '../lib/jobs';
+import { applyJobFilters, crewIds, shareFor } from '../lib/jobs';
+import { serviceLabel as joinServiceNames } from '../lib/serviceRows';
+import { formatMoney } from '../components/money';
+import { editableServices, saveWorkerEdit, toggleId, type WorkerEdit } from './workerJobs';
 import { MY_JOBS_HEADERS, SHEET_NAMES, buildMyJobsSheet, exportServiceName } from '../lib/exports';
 import { buildWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
@@ -95,7 +98,9 @@ const helper = createColumnHelper<typeof features, Job>();
 
 /** Everything the cells call back into. Held in a ref so `columns` stays stable. */
 interface Handlers {
-  serviceLabel: (id: string | null) => string;
+  serviceLabel: (job: Job) => string;
+  /** "Your share: 40" — plus the job total when the car was shared. */
+  payLabel: (job: Job) => string;
   /** "with Dana, Avi" — everyone on the job except the reader. Empty when solo. */
   crewLabel: (job: Job) => string;
   /** Only the submitter edits; a co-worker's row is read-only. */
@@ -154,7 +159,7 @@ function buildColumns(
       header: () => t('newJob.brand'),
       cell: ({ getValue }) => <CellMuted>{getValue()}</CellMuted>,
     }),
-    helper.accessor((row) => handlers.current.serviceLabel(row.service_id), {
+    helper.accessor((row) => handlers.current.serviceLabel(row), {
       id: 'service',
       header: () => t('jobs.service'),
       cell: ({ row, getValue }) => {
@@ -168,6 +173,11 @@ function buildColumns(
           </>
         );
       },
+    }),
+    helper.display({
+      id: 'pay',
+      header: () => t('myJobs.pay'),
+      cell: ({ row }) => <span className="whitespace-nowrap tabular-nums">{handlers.current.payLabel(row.original)}</span>,
     }),
     helper.display({
       id: 'status',
@@ -247,13 +257,10 @@ export default function MyJobs() {
   const [catalog, setCatalog] = useState<Service[] | null>(null);
   const services = useMemo(() => (catalog ?? []).filter((s) => s.active && !s.deleted_at), [catalog]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{
-    note: string;
-    serviceId: string | null;
-    siteId: string;
-    coworkerIds: string[];
-  } | null>(null);
+  const [editDraft, setEditDraft] = useState<WorkerEdit | null>(null);
   const [saving, setSaving] = useState(false);
+  /* Which write failed, shown in the open editor; the draft is kept so nothing typed is lost. */
+  const [saveError, setSaveError] = useState<'services' | 'job' | null>(null);
   const [, forceTick] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportLang, setExportLang] = useExportLang();
@@ -362,13 +369,21 @@ export default function MyJobs() {
     return () => clearInterval(interval);
   }, [appUser]);
 
+  // Names travel with the job's lines (0033), so no catalog lookup and no wait for it.
   const serviceLabel = useCallback(
-    (id: string | null) => {
-      // Rows can arrive before the catalog does; "no service" would be wrong for that moment.
-      if (id && catalog === null) return '…';
-      return (id ? serviceName(catalog?.find((s) => s.id === id), i18n.language) : null) ?? t('myJobs.noService');
+    (job: Job) => joinServiceNames(job.services, i18n.language) || t('myJobs.noService'),
+    [i18n.language, t],
+  );
+
+  const payLabel = useCallback(
+    (job: Job) => {
+      if (!appUser) return '';
+      const share = t('myJobs.yourShare', { amount: formatMoney(shareFor(job, appUser.id), i18n.language) });
+      return job.coworker_ids?.length
+        ? `${share} · ${t('myJobs.jobTotal', { amount: formatMoney(job.worker_price, i18n.language) })}`
+        : share;
     },
-    [catalog, i18n.language, t],
+    [appUser, i18n.language, t],
   );
 
   const crewLabel = useCallback(
@@ -383,30 +398,24 @@ export default function MyJobs() {
 
   const startEdit = useCallback((job: Job) => {
     setEditingId(job.id);
+    setSaveError(null);
     setEditDraft({
       note: job.worker_note ?? '',
-      serviceId: job.service_id,
+      serviceIds: job.service_ids ?? [],
       siteId: job.site_id,
       coworkerIds: job.coworker_ids ?? [],
     });
   }, []);
 
-  async function saveEdit(jobId: string) {
-    if (!editDraft) return;
+  async function saveEdit(job: Job) {
+    if (!editDraft || editDraft.serviceIds.length === 0) return;
     setSaving(true);
-    // One row, one write. worker_price is not sent: the database trigger
-    // re-stamps it from the catalog whenever service_id changes.
-    await supabase
-      .from('jobs')
-      .update({
-        worker_note: editDraft.note || null,
-        service_id: editDraft.serviceId,
-        site_id: editDraft.siteId,
-        coworker_ids: editDraft.coworkerIds,
-      })
-      .eq('id', jobId);
+    setSaveError(null);
+    const failed = await saveWorkerEdit(job, editDraft);
     setSaving(false);
-    setEditingId(null);
+    // A services write that landed before the job write failed is real: reload either way.
+    if (failed) setSaveError(failed);
+    else setEditingId(null);
     await load();
   }
 
@@ -439,7 +448,10 @@ export default function MyJobs() {
       if (!rows) throw new Error('query failed');
 
       const sheetRows = buildMyJobsSheet(
-        rows.map((job) => ({ ...job, service: exportServiceName(catalog?.find((x) => x.id === job.service_id), exportLang) })),
+        rows.map((job) => ({
+          ...job,
+          service: (job.services ?? []).map((line) => exportServiceName(line, exportLang)).join(', '),
+        })),
         // The file's headers, in the language chosen for exports (Hebrew by default).
         MY_JOBS_HEADERS[exportLang],
       );
@@ -468,10 +480,10 @@ export default function MyJobs() {
 
   /* ----------------------------------------------------------------- table */
 
-  const handlers = useRef<Handlers>({ serviceLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language });
+  const handlers = useRef<Handlers>({ serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language });
   // Refreshed every render, but the ref identity never changes — so `columns`
   // below can be built once and still call the current closures.
-  handlers.current = { serviceLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language };
+  handlers.current = { serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language };
 
   const columns = useMemo(() => buildColumns(t, handlers), [t]);
   const table = useTable({ features, columns, data: jobs });
@@ -826,11 +838,14 @@ export default function MyJobs() {
                     <TrExpanded colSpan={columnCount}>
                       <div className="space-y-4">
                         <ServiceChips
-                          services={services}
-                          selected={editDraft.serviceId}
-                          onSelect={(id) => setEditDraft((d) => (d ? { ...d, serviceId: id } : d))}
-                          label={t('newJob.service')}
+                          services={editableServices(services, row.original.services)}
+                          selected={editDraft.serviceIds}
+                          onToggle={(id) => setEditDraft((d) => (d ? { ...d, serviceIds: toggleId(d.serviceIds, id) } : d))}
+                          label={t('newJob.services')}
                         />
+                        {editDraft.serviceIds.length === 0 && (
+                          <p className="text-sm font-medium text-danger-700">{t('newJob.serviceRequired')}</p>
+                        )}
                         <Select
                           aria-label={t('newJob.site')}
                           value={editDraft.siteId}
@@ -859,8 +874,18 @@ export default function MyJobs() {
                           className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-base text-ink-900 focus:border-ink-900"
                           placeholder={t('newJob.note')}
                         />
+                        {saveError && (
+                          <StatusBanner tone="error" live>
+                            {t(saveError === 'services' ? 'myJobs.servicesSaveFailed' : 'jobs.saveFailed')}
+                          </StatusBanner>
+                        )}
                         <div className="flex gap-2">
-                          <Button busy={saving} icon="check" onClick={() => void saveEdit(row.original.id)}>
+                          <Button
+                            busy={saving}
+                            icon="check"
+                            disabled={editDraft.serviceIds.length === 0}
+                            onClick={() => void saveEdit(row.original)}
+                          >
                             {t('jobDetail.save')}
                           </Button>
                           <Button variant="secondary" onClick={() => setEditingId(null)}>

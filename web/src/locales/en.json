@@ -151,7 +151,6 @@
     "plate": "Plate number",
     "vin": "VIN",
     "brand": "Brand",
-    "service": "Work performed",
     "note": "Note",
     "submit": "Submit",
     "submitting": "Submitting…",
@@ -163,7 +162,7 @@
     "plateInvalid": "Doesn't look like a valid plate — check and edit if needed",
     "vinInvalid": "VIN must be 17 characters (no I, O, or Q)",
     "vinChecksumWarning": "VIN checksum doesn't match — common for imported vehicles, double check the photo",
-    "serviceRequired": "Pick the work performed",
+    "serviceRequired": "Pick at least one service",
     "queuedOffline": "No connection — saved on this phone and it will submit automatically once you're back online",
     "queuedVideoNotSaved": "Saved on this phone and it will submit automatically once you're back online, but without the video: the phone is out of space.",
     "videoNotKept": "The video couldn't be kept: the phone is out of space.",
@@ -174,7 +173,7 @@
     "fixTitle_one": "{{count}} thing to finish before you can submit",
     "fixTitle_other": "{{count}} things to finish before you can submit",
     "needIdentifier": "Enter a license plate or VIN",
-    "needService": "Pick the work performed",
+    "needService": "Pick at least one service",
     "jumpTo": "Go to it",
     "typeItInHint": "Couldn't read it — check and type it in",
     "moreDetails": "More details",
@@ -201,7 +200,14 @@
     "duplicateConfirm": "This car was already logged on {{date}} at {{site}} ({{service}}). Submit it again anyway?",
     "duplicateTitle": "Car already logged",
     "submitAnyway": "Submit anyway",
-    "startRecording": "Start recording"
+    "startRecording": "Start recording",
+    "services": "Work performed",
+    "servicesHint": "Tick everything you did on this car.",
+    "servicesSelected_one": "{{count}} service picked",
+    "servicesSelected_other": "{{count}} services picked",
+    "payTotal": "Pay for this car: {{amount}}",
+    "paySplit_one": "Split between {{count}} person",
+    "paySplit_other": "Split between {{count}} people"
   },
   "myJobs": {
     "title": "My Jobs",
@@ -246,7 +252,11 @@
     "exportDone": "Download started. The file covers every job the filters above select.",
     "exportFailed": "Couldn't build the file. Check your connection and try again.",
     "with": "with {{names}}",
-    "coworker": "Co-worker"
+    "coworker": "Co-worker",
+    "pay": "Pay",
+    "yourShare": "Your share: {{amount}}",
+    "jobTotal": "Job total: {{amount}}",
+    "servicesSaveFailed": "Services not saved. Check your connection and try again; after 15 minutes only a manager can change them."
   },
   "dashboard": {
     "viewYesterday": "View yesterday",
@@ -307,7 +317,10 @@
     "emptyBody": "Jobs appear here as workers submit them.",
     "noMatchesTitle": "No jobs match those filters",
     "noMatchesBody": "Try a wider date range, or clear the filters to see everything.",
-    "leadReadOnly": "Every job on your sites, newest first."
+    "leadReadOnly": "Every job on your sites, newest first.",
+    "serviceRows": "Jobs with several services",
+    "grouped": "One row per job",
+    "separate": "One row per service"
   },
   "jobDetail": {
     "title": "Job",
@@ -335,8 +348,13 @@
     "crew": "Crew",
     "clientPrices": "Client prices",
     "pricing": "Pricing",
-    "noClientPrices": "This job has no client prices yet.",
-    "duplicateOfDetail": "Possible duplicate of a job logged {{date}} at {{site}} ({{service}})"
+    "duplicateOfDetail": "Possible duplicate of a job logged {{date}} at {{site}} ({{service}})",
+    "servicesRequired": "A job needs at least one service.",
+    "linePay": "Worker pay (₪)",
+    "lineClientUnit": "Client unit price (₪)",
+    "lineClientTotal": "Client total price (₪)",
+    "payTotal": "Total worker pay",
+    "serviceRetired": "no longer offered"
   },
   "photo": {
     "download": "Download photo",
@@ -399,7 +417,9 @@
     "columnsHelp": "Switch columns on or off for this download. Your changes aren't saved.",
     "columnsHelpAdmin": "Switch columns for this download, or save this layout as the customer report for everyone (Carasso starts from it).",
     "saveLayout": "Save as the layout",
-    "layoutInSettings": "Layout in Settings"
+    "layoutInSettings": "Layout in Settings",
+    "serviceRows": "Jobs with several services",
+    "serviceRowsHelp": "One row per job lists its services together; one row per service gives each its own row. Remembered on this browser."
   },
   "admin": {
     "users": "Users",
@@ -515,8 +535,6 @@
   "prices": {
     "unit": "Client unit price (₪)",
     "total": "Client total price (₪)",
-    "workerPay": "Worker pay (₪)",
-    "workerPayHint": "what the worker is paid for this job",
     "invalid": "Prices must be numbers, zero or more."
   },
   "settings": {

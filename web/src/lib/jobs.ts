@@ -10,26 +10,33 @@ import {
 import { VIDEO_PART_BYTES } from './video';
 import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
-import type { Job, PhotoKind, PreviousJob } from './types';
+import type { Job, JobServiceLine, PhotoKind, PreviousJob, Service } from './types';
 
 /** The optional slots, in the order they are filled. Matches migration 0005. */
 export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
 export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
 
+/** A payload submitJob refuses before calling anything: resending it can never succeed. */
+export class InvalidJobError extends Error {}
+
 /**
  * True when retrying `submitJob` with the same payload can never succeed: a
- * 4xx from the Worker, or a Postgres RLS rejection (42501). Anything else is
- * treated as transient so an outage never drops data. 401 (token mid-refresh),
- * 408 and 429 (rate limit hit while flushing a backlog) clear on their own.
+ * 4xx from the Worker, a payload submitJob itself refuses (InvalidJobError),
+ * a Postgres RLS rejection (42501) or check violation (23514, e.g. create_job
+ * given no service). Anything else is treated as transient so an outage never
+ * drops data. 401 (token mid-refresh), 408 and 429 (rate limit hit while
+ * flushing a backlog) clear on their own.
  */
 const RETRYABLE_4XX = [401, 408, 429];
+const PERMANENT_PG_CODES = ['42501', '23514']; // insufficient_privilege, check_violation
 
 export function isPermanentError(err: unknown): boolean {
+  if (err instanceof InvalidJobError) return true;
   if (err instanceof HttpError) {
     return err.status >= 400 && err.status < 500 && !RETRYABLE_4XX.includes(err.status);
   }
   const code = (err as { code?: string } | null | undefined)?.code;
-  return code === '42501'; // insufficient_privilege — RLS denied the write
+  return code !== undefined && PERMANENT_PG_CODES.includes(code);
 }
 
 /** The Worker asking us to slow down: not retried within a run, and not a failed attempt. */
@@ -46,7 +53,13 @@ export interface NewJobPayload {
   vin: string | null;
   brand: string | null;
   workerNote: string | null;
-  serviceId: string;
+  /** Every service done on the car, at least one (0033). Duplicates are dropped. */
+  serviceIds: string[];
+  /**
+   * Legacy: payloads queued before 0033 carry one service here and no
+   * `serviceIds`. Read once in submitJob; delete once every device has flushed its queue.
+   */
+  serviceId?: string;
   /** Up to two co-workers. Absent on payloads queued before migration 0019. */
   coworkerIds?: string[];
   /** `null` when no plate photo was taken (e.g. the car has no plate). */
@@ -57,17 +70,12 @@ export interface NewJobPayload {
   extraBlobs?: Blob[];
   /** Optional condition video (≤2 min, recorded in-app). Missing on payloads queued before it existed. */
   videoBlob?: Blob | null;
-  /**
-   * Legacy: pre-0005 payloads queued a multi-service list. Read once in
-   * submitJob; delete once every device has flushed its queue.
-   */
-  serviceIds?: string[];
   /** Set once the row exists, so a retry after a failed upload resumes instead of inserting a second job. */
   jobId?: string;
 }
 
 /**
- * Creates a job row, then uploads its photos (the Worker's /upload checks the
+ * Creates a job row with its services, then uploads its photos (the Worker's /upload checks the
  * job exists). `jobId` is recorded on the payload before any upload starts so
  * a retry never inserts a second job for the same car.
  */
@@ -77,35 +85,35 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   const vin = payload.vin?.toUpperCase().trim() || null;
 
   // A job needs a plate or a VIN; guarded here for retry-queue payloads and direct callers.
-  if (!plate && !vin) throw new Error('Job requires a plate or a VIN');
+  if (!plate && !vin) throw new InvalidJobError('Job requires a plate or a VIN');
 
   let jobId = payload.jobId;
 
   if (!jobId) {
-    // worker_price is absent on purpose: a trigger stamps it from the service catalog (0005).
-    // So is duplicate_of_job_id: the database flags a repeat VIN or plate on insert (0029),
+    const serviceIds = jobServiceIds(payload);
+    // Checked only before the row exists: a queued retry with a jobId just finishes its photos.
+    if (serviceIds.length === 0) throw new InvalidJobError('Job requires at least one service');
+    // One call so the job and its services land together or not at all (create_job, 0033).
+    // No prices are sent: the database snapshots them from the catalog. Nor is
+    // duplicate_of_job_id: the database flags a repeat VIN or plate on insert (0029),
     // which also covers jobs queued offline.
-    const { data: job, error } = await supabase
-      .from('jobs')
-      .insert({
-        site_id: payload.siteId,
-        worker_id: payload.workerId,
-        plate,
-        vin,
-        vin_valid_checksum: vin ? vinChecksumValid(vin) : null,
-        brand: payload.brand,
-        service_id: payload.serviceId ?? payload.serviceIds?.[0] ?? null,
-        // Same insert as the job itself, so a retry can never land the car
-        // without its crew (or the crew twice).
-        coworker_ids: payload.coworkerIds ?? [],
-        worker_note: payload.workerNote,
-      })
-      .select('id')
-      .single();
+    const { data, error } = await supabase.rpc('create_job', {
+      p_site_id: payload.siteId,
+      p_worker_id: payload.workerId,
+      p_plate: plate,
+      p_vin: vin,
+      p_vin_valid_checksum: vin ? vinChecksumValid(vin) : null,
+      p_brand: payload.brand,
+      p_worker_note: payload.workerNote,
+      // Same call as the job itself, so a retry can never land the car
+      // without its crew (or the crew twice).
+      p_coworker_ids: payload.coworkerIds ?? [],
+      p_service_ids: serviceIds,
+    });
 
-    if (error || !job) throw error ?? new Error('Job creation failed');
+    if (error || !data) throw error ?? new Error('Job creation failed');
 
-    jobId = job.id as string;
+    jobId = data as string;
     // Mutating the caller's object on purpose: it is the same object handed to
     // enqueueForRetry, and IndexedDB stores it as-is.
     payload.jobId = jobId;
@@ -140,6 +148,37 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
   if (photoError) throw photoError;
 
   return jobId;
+}
+
+/** A payload's services, deduplicated, reading pre-0033 queued payloads' single `serviceId` too. */
+function jobServiceIds(payload: Pick<NewJobPayload, 'serviceIds' | 'serviceId'>): string[] {
+  const ids = payload.serviceIds?.length ? payload.serviceIds : payload.serviceId ? [payload.serviceId] : [];
+  return [...new Set(ids)];
+}
+
+/**
+ * Replaces a job's services (0033). The database keeps the price snapshot of
+ * services already on the job and stamps the current price on new ones, and
+ * refuses the call once the worker's edit window has closed (42501). An empty
+ * list is refused here: a job always has at least one service.
+ */
+export async function setJobServices(jobId: string, serviceIds: string[]): Promise<{ error: { message: string; code?: string } | null }> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return { error: { message: 'at least one service' } };
+  const { error } = await supabase.rpc('set_job_services', { p_job_id: jobId, p_service_ids: ids });
+  return { error };
+}
+
+/**
+ * What the picked services pay at today's catalog price: the live total on
+ * the form. The database snapshots its own figure on submit; this is only shown.
+ * Summed in whole cents so 0.1 + 0.2 shows as 0.3.
+ */
+export function serviceTotal(catalog: Pick<Service, 'id' | 'worker_price'>[], serviceIds: string[]): number {
+  const price = new Map(catalog.map((s) => [s.id, s.worker_price]));
+  let cents = 0;
+  for (const id of new Set(serviceIds)) cents += Math.round((price.get(id) ?? 0) * 100);
+  return cents / 100;
 }
 
 /** Where a resumable video upload got to: the R2 upload and every piece that landed, in order. */
@@ -333,6 +372,15 @@ export function shareFor(
   return job.worker_id === personId ? job.submitter_share : job.coworker_share;
 }
 
+/** What this person is owed for one service line of the job (0033: Postgres allocated the line shares). */
+export function lineShareFor(
+  job: Pick<Job, 'worker_id'>,
+  line: Pick<JobServiceLine, 'submitter_share' | 'coworker_share'>,
+  personId: string,
+): number {
+  return job.worker_id === personId ? line.submitter_share : line.coworker_share;
+}
+
 /* ------------------------------------------------------------ grid filters */
 
 /** What the jobs grid narrows by. Every field is optional; absent means "any". */
@@ -340,7 +388,7 @@ export interface JobFilters {
   siteId?: string | null;
   /** Matches jobs this person submitted OR co-worked. */
   workerId?: string;
-  /** One service or several. An empty list means "any", same as absent. */
+  /** One service or several: a job matches if it has ANY of them. An empty list means "any", same as absent. */
   serviceIds?: string[];
   /** Local calendar days, `yyyy-mm-dd`, inclusive at both ends. */
   from?: string;
@@ -365,7 +413,7 @@ const DEFAULT_SEARCH_COLUMNS = ['plate', 'vin', 'billing_code'];
 /** The query-builder methods used here, declared structurally so tests can use a recorder. */
 interface JobQuery<Q> {
   eq(column: string, value: string): Q;
-  in(column: string, values: string[]): Q;
+  overlaps(column: string, values: string[]): Q;
   gte(column: string, value: string): Q;
   lte(column: string, value: string): Q;
   or(filter: string): Q;
@@ -378,7 +426,8 @@ export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFil
   // PostgREST ANDs separate `or` params, so this composes with the search below.
   if (filters.workerId && UUID.test(filters.workerId))
     q = q.or(`worker_id.eq.${filters.workerId},coworker_ids.cs.{${filters.workerId}}`);
-  if (filters.serviceIds?.length) q = q.in('service_id', filters.serviceIds);
+  // Every view the grids read carries `service_ids` (0033): any-match over all of a job's services.
+  if (filters.serviceIds?.length) q = q.overlaps('service_ids', filters.serviceIds);
 
   if (filters.missingBilling) q = q.or('billing_code.is.null');
 

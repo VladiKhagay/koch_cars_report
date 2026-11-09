@@ -7,7 +7,9 @@ import type { PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
-import { findPreviousJob, MAX_EXTRA_PHOTOS } from '../lib/jobs';
+import { findPreviousJob, MAX_EXTRA_PHOTOS, serviceTotal } from '../lib/jobs';
+import { formatMoney } from '../components/money';
+import { migrateDraft, toggleId } from './workerJobs';
 import { sendJob as sendJobAndVideo } from '../lib/sendJob';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
@@ -38,7 +40,8 @@ const emptyForm = {
   vin: '',
   brand: '',
   note: '',
-  serviceId: null as string | null,
+  /** At least one is required (0033). */
+  serviceIds: [] as string[],
   platePhoto: null as Blob | null,
   vinPhoto: null as Blob | null,
   /** Optional, up to MAX_EXTRA_PHOTOS. Order here is the extra_1..3 order. */
@@ -58,7 +61,7 @@ type ProblemId = 'identifier' | 'plate' | 'vin' | 'service';
 
 function formIsEmpty(f: typeof emptyForm) {
   return (
-    !f.plate && !f.vin && !f.brand && !f.note && !f.serviceId && !f.platePhoto && !f.vinPhoto &&
+    !f.plate && !f.vin && !f.brand && !f.note && f.serviceIds.length === 0 && !f.platePhoto && !f.vinPhoto &&
     !f.video && f.extraPhotos.length === 0 && f.coworkerIds.length === 0
   );
 }
@@ -109,7 +112,7 @@ export default function NewJob() {
   const [draftReady, setDraftReady] = useState(false);
   useEffect(() => {
     void loadDraft<typeof emptyForm>().then((d) => {
-      if (d) setForm({ ...emptyForm, ...d });
+      if (d) setForm({ ...emptyForm, ...migrateDraft<typeof emptyForm>(d) });
       setDraftReady(true);
     });
   }, []);
@@ -225,12 +228,19 @@ export default function NewJob() {
     setForm((f) => ({ ...f, siteId: id }));
   }
 
-  function selectService(id: string) {
+  function toggleService(id: string) {
     beginNextCar();
-    setForm((f) => ({ ...f, serviceId: id }));
+    setForm((f) => ({ ...f, serviceIds: toggleId(f.serviceIds, id) }));
   }
 
   const siteId = form.siteId ?? appUser?.site_id ?? null;
+
+  /* A restored draft can name a service retired since: no chip to untick it, so
+     it is dropped here. Not before the catalog loads, nor if it came back empty
+     (offline), or every pick would vanish with the signal. */
+  const serviceIds = services.length
+    ? form.serviceIds.filter((id) => services.some((s) => s.id === id))
+    : form.serviceIds;
 
   /* Look for an earlier job as soon as the plate or VIN is complete enough to be
      one, typed or read from a photo. Debounced; offline or any failure is simply
@@ -299,7 +309,7 @@ export default function NewJob() {
         vinInputRef.current?.focus();
       },
     });
-  if (!form.serviceId)
+  if (serviceIds.length === 0)
     problems.push({ id: 'service', label: t('newJob.needService'), focus: () => scrollTo(servicesRef.current) });
 
   const showProblems = attempted && problems.length > 0;
@@ -348,7 +358,7 @@ export default function NewJob() {
       vin: form.vin || null,
       brand: form.brand || null,
       workerNote: form.note || null,
-      serviceId: form.serviceId!,
+      serviceIds,
       plateBlob: form.platePhoto,
       vinBlob: form.vinPhoto,
       extraBlobs: form.extraPhotos,
@@ -356,7 +366,7 @@ export default function NewJob() {
     // Sent after the job, from the queue, so Submit never waits on the video.
     const video = form.video;
 
-    bumpService(form.serviceId!);
+    serviceIds.forEach((id) => bumpService(id));
     pushBrand(form.brand);
 
     const resetForm = () => {
@@ -542,8 +552,9 @@ export default function NewJob() {
         <Group>
           <div ref={servicesRef}>
             <Field
-              label={t('newJob.service')}
-              error={attempted && !form.serviceId ? t('newJob.serviceRequired') : undefined}
+              label={t('newJob.services')}
+              hint={<span className="text-ink-500">{t('newJob.servicesHint')}</span>}
+              error={attempted && serviceIds.length === 0 ? t('newJob.serviceRequired') : undefined}
             >
               {servicesLoading ? (
                 <div className="flex flex-wrap gap-2" aria-hidden>
@@ -552,15 +563,26 @@ export default function NewJob() {
                   <Skeleton className="h-control w-24" />
                 </div>
               ) : (
-                /* No "n selected" hint any more — with one choice the filled chip
-                   already says everything the count used to. */
                 <ServiceChips
                   services={orderedServices}
-                  selected={form.serviceId}
-                  onSelect={selectService}
-                  label={t('newJob.service')}
+                  selected={serviceIds}
+                  onToggle={toggleService}
+                  label={t('newJob.services')}
                 />
               )}
+              {/* Today's catalog price, as the database will snapshot it on
+                  insert: the worker sees what the car pays before submitting.
+                  Always mounted, so the live region announces the first pick. */}
+              <p className="mt-2 text-sm font-medium text-ink-700" aria-live="polite">
+                {serviceIds.length > 0 &&
+                  [
+                    t('newJob.servicesSelected', { count: serviceIds.length }),
+                    t('newJob.payTotal', { amount: formatMoney(serviceTotal(services, serviceIds), i18n.language) }),
+                    form.coworkerIds.length > 0 && t('newJob.paySplit', { count: form.coworkerIds.length + 1 }),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+              </p>
             </Field>
           </div>
 

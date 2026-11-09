@@ -11,11 +11,12 @@ import {
   buildWorkerPaymentReport,
   customerReportFileName,
   exportLocale,
+  exportService,
   type ExportJob,
 } from '../lib/exports';
+import { useServiceRowMode, type ServiceRowMode } from '../lib/serviceRows';
 import { downloadWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
-import { shareFor } from '../lib/jobs';
 import {
   CARASSO_JOBS_VIEW,
   CARASSO_JOB_COLUMNS,
@@ -28,7 +29,7 @@ import type { AppUser, CarassoJob } from '../lib/types';
 import ReportColumns from '../components/ReportColumns';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
-import { mergeColumnSubset } from './exportColumns';
+import { customerRows, mergeColumnSubset, paymentJobs, type PaymentFetchedJob } from './exportColumns';
 import {
   Button,
   Card,
@@ -53,38 +54,14 @@ const CHUNK = 1000;
 const PAYMENT_FIELDS =
   'created_at, plate, vin, brand, billing_code, worker_price,' +
   ' worker_id, coworker_ids, submitter_share, coworker_share,' +
-  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, name_he, catalog_number)';
+  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), services';
 
 /** A manager's customer report: no pay and (not being readable to them) no client prices. */
 const MANAGER_REPORT_FIELDS =
   'created_at, plate, vin, brand, billing_code, worker_id, coworker_ids,' +
-  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), service:services(name_en, name_he, catalog_number)';
+  ' worker:users!jobs_worker_id_fkey(name), site:sites(name), services';
 
-type FetchedJob = ExportJob & {
-  worker_id: string;
-  coworker_ids: string[];
-  submitter_share: number;
-  coworker_share: number;
-};
-
-/** A `jobs_carasso` row as the customer report reads it. */
-function fromCarasso(r: CarassoJob): ExportJob {
-  return {
-    created_at: r.created_at,
-    plate: r.plate,
-    vin: r.vin,
-    brand: r.brand,
-    billing_code: r.billing_code,
-    worker_price: 0,
-    worker: r.crew ? { name: r.crew } : null,
-    site: { name: r.site_name },
-    service: r.service_name_en
-      ? { name_en: r.service_name_en, name_he: r.service_name_he, catalog_number: r.catalog_number ?? '' }
-      : null,
-    client_unit_price: r.client_unit_price,
-    client_total_price: r.client_total_price,
-  };
-}
+type FetchedJob = PaymentFetchedJob;
 
 type ReportKind = 'customer' | 'payments';
 
@@ -140,6 +117,11 @@ export default function Export() {
 
   /* The file's language, Hebrew until this person picks otherwise; remembered per user. */
   const [lang, chooseLang] = useExportLang();
+
+  /* Grouped or separate rows, shared with the jobs grid. Admin only: a
+     manager's or Carasso's file is always one row per job. */
+  const [storedRowMode, setRowMode] = useServiceRowMode();
+  const rowMode: ServiceRowMode = isAdmin ? storedRowMode : 'grouped';
 
   /* The one saved layout, plus this download's own toggles on top of it (never saved by a non-admin). */
   const [columns, setColumns] = useState<ColumnConfig[] | null>(null);
@@ -225,7 +207,7 @@ export default function Export() {
    * A manager reads `jobs_manager` with none of the money fields selected.
    * Fetched in chunks so a multi-site month is never silently cut at 1,000.
    */
-  async function fetchCustomerJobs(): Promise<ExportJob[] | null> {
+  async function fetchCustomerJobs(mode: ServiceRowMode): Promise<ExportJob[] | null> {
     const { fromIso, toIso } = bounds();
     const all: ExportJob[] = [];
     for (let start = 0; ; start += CHUNK) {
@@ -241,19 +223,24 @@ export default function Export() {
       if (siteId) query = query.eq('site_id', siteId);
       const { data, error } = await query;
       if (error) return null;
-      const page = (data ?? []) as unknown as (CarassoJob | (ExportJob & { coworker_ids: string[] }))[];
-      all.push(
-        ...page.map((j) =>
-          'site_name' in j
-            ? fromCarasso(j)
-            : {
-                ...j,
-                worker_price: 0,
-                // Everyone who worked the car, submitter first: "Dana, Avi".
-                worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
-              },
-        ),
-      );
+      const page = (data ?? []) as unknown as (CarassoJob | FetchedJob)[];
+      if (isAdmin || isCarasso) all.push(...customerRows(page as CarassoJob[], mode));
+      else
+        all.push(
+          ...(page as FetchedJob[]).map((j) => ({
+            created_at: j.created_at,
+            plate: j.plate,
+            vin: j.vin,
+            brand: j.brand,
+            billing_code: j.billing_code,
+            site: j.site,
+            worker_price: 0,
+            // Names only: the view's lines carry pay, which never goes in this file.
+            service: exportService(j.services),
+            // Everyone who worked the car, submitter first: "Dana, Avi".
+            worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
+          })),
+        );
       if (page.length < CHUNK) return all;
     }
   }
@@ -289,7 +276,7 @@ export default function Export() {
       let sheetName;
       let file;
       if (kind === 'customer') {
-        const jobs = await fetchCustomerJobs();
+        const jobs = await fetchCustomerJobs(rowMode);
         if (!jobs) return setResult({ kind: 'error', for: kind });
         if (jobs.length === 0) return setResult({ kind: 'empty', for: kind });
         rows = buildCustomerReport(jobs, shown, locale, lang);
@@ -301,11 +288,14 @@ export default function Export() {
         if (jobs.length === 0) return setResult({ kind: 'empty', for: kind });
         // This person's share, and their own name on every row — the job's
         // submitter may be somebody else.
+        // Each line at this person's share of that line (Postgres allocated it,
+        // 0033); the job share is only the fallback for a job with no lines.
         rows = buildWorkerPaymentReport(
-          jobs.map((j) => ({ ...j, worker_price: shareFor(j, workerId), worker: { name: selectedWorker!.name } })),
+          paymentJobs(jobs, workerId, selectedWorker!.name),
           selectedWorker!.name,
           locale,
           lang,
+          rowMode,
         );
         sheetName = SHEET_NAMES[lang].payments;
         // The worker's name goes in the filename: these land in a Downloads folder a month at a time.
@@ -409,6 +399,27 @@ export default function Export() {
             <option value="en">English</option>
           </Select>
         </Field>
+
+        {/* Shared by both reports, like the language. Admin only. */}
+        {isAdmin && (
+          <Field
+            htmlFor="export-service-rows"
+            label={t('export.serviceRows')}
+            hint={<span className="text-ink-500">{t('export.serviceRowsHelp')}</span>}
+          >
+            <Select
+              id="export-service-rows"
+              value={rowMode}
+              onChange={(e) => {
+                setRowMode(e.target.value as ServiceRowMode);
+                setResult(null);
+              }}
+            >
+              <option value="grouped">{t('jobs.grouped')}</option>
+              <option value="separate">{t('jobs.separate')}</option>
+            </Select>
+          </Field>
+        )}
 
         {!periodComplete && <StatusBanner tone="warning">{t('export.periodIncomplete')}</StatusBanner>}
       </Card>

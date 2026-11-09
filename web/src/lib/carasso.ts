@@ -11,11 +11,15 @@ import type { CarassoService, StaffMember } from './types';
  */
 export const CARASSO_JOBS_VIEW = 'jobs_carasso';
 
-/** Every column of the view; there is no pay to leave out. */
+/**
+ * Every column of the view; there is no pay to leave out. `service_name_*` and
+ * `catalog_number` are every service joined "A, B"; `services` has the lines
+ * with their client prices (0033: needs that migration applied first).
+ */
 export const CARASSO_JOB_COLUMNS =
   'id, site_id, site_name, created_at, plate, vin, brand, worker_note, service_id, ' +
   'service_name_en, service_name_ru, service_name_he, catalog_number, billing_code, ' +
-  'worker_id, coworker_ids, crew, client_unit_price, client_total_price';
+  'worker_id, coworker_ids, crew, client_unit_price, client_total_price, service_ids, services';
 
 /** Service filter options for Carasso (services itself is closed to it, as it carries pay rates). */
 export async function fetchCarassoServices(): Promise<Pick<CarassoService, 'id' | 'name_en' | 'name_ru' | 'name_he'>[]> {

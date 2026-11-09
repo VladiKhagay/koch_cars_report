@@ -59,14 +59,22 @@ export interface Job {
   /** Typed by a person. Never derived from the VIN — see lib/vin.ts. */
   brand: string | null;
   /**
-   * One service per job (migration 0005). Nullable only because jobs logged
-   * before that migration may have had none — every new job sets it.
+   * @deprecated The job's FIRST service at creation only (0033); read
+   * `services` / `service_ids`. Dropped in a later migration.
    */
   service_id: string | null;
   /**
-   * The catalog price at the time of the job, not a live lookup: re-pricing a
-   * service must not rewrite what last month's exports said. Set by a database
-   * trigger, never by the client — workers cannot edit their own pay.
+   * Every service on the job (0033), catalog order. From jobs_worker_view /
+   * jobs_manager; absent when the raw `jobs` table was selected. Empty only for
+   * pre-0005 jobs that never had a service.
+   */
+  service_ids?: string[];
+  services?: JobServiceLine[];
+  /**
+   * The sum of the job's per-service price snapshots (`job_services`, 0033),
+   * not a live lookup: re-pricing a service must not rewrite what last month's
+   * exports said. Set by database triggers, never by the client — workers
+   * cannot edit their own pay.
    */
   worker_price: number;
   /** Up to two people who worked the car with the submitter (migration 0019). */
@@ -85,6 +93,35 @@ export interface Job {
   locked_at: string;
   duplicate_of_job_id: string | null;
   deleted_at: string | null;
+}
+
+/**
+ * One service on a job, as the `services` jsonb of jobs_worker_view /
+ * jobs_manager carries it (0033). Names travel with the line, so a soft-deleted
+ * service still reads. `worker_price` is the snapshot taken when the line was
+ * added; the shares are this line's part of the job's submitter/coworker share
+ * (they add up to the job's shares exactly).
+ */
+export interface JobServiceLine {
+  service_id: string;
+  name_en: string;
+  name_ru: string | null;
+  name_he: string | null;
+  catalog_number: string;
+  worker_price: number;
+  submitter_share: number;
+  coworker_share: number;
+}
+
+/** One service on a `jobs_carasso` row: client prices, never pay. NULL prices = not set. */
+export interface CarassoServiceLine {
+  service_id: string;
+  name_en: string;
+  name_ru: string | null;
+  name_he: string | null;
+  catalog_number: string;
+  client_unit_price: number | null;
+  client_total_price: number | null;
 }
 
 export interface JobWithRelations extends Job {
@@ -111,16 +148,12 @@ export interface JobMonthlyStat {
   job_count: number;
 }
 
-export interface JobServiceStat {
-  site_id: string;
-  service_id: string;
-  month: string; // date, first of month
-  job_count: number;
-  /** Sum of worker_price over the jobs in this bucket. */
-  worker_cost: number;
-}
-
-/** One row per PERSON on the crew (migration 0019), not per submitter. */
+/**
+ * One row per PERSON on the crew (migration 0019), not per submitter, and per
+ * SERVICE line (0033): a two-service job counts once in each service, so sum
+ * job_count/car_count here only within one service. Use JobDailyTotal for
+ * job and car totals.
+ */
 export interface JobDailyStat {
   site_id: string;
   worker_id: string;
@@ -128,10 +161,20 @@ export interface JobDailyStat {
   day: string; // date
   /** Jobs this person worked on — a shared car counts once for each of them. */
   job_count: number;
-  /** This person's share of the pay. */
+  /** This person's share of this line's pay. */
   worker_cost: number;
-  /** Cars, counted once (on the submitter's row). Sum this for site totals. */
+  /** Cars, counted once per service (on the submitter's row). */
   car_count: number;
+}
+
+/** `job_daily_totals` (0033): JobDailyStat at job grain, no service. Sum this for job, car and pay totals. */
+export interface JobDailyTotal {
+  site_id: string;
+  worker_id: string;
+  day: string; // date
+  job_count: number;
+  car_count: number;
+  worker_cost: number;
 }
 
 /** A row of `list_staff()` — what any signed-in user may know about a colleague. */
@@ -153,7 +196,9 @@ export interface CarassoJob {
   vin: string | null;
   brand: string | null;
   worker_note: string | null;
+  /** @deprecated First service only; read `service_ids` / `services`. */
   service_id: string | null;
+  /** Every service, joined "A, B" (each name falling back to English on its own, 0033). */
   service_name_en: string | null;
   service_name_ru: string | null;
   service_name_he: string | null;
@@ -164,8 +209,11 @@ export interface CarassoJob {
   coworker_ids: string[];
   /** Everyone on the job, submitter first: "Dana, Avi". */
   crew: string | null;
+  /** Job totals: the sum over `services`, NULL if any line has no price. */
   client_unit_price: number | null;
   client_total_price: number | null;
+  service_ids?: string[];
+  services?: CarassoServiceLine[];
 }
 
 /** A row of `services_carasso`: service names with no pay. */
@@ -186,7 +234,7 @@ export interface ClientPrices {
   total_price: number | null;
 }
 
-/** The date, site and service of an earlier job: all a duplicate warning may say (0029). */
+/** The date, site and services (joined "A, B", 0033) of an earlier job: all a duplicate warning may say (0029). */
 export interface PreviousJob {
   created_at: string;
   site_name: string;

@@ -54,7 +54,7 @@ function base(over: Partial<QueuedJob> = {}): QueuedJob {
     vin: null,
     brand: 'VW',
     workerNote: null,
-    serviceId: 'svc',
+    serviceIds: ['svc'],
     plateBlob: blob('plate'),
     vinBlob: blob('vin'),
     extraBlobs: [blob('extra')],
@@ -216,6 +216,17 @@ describe('a video never blocks a job', () => {
     const j2 = base({ queuedAt: hoursAgo(2) });
     seed(v1, j1, j2);
     expect((await q.listQueued()).map((e) => e.queuedId)).toEqual([j2.queuedId, j1.queuedId, v1.queuedId]);
+  });
+});
+
+describe('job failures', () => {
+  /* Queued before the services picker was required: resending can never succeed. */
+  it('flags a queued job with no service for the worker at once', async () => {
+    const { submitJob } = await vi.importActual<typeof import('./jobs')>('./jobs');
+    mocks.submitJob.mockImplementation(submitJob);
+    seed(base({ serviceIds: [] }));
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
   });
 });
 

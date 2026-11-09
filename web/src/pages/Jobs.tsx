@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { recordAudit } from '../lib/audit';
+import { serviceLabel, useServiceRowMode, type ServiceRowMode } from '../lib/serviceRows';
 import { applyJobFilters, fetchDuplicateSummary, saveBilling } from '../lib/jobs';
 import {
   CARASSO_JOBS_VIEW,
@@ -24,7 +25,7 @@ import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, CarassoJob, PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
-import { carassoRow, gridColumnPlan, type JobRow } from './jobsGrid';
+import { carassoRow, gridColumnPlan, gridRows, managerRow, type JobRow } from './jobsGrid';
 import BillingInput from '../components/BillingInput';
 import JobCard from '../components/JobCard';
 import {
@@ -168,8 +169,10 @@ function buildColumns(
     helper.display({
       id: 'flags',
       header: () => t('jobs.flags'),
-      cell: ({ row }) =>
-        row.original.duplicate_of_job_id ? (
+      // In "separate" a job spans several rows: the flag (and its panel) sits on the first only.
+      cell: ({ row, table }) =>
+        row.original.duplicate_of_job_id &&
+        (row.index === 0 || table.getRowModel().rows[row.index - 1]?.original.id !== row.original.id) ? (
           <IconButton
             icon="alertTriangle"
             label={t('jobs.duplicateAction')}
@@ -194,6 +197,10 @@ export default function Jobs() {
   const { appUser } = useAuth();
   const { sites, siteId, canSwitch } = useSiteScope();
   const isCarasso = appUser?.role === 'carasso';
+  /* Grouped or separate rows: an admin choice. Everyone else always reads one
+     row per job, whatever an admin left stored in this browser. */
+  const [storedRowMode, setRowMode] = useServiceRowMode();
+  const rowMode: ServiceRowMode = appUser?.role === 'admin' ? storedRowMode : 'grouped';
   /* Fail safe: names stay hidden for Carasso until the setting has been read. */
   const [hideNames, setHideNames] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -274,7 +281,7 @@ export default function Jobs() {
       ? supabase.from(CARASSO_JOBS_VIEW).select(CARASSO_JOB_COLUMNS, { count: 'exact' })
       : supabase
           .from('jobs_manager')
-          .select('*, worker:users!jobs_worker_id_fkey(id,name), service:services(name_en,name_ru,name_he)', {
+          .select('*, worker:users!jobs_worker_id_fkey(id,name)', {
             count: 'exact',
           })
           .is('deleted_at', null);
@@ -301,7 +308,7 @@ export default function Jobs() {
       setRows(
         isCarasso
           ? ((data ?? []) as unknown as CarassoJob[]).map(carassoRow)
-          : (((data ?? []) as unknown as Omit<JobRow, 'crew'>[]).map((r) => ({ ...r, crew: null })) as JobRow[]),
+          : ((data ?? []) as unknown as Parameters<typeof managerRow>[0][]).map(managerRow),
       );
       setTotal(count ?? 0);
     }
@@ -352,9 +359,10 @@ export default function Jobs() {
           (
             await Promise.all(
               retired.map(async (s) => {
+                // Any line on any job (0033), not just a job's first service.
                 const { count } = await supabase
-                  .from('jobs')
-                  .select('id', { count: 'exact', head: true })
+                  .from('job_services')
+                  .select('job_id', { count: 'exact', head: true })
                   .eq('service_id', s.id);
                 return count === null || count > 0 ? s.id : null; // on error keep it: hiding a used service is worse
               }),
@@ -373,7 +381,7 @@ export default function Jobs() {
   );
 
   const serviceName = useCallback(
-    (job: JobRow): string => localizedServiceName(job.service, i18n.language) ?? '—',
+    (job: JobRow): string => serviceLabel(job.services, i18n.language) || '—',
     [i18n.language],
   );
 
@@ -448,7 +456,11 @@ export default function Jobs() {
   );
   const columns = useMemo(() => buildColumns(t, handlers, plan), [t, plan]);
 
-  const table = useTable({ features, columns, data: rows });
+  /* What is drawn: the fetched page, one row per service in "separate". */
+  const shownRows = useMemo(() => gridRows(rows, rowMode), [rows, rowMode]);
+  const table = useTable({ features, columns, data: shownRows });
+  /** In "separate" a job spans several rows; its duplicate panel opens under the first. */
+  const firstOfJob = (i: number) => i === 0 || shownRows[i - 1].id !== shownRows[i].id;
 
   /** The "is this a duplicate?" panel — shared by the table row and the phone card. */
   const duplicatePanel = (job: JobRow) => (
@@ -571,6 +583,18 @@ export default function Jobs() {
                   <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
                 </label>
 
+                {/* A view setting, not a filter: it never counts as "filtered" and
+                    Clear filters leaves it alone. Admin only. */}
+                {appUser?.role === 'admin' && (
+                  <label className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
+                    <span className={filterLabelClass}>{t('jobs.serviceRows')}</span>
+                    <Select value={rowMode} onChange={(e) => setRowMode(e.target.value as ServiceRowMode)}>
+                      <option value="grouped">{t('jobs.grouped')}</option>
+                      <option value="separate">{t('jobs.separate')}</option>
+                    </Select>
+                  </label>
+                )}
+
                 {/* The dashboard's "missing reservation number" badge lands here. */}
                 <label className="inline-flex min-h-control items-center gap-2 text-sm font-medium text-ink-700">
                   <input
@@ -632,7 +656,7 @@ export default function Jobs() {
               {/* A row and its duplicate panel are two <tr>s that belong together —
                   a Fragment keys them as one unit without wrapping them in an
                   element <tbody> would reject. */}
-              {table.getRowModel().rows.map((row) => (
+              {table.getRowModel().rows.map((row, i) => (
                 <Fragment key={row.id}>
                 <Tr active={dupeFor === row.original.id}>
                   {row.getAllCells().map((cell) => (
@@ -642,7 +666,7 @@ export default function Jobs() {
                   ))}
                 </Tr>
 
-                {dupeFor === row.original.id && (
+                {dupeFor === row.original.id && firstOfJob(i) && (
                   <TrExpanded colSpan={columnCount}>{duplicatePanel(row.original)}</TrExpanded>
                 )}
                 </Fragment>
@@ -656,9 +680,9 @@ export default function Jobs() {
             are all on screen — the table pushed the field past the edge. */}
         <div className="space-y-2 md:hidden">
           {loading && rows.length === 0 && <SkeletonList rows={4} />}
-          {rows.map((job) => (
+          {shownRows.map((job, i) => (
             <JobCard
-              key={job.id}
+              key={`${job.id}-${i}`}
               job={job}
               meta={[
                 plan.worker ? crewName(job) : null,
@@ -674,7 +698,7 @@ export default function Jobs() {
               onSaveBilling={plan.editBilling ? (value) => saveBillingCode(job, value) : undefined}
               onDuplicate={plan.flags ? () => openDuplicate(job.id) : undefined}
             >
-              {dupeFor === job.id && (
+              {dupeFor === job.id && firstOfJob(i) && (
                 <div className="mt-2 rounded-xl bg-sunken p-4">{duplicatePanel(job)}</div>
               )}
             </JobCard>

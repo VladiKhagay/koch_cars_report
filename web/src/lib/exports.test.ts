@@ -5,10 +5,12 @@ import {
   buildStatsSheet,
   buildWorkerPaymentReport,
   exportLocale,
+  exportService,
   type Cell,
   type ExportJob,
 } from './exports';
 import { availableColumns, CUSTOMER_COLUMNS, resolveCustomerColumns } from './reportConfig';
+import { expandJobRows } from './serviceRows';
 
 const job = (over: Partial<ExportJob> = {}): ExportJob => ({
   created_at: '2026-03-04T09:30:00.000Z',
@@ -374,5 +376,132 @@ describe('who may export what', () => {
     for (const role of ['manager', 'admin', 'carasso'] as const) {
       expect(flat(sheet(role))).not.toContain('25');
     }
+  });
+});
+
+/* ------------------------------------------------- several services (0033) */
+
+describe('a job with several services', () => {
+  const wash = { name_en: 'Wash', name_he: 'שטיפה', catalog_number: 'SVC-001' };
+  const polish = { name_en: 'Polish', name_he: null, catalog_number: 'SVC-002' };
+
+  describe('customer report', () => {
+    const cols = resolveCustomerColumns({
+      columns: [
+        { key: 'plate', visible: true },
+        { key: 'service', visible: true },
+        { key: 'catalog_number', visible: true },
+      ],
+    });
+    const lines = [wash, polish];
+
+    it('grouped: one row per job, names and catalog numbers joined', () => {
+      const rows = buildCustomerReport([job({ service: exportService(lines) })], cols, 'en-GB', 'en');
+      expect(rows.slice(1)).toEqual([['12-345-67', 'Wash, Polish', 'SVC-001, SVC-002']]);
+    });
+
+    it('grouped Hebrew: each name falls back to English on its own', () => {
+      const [, row] = buildCustomerReport([job({ service: exportService(lines) })], cols, 'he-IL', 'he');
+      expect(row[1]).toBe('שטיפה, Polish');
+    });
+
+    it('separate: one row per service', () => {
+      const expanded = expandJobRows(job({ services: lines.map((l) => ({ ...l, amount: 0 })) })).map((r) => ({
+        ...r,
+        service: exportService(r.services),
+      }));
+      const rows = buildCustomerReport(expanded, cols, 'en-GB', 'en');
+      expect(rows.slice(1)).toEqual([
+        ['12-345-67', 'Wash', 'SVC-001'],
+        ['12-345-67', 'Polish', 'SVC-002'],
+      ]);
+    });
+
+    it('a job with no services prints blank cells', () => {
+      expect(exportService([])).toBeNull();
+    });
+  });
+
+  describe('payment sheet', () => {
+    /* A 100.00 job (wash 60 + polish 40) split three ways; this is the co-worker's
+       sheet, so each line carries the co-worker share Postgres allocated (0033). */
+    const shared = job({
+      created_at: '2026-03-02T08:00:00.000Z',
+      worker_price: 33.33,
+      services: [
+        { ...wash, amount: 19.99 },
+        { ...polish, amount: 13.34 },
+      ],
+    });
+    const single = job({ created_at: '2026-03-03T08:00:00.000Z', worker_price: 25, services: [{ ...wash, amount: 25 }] });
+    const legacy = job({ created_at: '2026-03-01T08:00:00.000Z', service: null, services: [], worker_price: 12 });
+    const jobs = [shared, single, legacy];
+    const summaryFor = (rows: Cell[][], label: string) => rows.find((r) => r[1] === label);
+    const summaryRows = (rows: Cell[][]) => rows.slice(rows.findIndex((r) => r[0] === 'Summary') + 2, -1);
+    const sum = (cells: Cell[]) => Math.round(cells.reduce<number>((a, c) => a + Number(c), 0) * 100) / 100;
+
+    it.each(['grouped', 'separate'] as const)('%s: the jobs, the summary and the total agree to the cent', (mode) => {
+      const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', mode);
+      const dataRows = rows.slice(1, rows.indexOf(rows.find((r) => r.length === 0)!));
+      const total = rows[rows.length - 1];
+      expect(total).toEqual(['', 'Total', '', '', 3, 70.33]);
+      expect(sum(dataRows.map((r) => r[5]))).toBe(70.33);
+      expect(sum(summaryRows(rows).map((r) => r[5]))).toBe(70.33);
+    });
+
+    it('grouped: one row per job with its services joined and its whole amount', () => {
+      const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', 'grouped');
+      expect(rows.slice(1, 4).map((r) => [r[3], r[5]])).toEqual([
+        ['', 12],
+        ['Wash, Polish', 33.33],
+        ['Wash', 25],
+      ]);
+    });
+
+    it('separate: one row per service with that line amount', () => {
+      const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', 'separate');
+      expect(rows.slice(1, 5).map((r) => [r[3], r[5]])).toEqual([
+        ['', 12],
+        ['Wash', 19.99],
+        ['Polish', 13.34],
+        ['Wash', 25],
+      ]);
+    });
+
+    /* Counted per service, so the service counts (2 + 1 + 1) exceed the 3 jobs. */
+    it.each(['grouped', 'separate'] as const)('%s: the summary is per service from the line amounts', (mode) => {
+      const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', mode);
+      expect(summaryFor(rows, 'Wash')?.slice(4)).toEqual([2, 44.99]);
+      expect(summaryFor(rows, 'Polish')?.slice(4)).toEqual([1, 13.34]);
+      expect(summaryFor(rows, '—')?.slice(4)).toEqual([1, 12]);
+    });
+
+    it('defaults to grouped', () => {
+      expect(buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en')).toEqual(
+        buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', 'grouped'),
+      );
+    });
+  });
+});
+
+describe('exportService — Hebrew fallback and rounding (0033 QA)', () => {
+  it('an all-English job prints English in the Hebrew cell, and a blank Hebrew name falls back too', () => {
+    expect(exportService([{ name_en: 'Wash', name_he: null, catalog_number: 'A' }, { name_en: 'Wax', name_he: '', catalog_number: 'B' }])).toEqual({
+      name_en: 'Wash, Wax',
+      name_he: 'Wash, Wax',
+      catalog_number: 'A, B',
+    });
+    expect(exportService(null)).toBeNull();
+    expect(exportService(undefined)).toBeNull();
+  });
+
+  it('grouped payment row sums line amounts in cents (0.1 + 0.2 is 0.3)', () => {
+    const j = job({ worker_price: 0.3, services: [
+      { name_en: 'A', catalog_number: 'A', amount: 0.1 },
+      { name_en: 'B', catalog_number: 'B', amount: 0.2 },
+    ] });
+    const rows = buildWorkerPaymentReport([j], 'Avi', 'en-GB', 'en', 'grouped');
+    expect(rows[1][5]).toBe(0.3);
+    expect(rows[rows.length - 1][5]).toBe(0.3);
   });
 });

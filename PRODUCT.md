@@ -54,7 +54,7 @@ The mechanism that matters is that authorization lives in Postgres Row Level
 Security rather than in the app, so the frontend and the Cloudflare Worker are
 both thin and neither re-implements "who can see this job." Analytics read
 `security_invoker` views (`job_monthly_stats`, `job_daily_stats`,
-`job_service_stats`) that inherit the same RLS as the `jobs` table, so a
+`job_daily_totals`) that inherit the same RLS as the `jobs` table, so a
 worker's own stats, a manager's site stats, and an admin's all-site stats are
 the same query under three different identities.
 
@@ -103,14 +103,28 @@ the same query under three different identities.
   names a manufacturer, not the car, and a guess that lands in a form field is
   indistinguishable from something the worker actually checked. Do not
   reintroduce this, from a table or from a VIN-decoding service.
+- Several services per job (migration 0033): the worker taps every service
+  performed (at least one, each once) and sees the summed pay live on the form
+  and in My Jobs. Pay is the catalog price at the moment a service is added,
+  fixed by the server; re-pricing the catalog never changes past jobs. Co-worker
+  splits, stats and payroll use the sum.
 - Offline submission queue with automatic retry.
 - 15-minute edit window: a worker may amend their own job's services and note
   for 15 minutes after submit, then the row locks (`jobs.locked_at`, enforced
-  in RLS, not just the UI).
+  in RLS, not just the UI). After that only a manager (own site) or admin can
+  change the services. Services already on the job keep their price; a newly
+  added one gets today's. Only an admin can change a line's pay.
 - Manager: per-site day view, plate/VIN/worker search, billing code and manager
   note entry, photo access, soft delete and restore, XLSX export by date range.
+  The service filter matches a job that has any of the chosen services.
+- Admin Jobs grid and exports: a grouped/separate toggle for multi-service
+  jobs. Grouped (default) is one row per job with the services joined and
+  totals summed; separate is one row per service (in exports, with that line's
+  client price or pay share). Paging and counts stay per job. Remembered per browser; exports follow it. Managers always see
+  grouped.
 - Analytics for managers (own site) and admins (site picker), with date range,
-  worker and service filters, and XLSX stats export.
+  worker and service filters, and XLSX stats export. Per-service charts count
+  each service; job and car counts count each job once.
 - Worker self-service stats: own job counts by month.
 - Service catalog: unique catalog number, English name, optional Russian name,
   active/inactive, manual sort order, soft delete (history keeps its references).

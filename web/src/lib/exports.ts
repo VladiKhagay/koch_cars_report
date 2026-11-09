@@ -4,6 +4,7 @@
  */
 import { SHEET_HEADERS_BY_LANG, type ColumnConfig, type ExportLang } from './reportConfig';
 import { formatDate } from './formatDate';
+import type { ServiceRowMode } from './serviceRows';
 
 /* ------------------------------------------------------------- language */
 
@@ -19,6 +20,38 @@ export function exportServiceName(
 ): string {
   if (!service) return '';
   return (lang === 'he' && service.name_he) || service.name_en;
+}
+
+/** A service's names as an export prints them. */
+export interface ExportServiceNames {
+  name_en: string;
+  name_he?: string | null;
+  catalog_number: string;
+}
+
+/** One service on a payment-sheet job (0033). */
+export interface ExportServiceLine extends ExportServiceNames {
+  /**
+   * The selected person's share of THIS line (lineShareFor), resolved by the
+   * caller. Never the full line price. Required, so a view line passed through
+   * unmapped is a type error rather than a 0 on the payroll sheet.
+   */
+  amount: number;
+}
+
+/**
+ * Several services as the one `service` cell of a grouped row: names and
+ * catalog numbers joined "A, B". Each Hebrew name falls back to English on its
+ * own, so one untranslated service never turns the whole cell English. Null
+ * for no services, which prints blank.
+ */
+export function exportService(lines: ExportServiceNames[] | null | undefined): ExportJob['service'] {
+  if (!lines?.length) return null;
+  return {
+    name_en: lines.map((l) => l.name_en).join(', '),
+    name_he: lines.map((l) => l.name_he || l.name_en).join(', '),
+    catalog_number: lines.map((l) => l.catalog_number).join(', '),
+  };
 }
 
 /** The customer report's sheet, in both languages. */
@@ -44,12 +77,23 @@ export interface ExportJob {
   vin: string | null;
   brand: string | null;
   billing_code: string | null;
-  /** On the payment sheet: the selected person's share of the job, resolved by the caller (shareFor). */
+  /**
+   * On the payment sheet: the selected person's share of the job, resolved by
+   * the caller (shareFor). Only read for a job with no `services`; otherwise the
+   * line amounts are summed.
+   */
   worker_price: number;
   /** On the customer report: everyone on the job, already joined ("Dana, Avi"). */
   worker?: { name: string } | null;
   site?: { name: string } | null;
-  service?: { name_en: string; name_he?: string | null; catalog_number: string } | null;
+  /**
+   * The customer report prints this one service per row: the caller expands
+   * or groups first (exportService / expandJobRows). On the payment sheet, the
+   * fallback for a job with no `services`.
+   */
+  service?: ExportServiceNames | null;
+  /** Payment sheet: every service on the job, each with this person's `amount`. */
+  services?: ExportServiceLine[] | null;
   /**
    * Client price (admin and Carasso only). Absent for managers, who cannot read it.
    * The builder prints them only when the price columns survive availableColumns().
@@ -93,7 +137,8 @@ function customerValue(job: ExportJob, key: ColumnConfig['key'], locale: string,
 }
 
 /**
- * The customer report. No case reads `worker_price` (worker pay), and the
+ * The customer report, one row per element of `jobs`: grouped or separate is
+ * decided by the caller, which hands in rows already shaped. No case reads `worker_price` (worker pay), and the
  * exhaustive switch makes the type checker reject any key without one. Pass
  * the columns through availableColumns() first: that is what keeps client
  * prices out of a manager's file and the Worker column out of a Carasso file
@@ -163,14 +208,20 @@ const NO_SERVICE = '—';
  * The internal payroll sheet for one worker over a date range: their jobs
  * oldest first, then a per-service summary. A cell grid, not objects, so
  * subtotals are expressible. Every figure is summed from the rows above it, and
- * `worker_price` is the price snapshotted when the job was logged (0005), so
- * re-pricing a service never rewrites past pay.
+ * each amount comes from the price snapshotted when the service was put on the
+ * job (0005, 0033), so re-pricing a service never rewrites past pay.
+ *
+ * `grouped`: one row per job, its services joined. `separate`: one row per
+ * service with that line's amount. The summary is per service either way, so
+ * a two-service job counts once under each: the service counts can add up to
+ * more than the total, which counts jobs. The amounts always add up.
  */
 export function buildWorkerPaymentReport(
   jobs: ExportJob[],
   workerName: string,
   locale: string,
   lang: ExportLang = 'he',
+  mode: ServiceRowMode = 'grouped',
 ): Cell[][] {
   const labels = PAYMENT_LABELS[lang];
   const ordered = jobs.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -180,25 +231,34 @@ export function buildWorkerPaymentReport(
   const perService = new Map<string, { count: number; cents: number }>();
   let totalCents = 0;
 
-  for (const job of ordered) {
-    const service = exportServiceName(job.service, lang) || NO_SERVICE;
-    const cents = toCents(job.worker_price);
+  const addToService = (name: string, cents: number) => {
+    const bucket = perService.get(name) ?? { count: 0, cents: 0 };
+    bucket.count += 1;
+    bucket.cents += cents;
+    perService.set(name, bucket);
+  };
 
-    rows.push([
+  for (const job of ordered) {
+    // A job with no lines (logged before services were recorded) prints as one service-less row.
+    const lines = job.services?.length
+      ? job.services.map((l) => ({ service: l, cents: toCents(l.amount) }))
+      : [{ service: job.service ?? null, cents: toCents(job.worker_price) }];
+    const row = (service: string, cents: number): Cell[] => [
       formatDate(job.created_at, locale),
       // One sheet per person across every site they worked at (0019).
       job.site?.name ?? '',
       job.worker?.name ?? workerName,
-      exportServiceName(job.service, lang),
+      service,
       job.plate ?? '',
       fromCents(cents),
-    ]);
+    ];
 
-    const bucket = perService.get(service) ?? { count: 0, cents: 0 };
-    bucket.count += 1;
-    bucket.cents += cents;
-    perService.set(service, bucket);
-    totalCents += cents;
+    const jobCents = lines.reduce((sum, l) => sum + l.cents, 0);
+    if (mode === 'separate') for (const l of lines) rows.push(row(exportServiceName(l.service, lang), l.cents));
+    else rows.push(row(lines.map((l) => exportServiceName(l.service, lang)).filter(Boolean).join(', '), jobCents));
+
+    for (const l of lines) addToService(exportServiceName(l.service, lang) || NO_SERVICE, l.cents);
+    totalCents += jobCents;
   }
 
   const [summaryLabel, serviceLabel, jobsLabel, amountLabel] = labels.summary;

@@ -51,9 +51,10 @@ Excel.
   Managers can still edit.
 - **A job can have up to two co-workers** besides the submitter (`jobs.coworker_ids`,
   migration 0019), from any site. Pay is split evenly — the submitter takes the
-  leftover cent — via the generated `submitter_share` / `coworker_share` columns.
+  leftover cent — via the generated `submitter_share` / `coworker_share` columns,
+  which split the job's summed pay (all its services, 0033).
   A shared job counts as one job for each person but one car for the site
-  (`job_daily_stats.car_count`). Only the submitter edits; co-workers only see it.
+  (`job_daily_totals.car_count`). Only the submitter edits; co-workers only see it.
   The submitter picks the job's site (default: their own), and payroll is per
   person across all sites.
 - **There is no upstream vehicle list.** Cars just show up. Validation is
@@ -149,6 +150,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0002_catalog_numbers_and_stats.sql` | `services.catalog_number` (unique until 0017), monthly/service stat views |
 | `0003_tighten_worker_job_select.sql` | **Security fix** (see §6), `find_recent_duplicate()` |
 | `0004_user_mgmt_services_softdelete_stats.sql` | Service soft-delete, `update_my_name()`, `set_user_active()`, `job_daily_stats` |
+| `0033_multi_service_jobs.sql` | `job_services` + `job_service_client_prices` (per-line price snapshots, backfilled), `create_job()` / `set_job_services()`, `job_service_lines`, `job_daily_totals`; `job_daily_stats` per service; drops `job_service_stats` |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -171,21 +173,54 @@ users(id, auth_id, name, role[worker|manager|admin], site_id, active)
 services(id, catalog_number (not unique, 0017), name_en, name_ru, worker_price,
          active, sort_order, deleted_at)
 jobs(id, site_id, worker_id, created_at, plate, vin, brand,
-     service_id,            -- one service per job (0005)
-     worker_price,          -- catalog price snapshotted by trigger
+     service_id,            -- DEPRECATED (0033): first service at creation
+     worker_price,          -- sum of the job's job_services lines, by trigger
      worker_note, manager_note, billing_code,
      locked_at,             -- created_at + 15 min
      duplicate_of_job_id,   -- soft flag, nullable
      deleted_at)
+job_services(job_id, service_id, worker_price, created_at)   -- PK (job, service), >= 1 per job
+job_service_client_prices(job_id, service_id, unit_price, total_price)  -- admin/Carasso
+job_client_prices(job_id, unit_price, total_price)  -- per-job sum, NULL if any line unpriced
 photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at)
 audit_log(id, job_id, user_id, action, changes_jsonb, at)
 ```
 
-**One service per job.** Migration 0005 dropped the `job_services` join table.
-`jobs.worker_price` is a *snapshot*, not a live lookup — re-pricing a service
-must not rewrite what last month's exports said — and it is written by a
-database trigger, never by the client, because RLS is row-level and cannot
-stop a worker from PATCHing their own pay during the 15-minute edit window.
+**Several services per job (0033).** 0005 collapsed jobs to one service; the
+yard then logged cars that got a wash *and* a polish, so 0033 brought
+`job_services` back with the snapshot moved onto each line. Each service once
+per job, at least one (trigger). A line's `worker_price` is a *snapshot*, not a
+live lookup — re-pricing a service must not rewrite what last month's exports
+said — stamped from the catalog by a trigger for every signed-in caller, never
+taken from the client, because RLS is row-level and cannot stop a worker from
+PATCHing their own pay during the 15-minute edit window. Only an admin may
+change a line's pay afterwards. A service added later takes the price of the
+day; lines already on the job keep theirs. `jobs.worker_price` stays as the
+sum (trigger), so the 0019 share columns, payroll and stats keep their meaning.
+Client prices follow the same pattern per line; `job_client_prices` is their
+per-job sum, so `jobs_carasso` reads it unchanged.
+
+Writes go through two security-invoker RPCs: `create_job(...)` (the job and all
+its services in one call, so an offline retry never lands half a car) and
+`set_job_services(job, ids)` (insert first, then delete; refused with 42501
+once the job is not editable). Per-service figures come from
+`job_service_lines`, which splits each person's share across lines (last line
+takes the remainder, so lines add up to the share exactly). `job_daily_stats`
+is now per service — summed without a service filter it counts a two-service
+job twice — and `job_daily_totals` is per job for job/car counts and pay.
+
+`jobs.service_id` is **deprecated**, kept only for builds still in the field:
+an old-build insert seeds the first line, and an old-build change of it
+*replaces the job's services with that one service*. New code must not write
+it. Drop it in 0034 once no old build can be running.
+
+**Deploy order: 0033 -> web. Rollback: web only; 0033 is roll-forward only.**
+0033 alone keeps the previous web build working. Until the new web is live, two
+old-build admin actions stop sticking: a per-job pay override on
+`jobs.worker_price` (now always the line sum) and a direct `job_client_prices`
+edit (recomputed on the next line change). Never drop `job_services` while any
+job has more than one service — that is the 0005 data loss again. Run
+`supabase/verify_0033.sql` (read-only) after applying.
 
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.

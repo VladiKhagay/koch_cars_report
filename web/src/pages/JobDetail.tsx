@@ -3,18 +3,20 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { serviceName as localizedServiceName, type ServiceNames } from '../lib/serviceName';
-import { fetchDuplicateSummary, saveBilling } from '../lib/jobs';
-import { fetchJobClientPrices, parsePrice, saveJobClientPrices } from '../lib/clientPrices';
+import { fetchDuplicateSummary, saveBilling, setJobServices } from '../lib/jobs';
+import { fetchServiceClientPrices, parsePrice } from '../lib/clientPrices';
+import { serviceLabel } from '../lib/serviceRows';
 import { recordAudit } from '../lib/audit';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
-import type { ClientPrices, Job, PreviousJob } from '../lib/types';
+import { SERVICE_COLUMNS, type ClientPrices, type Job, type PreviousJob, type Service } from '../lib/types';
 import JobMedia from '../components/JobMedia';
 import CarassoJobDetail from './CarassoJobDetail';
 import { describePreviousJob } from '../components/previousJob';
 import { formatMoney } from '../components/money';
 import CoworkerPicker from '../components/CoworkerPicker';
+import ServiceChips from '../components/ServiceChips';
+import { lineWrites as planLineWrites, missingServices, type LineMoney } from './jobDetailLines';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
 import {
@@ -30,6 +32,11 @@ import {
   Skeleton,
   fieldClass,
 } from '../components/ui';
+
+const priceText = (n: number | null | undefined) => (n == null ? '' : String(n));
+
+/** Same members, any order. */
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
 /** Carasso gets its own read-only screen (a different view, no pay, no edit); everyone else the staff screen. */
 export default function JobDetail() {
@@ -53,14 +60,19 @@ function StaffJobDetail() {
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [coworkerIds, setCoworkerIds] = useState<string[]>([]);
   const [siteId, setSiteId] = useState('');
-  const [serviceName, setServiceName] = useState('');
-  /* Money. Managers read the worker pay (read-only); only an admin edits it,
-     and the client prices. Strings, because they are typed into inputs. */
-  const [workerPay, setWorkerPay] = useState('');
-  const [unitPrice, setUnitPrice] = useState('');
-  const [totalPrice, setTotalPrice] = useState('');
+  /* Services (0033): managers and admins change the set; the database keeps
+     the snapshot of lines already on the job and prices new ones from today's
+     catalog. `catalog` is what can be added: active services only. */
+  const [catalog, setCatalog] = useState<Service[]>([]);
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
+  /* Per-line money, admin only. `lineDefaults` is what each line holds now (its
+     snapshot) or would get if added (the catalog); `lineDrafts` is what the
+     admin typed over it. Only a line whose draft differs from its default is
+     written, so an untouched new line keeps the database's own snapshot. */
+  const [lineDefaults, setLineDefaults] = useState<Record<string, LineMoney>>({});
+  const [lineDrafts, setLineDrafts] = useState<Record<string, Partial<LineMoney>>>({});
   const [priceError, setPriceError] = useState(false);
-  const [clientPrices, setClientPrices] = useState<ClientPrices | null>(null);
+  const [servicesError, setServicesError] = useState(false);
   /** The earlier job a duplicate flag points at: date, site, service only. */
   const [earlier, setEarlier] = useState<PreviousJob | null>(null);
   const [billingCode, setBillingCode] = useState('');
@@ -69,63 +81,87 @@ function StaffJobDetail() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
+  const role = appUser?.role;
+  /* Names come with the job's lines now, so a language switch no longer
+     reloads (and wipes unsaved edits). */
   useEffect(() => {
     if (id) void load(id);
-  }, [id, i18n.language]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, role]);
 
-  async function load(jobId: string) {
-    setLoading(true);
-    const { data: j } = await supabase.from('jobs_manager').select('*').eq('id', jobId).single();
+  /** `quiet`: refresh after a save without the skeleton flashing in. */
+  async function load(jobId: string, quiet = false) {
+    if (!quiet) setLoading(true);
+    const { data: j } = await supabase.from('jobs_manager').select('*').eq('id', jobId).single<Job>();
     if (!j) {
       setLoading(false);
       return;
     }
+    const isAdmin = appUser?.role === 'admin';
+    const lines = j.services ?? [];
+    const [{ data: active }, catalogPrices, { data: linePrices }, dup] = await Promise.all([
+      supabase.from('services').select(SERVICE_COLUMNS).eq('active', true).is('deleted_at', null).order('sort_order'),
+      isAdmin ? fetchServiceClientPrices() : Promise.resolve(new Map<string, ClientPrices>()),
+      // Admin only: the managers' API cannot read client prices (RLS).
+      isAdmin
+        ? supabase.from('job_service_client_prices').select('service_id, unit_price, total_price').eq('job_id', jobId)
+        : Promise.resolve({ data: [] as (ClientPrices & { service_id: string })[] }),
+      j.duplicate_of_job_id ? fetchDuplicateSummary(jobId) : Promise.resolve(null),
+    ]);
+
+    const defaults: Record<string, LineMoney> = {};
+    for (const s of (active ?? []) as Service[]) {
+      const p = catalogPrices.get(s.id);
+      defaults[s.id] = { pay: String(s.worker_price), unit: priceText(p?.unit_price), total: priceText(p?.total_price) };
+    }
+    for (const l of lines) {
+      const p = (linePrices ?? []).find((x) => x.service_id === l.service_id);
+      defaults[l.service_id] = { pay: String(l.worker_price), unit: priceText(p?.unit_price), total: priceText(p?.total_price) };
+    }
+
     setJob(j);
     setBillingCode(j.billing_code ?? '');
     setManagerNote(j.manager_note ?? '');
-
-    setWorkerPay(String(j.worker_price ?? 0));
+    setCatalog((active ?? []) as Service[]);
+    setServiceIds(lines.map((l) => l.service_id));
+    setLineDefaults(defaults);
+    setLineDrafts({});
     setPriceError(false);
-    if (appUser?.role === 'admin') {
-      const prices = await fetchJobClientPrices(jobId);
-      setClientPrices(prices);
-      setUnitPrice(prices?.unit_price == null ? '' : String(prices.unit_price));
-      setTotalPrice(prices?.total_price == null ? '' : String(prices.total_price));
-    }
-    setEarlier(j.duplicate_of_job_id ? await fetchDuplicateSummary(jobId) : null);
-
+    setServicesError(false);
+    setEarlier(dup);
     setSelectedWorkerId(j.worker_id);
     setCoworkerIds(j.coworker_ids ?? []);
     setSiteId(j.site_id);
-
-    if (j.service_id) {
-      const { data: svc } = await supabase
-        .from('services')
-        .select('name_en, name_ru, name_he')
-        .eq('id', j.service_id)
-        .single<ServiceNames>();
-            // Honour the Russian service name, as the worker's chip list does.
-      setServiceName(localizedServiceName(svc, i18n.language) ?? '');
-    } else {
-      setServiceName('');
-    }
     setLoading(false);
   }
 
+  const lineValue = (serviceId: string, field: keyof LineMoney) =>
+    lineDrafts[serviceId]?.[field] ?? lineDefaults[serviceId]?.[field] ?? '';
+  const setLineValue = (serviceId: string, field: keyof LineMoney, value: string) =>
+    setLineDrafts((d) => ({ ...d, [serviceId]: { ...d[serviceId], [field]: value } }));
+
   async function handleSave() {
     if (!job || !appUser) return;
-    /* Admin money, validated before anything is written. Blank client prices
-       are allowed (the job simply has none); a typed value must be a number. */
     const isAdmin = appUser.role === 'admin';
-    const pay = isAdmin ? parsePrice(workerPay) : null;
-    const unit = isAdmin ? parsePrice(unitPrice) : null;
-    const total = isAdmin ? parsePrice(totalPrice) : null;
-    if (isAdmin && (pay === null || (unitPrice.trim() !== '' && unit === null) || (totalPrice.trim() !== '' && total === null))) {
+    const originalServiceIds = job.service_ids ?? (job.services ?? []).map((l) => l.service_id);
+    // A job keeps at least one service (the database refuses none); a legacy job
+    // that never had one may still save its other fields.
+    if (missingServices(originalServiceIds, serviceIds)) {
+      setServicesError(true);
+      return;
+    }
+    setServicesError(false);
+    /* Admin money, per line, validated before anything is written (see lineWrites). */
+    const { writes: lineWrites, invalid } = isAdmin
+      ? planLineWrites(serviceIds, lineDefaults, lineDrafts)
+      : { writes: [], invalid: false };
+    if (invalid) {
       setPriceError(true);
       return;
     }
     setPriceError(false);
     setSaving(true);
+    const servicesChanged = !sameSet(serviceIds, originalServiceIds);
     const billing = { billing_code: billingCode || null, manager_note: managerNote || null };
     const jobChanges = {
       worker_id: selectedWorkerId || job.worker_id,
@@ -133,21 +169,46 @@ function StaffJobDetail() {
       // drop them anyway; dropping them here keeps the screen honest.
       coworker_ids: coworkerIds.filter((id) => id !== (selectedWorkerId || job.worker_id)),
       site_id: siteId || job.site_id,
-      ...(isAdmin ? { worker_price: pay! } : {}),
     };
-    const changes = { ...billing, ...jobChanges };
+    // jobs.worker_price is the line sum (a trigger), so pay is audited per line, never on the job.
+    const lines = lineWrites.map((w) => ({
+      service_id: w.sid,
+      ...(w.payChanged ? { worker_price: parsePrice(w.pay) } : {}),
+      ...(w.pricesChanged ? { unit_price: parsePrice(w.unit), total_price: parsePrice(w.total) } : {}),
+    }));
+    const changes = {
+      ...billing,
+      ...jobChanges,
+      ...(servicesChanged ? { service_ids: serviceIds } : {}),
+      ...(lines.length > 0 ? { service_lines: lines } : {}),
+    };
     /* A manager moving a job to another site can't write its audit row
        afterwards — audit_log_insert is scoped to their own site, and the job
        has just left it. So a move is audited first, while they still can. */
     const moving = changes.site_id !== job.site_id;
     if (moving) await recordAudit(job.id, appUser.id, 'update', changes);
-    // Billing first: a manager who moves the job away loses access to its billing row.
-    const { error: billingError } = await saveBilling(job.id, billing);
-    let { error } = billingError ? { error: billingError } : await supabase.from('jobs').update(jobChanges).eq('id', job.id);
-    if (!error && isAdmin) {
-      ({ error } = await saveJobClientPrices(job.id, { unit_price: unit, total_price: total }));
-      if (!error) setClientPrices({ unit_price: unit, total_price: total });
+    /* Order matters: a manager who moves the job away loses access to its
+       billing row and its services, so those go first and the jobs update (which
+       carries the site) goes last. Each step stops the rest on failure. */
+    let error: { message: string } | null = (await saveBilling(job.id, billing)).error;
+    if (!error && servicesChanged) ({ error } = await setJobServices(job.id, serviceIds));
+    for (const w of lineWrites) {
+      if (error) break;
+      if (w.payChanged)
+        ({ error } = await supabase
+          .from('job_services')
+          .update({ worker_price: parsePrice(w.pay) })
+          .eq('job_id', job.id)
+          .eq('service_id', w.sid));
+      if (!error && w.pricesChanged)
+        ({ error } = await supabase
+          .from('job_service_client_prices')
+          .upsert(
+            { job_id: job.id, service_id: w.sid, unit_price: parsePrice(w.unit), total_price: parsePrice(w.total) },
+            { onConflict: 'job_id,service_id' },
+          ));
     }
+    if (!error) ({ error } = await supabase.from('jobs').update(jobChanges).eq('id', job.id));
     setSaving(false);
     if (error) {
       setSaveError(true);
@@ -155,8 +216,12 @@ function StaffJobDetail() {
     }
     if (!moving) await recordAudit(job.id, appUser.id, 'update', changes);
     setSaveError(false);
-    setJob({ ...job, ...changes });
-    setCoworkerIds(changes.coworker_ids);
+    // Re-read: the pay sum and new lines' snapshots are the database's. A
+    // manager who moved the job off their site can no longer read it.
+    if (moving && !isAdmin) {
+      setJob({ ...job, ...jobChanges });
+      setCoworkerIds(jobChanges.coworker_ids);
+    } else await load(job.id, true);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -210,6 +275,30 @@ function StaffJobDetail() {
   /* Any active colleague, from any site. The current submitter stays listed
      even if deactivated since, so the field never silently jumps on load. */
   const submitterOptions = staff.filter((s) => s.active || s.id === job.worker_id);
+  /* What the chips offer: the active catalog, plus any service already on the
+     job that has since been retired or deleted (named from the line, and
+     marked), so it can be kept or removed but never silently dropped. */
+  const retired = ` (${t('jobDetail.serviceRetired')})`;
+  const chipServices: Service[] = [
+    ...catalog,
+    ...(job.services ?? [])
+      .filter((l) => !catalog.some((s) => s.id === l.service_id))
+      .map((l, i) => ({
+        id: l.service_id,
+        name_en: l.name_en + retired,
+        name_ru: l.name_ru ? l.name_ru + retired : null,
+        name_he: l.name_he ? l.name_he + retired : null,
+        catalog_number: l.catalog_number,
+        worker_price: l.worker_price,
+        active: false,
+        sort_order: Number.MAX_SAFE_INTEGER - 1000 + i,
+        deleted_at: null,
+      })),
+  ];
+  const chipName = (sid: string) => {
+    const s = chipServices.find((x) => x.id === sid);
+    return s ? serviceLabel([s], i18n.language) : '—';
+  };
 
   return (
     <Page width="list">
@@ -320,7 +409,28 @@ function StaffJobDetail() {
                 <DetailRow label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
               )}
               <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />
-              <DetailRow label={t('jobDetail.service')} value={serviceName || '—'} />
+              {canManage ? (
+                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <p className="mb-1.5 text-sm font-medium text-ink-600">{t('jobDetail.services')}</p>
+                  <ServiceChips
+                    services={chipServices}
+                    selected={serviceIds}
+                    label={t('jobDetail.services')}
+                    onToggle={(sid) => {
+                      setServicesError(false);
+                      setServiceIds((ids) => (ids.includes(sid) ? ids.filter((x) => x !== sid) : [...ids, sid]));
+                    }}
+                  />
+                  {(servicesError ||
+                    missingServices(job.service_ids ?? (job.services ?? []).map((l) => l.service_id), serviceIds)) && (
+                    <p className="mt-1.5 text-sm text-danger-700" role="alert">
+                      {t('jobDetail.servicesRequired')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <DetailRow label={t('jobDetail.services')} value={serviceLabel(job.services, i18n.language) || '—'} />
+              )}
               {job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />}
             </dl>
           </Card>
@@ -349,55 +459,42 @@ function StaffJobDetail() {
               />
             </Field>
 
-            {/* Worker pay: read-only for managers (their own site, RLS), editable by admin.
-                Client prices are admin-only; the managers' API cannot read them. */}
-            {appUser?.role === 'manager' && (
-              <dl>
-                <DetailRow label={t('prices.workerPay')} value={formatMoney(job.worker_price, i18n.language)} />
-              </dl>
-            )}
-            {appUser?.role === 'admin' && (
+            {/* Worker pay: the job's total is the sum of its lines' snapshots, set by
+                the database and read-only here. Only an admin edits a line's pay
+                and client prices; the managers' API cannot read client prices. */}
+            <dl>
+              <DetailRow label={t('jobDetail.payTotal')} value={formatMoney(job.worker_price, i18n.language)} />
+            </dl>
+            {appUser?.role === 'admin' && serviceIds.length > 0 && (
               <div className="space-y-4 border-t border-line pt-4">
                 <SectionHeading icon="tag">{t('jobDetail.pricing')}</SectionHeading>
-                <Field htmlFor="worker-pay" label={t('prices.workerPay')} hint={<span className="text-ink-500">{t('prices.workerPayHint')}</span>}>
-                  <input
-                    id="worker-pay"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    value={workerPay}
-                    onChange={(e) => setWorkerPay(e.target.value)}
-                    className={`${fieldClass} font-mono`}
-                  />
-                </Field>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field htmlFor="client-unit" label={t('prices.unit')}>
-                    <input
-                      id="client-unit"
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      value={unitPrice}
-                      onChange={(e) => setUnitPrice(e.target.value)}
-                      className={`${fieldClass} font-mono`}
-                    />
-                  </Field>
-                  <Field htmlFor="client-total" label={t('prices.total')}>
-                    <input
-                      id="client-total"
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.01"
-                      value={totalPrice}
-                      onChange={(e) => setTotalPrice(e.target.value)}
-                      className={`${fieldClass} font-mono`}
-                    />
-                  </Field>
-                </div>
-                {clientPrices === null && <p className="text-sm text-ink-600">{t('jobDetail.noClientPrices')}</p>}
+                {serviceIds.map((sid) => (
+                  // One fieldset per line, its legend the service: three lines
+                  // otherwise read as nine identical "Worker pay" fields.
+                  <fieldset key={sid} className="space-y-3 rounded-xl border border-line p-3">
+                    <legend className="px-1 text-sm font-semibold text-ink-900">{chipName(sid)}</legend>
+                    {(
+                      [
+                        ['pay', 'linePay'],
+                        ['unit', 'lineClientUnit'],
+                        ['total', 'lineClientTotal'],
+                      ] as const
+                    ).map(([field, key]) => (
+                      <Field key={field} htmlFor={`line-${field}-${sid}`} label={t(`jobDetail.${key}`)}>
+                        <input
+                          id={`line-${field}-${sid}`}
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          value={lineValue(sid, field)}
+                          onChange={(e) => setLineValue(sid, field, e.target.value)}
+                          className={`${fieldClass} font-mono`}
+                        />
+                      </Field>
+                    ))}
+                  </fieldset>
+                ))}
                 {priceError && <StatusBanner tone="error" live>{t('prices.invalid')}</StatusBanner>}
               </div>
             )}

@@ -45,18 +45,3 @@ export function saveServiceClientPrices(serviceId: string, prices: { unit_price:
     ? supabase.from('service_client_prices').upsert({ service_id: serviceId, ...prices }, { onConflict: 'service_id' })
     : supabase.from('service_client_prices').delete().eq('service_id', serviceId);
 }
-
-/** Admin (and Carasso, for jobs on its sites): the snapshotted price of one job. */
-export async function fetchJobClientPrices(jobId: string): Promise<ClientPrices | null> {
-  const { data } = await supabase
-    .from('job_client_prices')
-    .select('unit_price, total_price')
-    .eq('job_id', jobId)
-    .maybeSingle();
-  return data ?? null;
-}
-
-/** Admin only: the per-job override. Changing the job's service afterwards re-snapshots from the catalog. */
-export function saveJobClientPrices(jobId: string, prices: ClientPrices) {
-  return supabase.from('job_client_prices').upsert({ job_id: jobId, ...prices }, { onConflict: 'job_id' });
-}
