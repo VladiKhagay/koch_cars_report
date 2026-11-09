@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +100,10 @@ function StaffJobDetail() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  /* Read-first: editing lives behind these. A section with unsaved changes or
+     errors is held open (see EditSection), and Save shows while either is open. */
+  const [editOpen, setEditOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
 
   const role = appUser?.role;
   /* Names come with the job's lines now, so a language switch no longer
@@ -253,7 +257,8 @@ function StaffJobDetail() {
     // Re-read: the pay sum and new lines' snapshots are the database's. A
     // manager who moved the job off their site can no longer read it.
     if (moving && !isAdmin) {
-      setJob({ ...job, ...jobChanges });
+      // The read-only view shows `job`, so it carries everything just saved.
+      setJob({ ...job, ...jobChanges, ...billing, service_ids: serviceIds });
       setCoworkerIds(jobChanges.coworker_ids);
       // The stored form, so the fields don't read as changed against the new job.
       if (plateChanged) setPlate(stored.plate ?? '');
@@ -316,6 +321,7 @@ function StaffJobDetail() {
   }
 
   const canManage = appUser?.role === 'manager' || appUser?.role === 'admin';
+  const isAdmin = appUser?.role === 'admin';
   const nameOf = (id: string) => staff.find((s) => s.id === id)?.name ?? '—';
   /* Any active colleague, from any site. The current submitter stays listed
      even if deactivated since, so the field never silently jumps on load. */
@@ -344,6 +350,25 @@ function StaffJobDetail() {
     const s = chipServices.find((x) => x.id === sid);
     return s ? serviceLabel([s], i18n.language) : '—';
   };
+
+  const savedServiceIds = job.service_ids ?? (job.services ?? []).map((l) => l.service_id);
+  const servicesMissing = servicesError || missingServices(savedServiceIds, serviceIds);
+  const fieldsInvalid = vehicle.plateError || vehicle.vinError || vehicle.missingBoth || dateError;
+  const editDirty =
+    plate !== (job.plate ?? '') ||
+    vin !== (job.vin ?? '') ||
+    brand.trim() !== (job.brand ?? '') ||
+    workerNote.trim() !== (job.worker_note ?? '') ||
+    date !== toLocalInput(job.created_at) ||
+    selectedWorkerId !== job.worker_id ||
+    siteId !== job.site_id ||
+    !sameSet(coworkerIds, job.coworker_ids ?? []) ||
+    !sameSet(serviceIds, savedServiceIds);
+  const billingDirty =
+    billingCode !== (job.billing_code ?? '') ||
+    managerNote !== (job.manager_note ?? '') ||
+    Object.keys(lineDrafts).length > 0;
+  const unsaved = <span className="font-semibold text-warn-700">{t('jobDetail.unsaved')}</span>;
 
   return (
     <Page width="list">
@@ -375,9 +400,8 @@ function StaffJobDetail() {
         </StatusBanner>
       )}
 
-      {/* Two columns from md, so the manager reads the photos and types the
-          billing code without scrolling between them. The old max-w-md had no
-          lg variant at all, which put a 448px column on a 1440px screen. */}
+      {/* Read first: the job as values, then the editing behind collapsed
+          sections. Two columns from md, so photos and the record sit side by side. */}
       <div className="grid gap-4 md:grid-cols-2 md:items-start">
         <div className="space-y-4">
           <JobMedia
@@ -386,7 +410,9 @@ function StaffJobDetail() {
             editable={canManage}
             onChanged={() => setHistoryKey((k) => k + 1)}
           />
+        </div>
 
+        <div className="space-y-4">
           <Card>
             <SectionHeading icon="clipboard">{t('jobDetail.details')}</SectionHeading>
             {/*
@@ -396,156 +422,137 @@ function StaffJobDetail() {
               value column further.
             */}
             <dl className="space-y-3">
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <Field
-                    htmlFor="job-date"
-                    label={t('jobDetail.date')}
-                    error={dateError ? t('jobDetail.dateInvalid') : undefined}
-                  >
-                    <input
-                      id="job-date"
-                      type="datetime-local"
-                      value={date}
-                      max={toLocalInput(new Date())}
-                      onChange={(e) => setDate(e.target.value)}
-                      className={`${fieldClass} ${dateError ? fieldErrorClass : ''}`}
-                    />
-                  </Field>
-                </div>
-              ) : (
-                <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              <DetailRow label={t('newJob.plate')} value={job.plate ?? '—'} mono />
+              <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />
+              <DetailRow label={t('newJob.brand')} value={job.brand ?? '—'} />
+              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
+              {job.coworker_ids.length > 0 && (
+                <DetailRow label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
               )}
+              <DetailRow label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
+              <DetailRow
+                label={t('jobDetail.services')}
+                value={savedServiceIds.map(chipName).join(', ') || '—'}
+              />
+              {job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />}
               {canManage && (
                 <>
-                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                    <Field
-                      htmlFor="job-plate"
-                      label={t('newJob.plate')}
-                      optional
-                      error={
-                        vehicle.plateError
-                          ? t('newJob.plateInvalid')
-                          : vehicle.missingBoth
-                            ? t('newJob.needIdentifier')
-                            : undefined
-                      }
-                    >
-                      <input
-                        id="job-plate"
-                        value={plate}
-                        inputMode="numeric"
-                        maxLength={8}
-                        autoComplete="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(e) => setPlate(stripPlate(e.target.value).slice(0, 8))}
-                        className={`${fieldClass} font-mono tracking-wider ${
-                          vehicle.plateError || vehicle.missingBoth ? fieldErrorClass : ''
-                        }`}
-                      />
-                    </Field>
-                  </div>
-                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                    <Field
-                      htmlFor="job-vin"
-                      label={t('newJob.vin')}
-                      optional
-                      error={vehicle.vinError ? t('newJob.vinInvalid') : undefined}
-                    >
-                      <input
-                        id="job-vin"
-                        value={vin}
-                        maxLength={17}
-                        inputMode="text"
-                        autoCapitalize="characters"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(e) => setVin(e.target.value.toUpperCase())}
-                        className={`${fieldClass} font-mono tracking-wider uppercase ${
-                          vehicle.vinError ? fieldErrorClass : ''
-                        }`}
-                      />
-                      {/* Advisory only, as on New Job: imports can fail the check digit. */}
-                      {vinChanged && vehicle.vinChecksum === false && !vehicle.vinError && (
-                        <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>
-                      )}
-                    </Field>
-                  </div>
-                  <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                    <Field htmlFor="job-brand" label={t('newJob.brand')} optional>
-                      <input
-                        id="job-brand"
-                        value={brand}
-                        onChange={(e) => setBrand(e.target.value)}
-                        className={fieldClass}
-                      />
-                    </Field>
-                  </div>
+                  <DetailRow label={t('jobDetail.billingCode')} value={job.billing_code ?? '—'} mono />
+                  {job.manager_note && <DetailRow label={t('jobDetail.managerNote')} value={job.manager_note} />}
+                  {/* The sum of the lines' pay snapshots, set by the database. */}
+                  <DetailRow label={t('jobDetail.payTotal')} value={formatMoney(job.worker_price, i18n.language)} />
                 </>
               )}
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <label htmlFor="job-worker" className="text-sm font-medium text-ink-600">
-                    {t('jobDetail.worker')}
-                  </label>
-                  <Select
-                    id="job-worker"
-                    value={selectedWorkerId}
-                    onChange={(e) => setSelectedWorkerId(e.target.value)}
-                    className="mt-0.5"
-                  >
+            </dl>
+          </Card>
+
+          {canManage && (
+            <>
+              <EditSection
+                title={t('jobDetail.editDetails')}
+                status={editDirty && unsaved}
+                open={editOpen}
+                onOpenChange={setEditOpen}
+                locked={editDirty || fieldsInvalid || servicesMissing}
+              >
+                <Field
+                  htmlFor="job-date"
+                  label={t('jobDetail.date')}
+                  error={dateError ? t('jobDetail.dateInvalid') : undefined}
+                >
+                  <input
+                    id="job-date"
+                    type="datetime-local"
+                    value={date}
+                    max={toLocalInput(new Date())}
+                    onChange={(e) => setDate(e.target.value)}
+                    className={`${fieldClass} ${dateError ? fieldErrorClass : ''}`}
+                  />
+                </Field>
+                <Field
+                  htmlFor="job-plate"
+                  label={t('newJob.plate')}
+                  optional
+                  error={
+                    vehicle.plateError
+                      ? t('newJob.plateInvalid')
+                      : vehicle.missingBoth
+                        ? t('newJob.needIdentifier')
+                        : undefined
+                  }
+                >
+                  <input
+                    id="job-plate"
+                    value={plate}
+                    inputMode="numeric"
+                    maxLength={8}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onChange={(e) => setPlate(stripPlate(e.target.value).slice(0, 8))}
+                    className={`${fieldClass} font-mono tracking-wider ${
+                      vehicle.plateError || vehicle.missingBoth ? fieldErrorClass : ''
+                    }`}
+                  />
+                </Field>
+                <Field
+                  htmlFor="job-vin"
+                  label={t('newJob.vin')}
+                  optional
+                  error={vehicle.vinError ? t('newJob.vinInvalid') : undefined}
+                >
+                  <input
+                    id="job-vin"
+                    value={vin}
+                    maxLength={17}
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onChange={(e) => setVin(e.target.value.toUpperCase())}
+                    className={`${fieldClass} font-mono tracking-wider uppercase ${
+                      vehicle.vinError ? fieldErrorClass : ''
+                    }`}
+                  />
+                  {/* Advisory only, as on New Job: imports can fail the check digit. */}
+                  {vinChanged && vehicle.vinChecksum === false && !vehicle.vinError && (
+                    <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>
+                  )}
+                </Field>
+                <Field htmlFor="job-brand" label={t('newJob.brand')} optional>
+                  <input id="job-brand" value={brand} onChange={(e) => setBrand(e.target.value)} className={fieldClass} />
+                </Field>
+                <Field htmlFor="job-worker" label={t('jobDetail.worker')}>
+                  <Select id="job-worker" value={selectedWorkerId} onChange={(e) => setSelectedWorkerId(e.target.value)}>
                     {submitterOptions.map((w) => (
                       <option key={w.id} value={w.id}>
                         {w.name}
                       </option>
                     ))}
                   </Select>
-                </div>
-              ) : (
-                <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
-              )}
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <label htmlFor="job-coworkers" className="text-sm font-medium text-ink-600">
-                    {t('coworkers.label')}
-                  </label>
-                  <div className="mt-0.5">
-                    <CoworkerPicker
-                      id="job-coworkers"
-                      staff={staff}
-                      sites={sites}
-                      value={coworkerIds}
-                      submitterId={selectedWorkerId || job.worker_id}
-                      onChange={setCoworkerIds}
-                    />
-                  </div>
-                </div>
-              ) : (
-                job.coworker_ids.length > 0 && (
-                  <DetailRow label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
-                )
-              )}
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <label htmlFor="job-site" className="text-sm font-medium text-ink-600">
-                    {t('newJob.site')}
-                  </label>
-                  <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)} className="mt-0.5">
+                </Field>
+                <Field htmlFor="job-coworkers" label={t('coworkers.label')}>
+                  <CoworkerPicker
+                    id="job-coworkers"
+                    staff={staff}
+                    sites={sites}
+                    value={coworkerIds}
+                    submitterId={selectedWorkerId || job.worker_id}
+                    onChange={setCoworkerIds}
+                  />
+                </Field>
+                <Field htmlFor="job-site" label={t('newJob.site')}>
+                  <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
                     {sites.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
                   </Select>
-                </div>
-              ) : (
-                <DetailRow label={t('newJob.site')} value={sites.find((s) => s.id === job.site_id)?.name ?? '—'} />
-              )}
-              {!canManage && <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />}
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <p className="mb-1.5 text-sm font-medium text-ink-600">{t('jobDetail.services')}</p>
+                </Field>
+                <div>
+                  <p className="mb-2 text-sm font-medium text-ink-700">{t('jobDetail.services')}</p>
                   <ServiceChips
                     services={chipServices}
                     selected={serviceIds}
@@ -555,135 +562,166 @@ function StaffJobDetail() {
                       setServiceIds((ids) => (ids.includes(sid) ? ids.filter((x) => x !== sid) : [...ids, sid]));
                     }}
                   />
-                  {(servicesError ||
-                    missingServices(job.service_ids ?? (job.services ?? []).map((l) => l.service_id), serviceIds)) && (
+                  {servicesMissing && (
                     <p className="mt-1.5 text-sm text-danger-700" role="alert">
                       {t('jobDetail.servicesRequired')}
                     </p>
                   )}
                 </div>
-              ) : (
-                <DetailRow label={t('jobDetail.services')} value={serviceLabel(job.services, i18n.language) || '—'} />
-              )}
-              {canManage ? (
-                <div className="border-b border-line pb-3 last:border-0 last:pb-0">
-                  <Field htmlFor="worker-note" label={t('jobDetail.workerNote')} optional>
-                    <textarea
-                      id="worker-note"
-                      value={workerNote}
-                      onChange={(e) => setWorkerNote(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
-                    />
-                  </Field>
-                </div>
-              ) : (
-                job.worker_note && <DetailRow label={t('jobDetail.workerNote')} value={job.worker_note} />
-              )}
-            </dl>
-          </Card>
-        </div>
+                <Field htmlFor="worker-note" label={t('jobDetail.workerNote')} optional>
+                  <textarea
+                    id="worker-note"
+                    value={workerNote}
+                    onChange={(e) => setWorkerNote(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
+                  />
+                </Field>
+              </EditSection>
 
-        {canManage && (
-          <Card className="space-y-4">
-            <SectionHeading icon="tag">{t('jobDetail.billingCode')}</SectionHeading>
-
-            <Field htmlFor="billing-code" label={t('jobDetail.billingCode')}>
-              <input
-                id="billing-code"
-                value={billingCode}
-                onChange={(e) => setBillingCode(e.target.value)}
-                className={`${fieldClass} font-mono`}
-              />
-            </Field>
-
-            <Field htmlFor="manager-note" label={t('jobDetail.managerNote')} optional>
-              <textarea
-                id="manager-note"
-                value={managerNote}
-                onChange={(e) => setManagerNote(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
-              />
-            </Field>
-
-            {/* Worker pay: the job's total is the sum of its lines' snapshots, set by
-                the database and read-only here. Only an admin edits a line's pay
-                and client prices; the managers' API cannot read client prices. */}
-            <dl>
-              <DetailRow label={t('jobDetail.payTotal')} value={formatMoney(job.worker_price, i18n.language)} />
-            </dl>
-            {appUser?.role === 'admin' && serviceIds.length > 0 && (
-              <div className="space-y-4 border-t border-line pt-4">
-                <SectionHeading icon="tag">{t('jobDetail.pricing')}</SectionHeading>
-                {serviceIds.map((sid) => (
-                  // One fieldset per line, its legend the service: three lines
-                  // otherwise read as nine identical "Worker pay" fields.
-                  <fieldset key={sid} className="space-y-3 rounded-xl border border-line p-3">
-                    <legend className="px-1 text-sm font-semibold text-ink-900">{chipName(sid)}</legend>
-                    {(
-                      [
-                        ['pay', 'linePay'],
-                        ['unit', 'lineClientUnit'],
-                        ['total', 'lineClientTotal'],
-                      ] as const
-                    ).map(([field, key]) => (
-                      <Field key={field} htmlFor={`line-${field}-${sid}`} label={t(`jobDetail.${key}`)}>
-                        <input
-                          id={`line-${field}-${sid}`}
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          step="0.01"
-                          value={lineValue(sid, field)}
-                          onChange={(e) => setLineValue(sid, field, e.target.value)}
-                          className={`${fieldClass} font-mono`}
-                        />
-                      </Field>
+              <EditSection
+                title={t('jobDetail.billingSection')}
+                status={billingDirty && unsaved}
+                open={billingOpen}
+                onOpenChange={setBillingOpen}
+                locked={billingDirty || priceError}
+              >
+                <Field htmlFor="billing-code" label={t('jobDetail.billingCode')}>
+                  <input
+                    id="billing-code"
+                    value={billingCode}
+                    onChange={(e) => setBillingCode(e.target.value)}
+                    className={`${fieldClass} font-mono`}
+                  />
+                </Field>
+                <Field htmlFor="manager-note" label={t('jobDetail.managerNote')} optional>
+                  <textarea
+                    id="manager-note"
+                    value={managerNote}
+                    onChange={(e) => setManagerNote(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-3 text-base text-ink-900 focus:border-ink-900"
+                  />
+                </Field>
+                {/* Only an admin edits a line's pay and client prices; the
+                    managers' API cannot read client prices. */}
+                {isAdmin && serviceIds.length > 0 && (
+                  <div className="space-y-4 border-t border-line pt-4">
+                    <h3 className="text-base font-semibold text-ink-900">{t('jobDetail.pricing')}</h3>
+                    {serviceIds.map((sid) => (
+                      // One fieldset per line, its legend the service: three lines
+                      // otherwise read as nine identical "Worker pay" fields.
+                      <fieldset key={sid} className="space-y-3 rounded-xl border border-line p-3">
+                        <legend className="px-1 text-sm font-semibold text-ink-900">{chipName(sid)}</legend>
+                        {(
+                          [
+                            ['pay', 'linePay'],
+                            ['unit', 'lineClientUnit'],
+                            ['total', 'lineClientTotal'],
+                          ] as const
+                        ).map(([field, key]) => (
+                          <Field key={field} htmlFor={`line-${field}-${sid}`} label={t(`jobDetail.${key}`)}>
+                            <input
+                              id={`line-${field}-${sid}`}
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="0.01"
+                              value={lineValue(sid, field)}
+                              onChange={(e) => setLineValue(sid, field, e.target.value)}
+                              className={`${fieldClass} font-mono`}
+                            />
+                          </Field>
+                        ))}
+                      </fieldset>
                     ))}
-                  </fieldset>
-                ))}
-                {priceError && <StatusBanner tone="error" live>{t('prices.invalid')}</StatusBanner>}
-              </div>
-            )}
+                    {priceError && <StatusBanner tone="error" live>{t('prices.invalid')}</StatusBanner>}
+                  </div>
+                )}
+              </EditSection>
 
-            {(vehicle.plateError || vehicle.vinError || vehicle.missingBoth || dateError) && (
-              <StatusBanner tone="error" live>
-                {t('jobDetail.fixFields')}
-              </StatusBanner>
-            )}
-            {saveError && <StatusBanner tone="error">{t('jobDetail.saveFailed')}</StatusBanner>}
-
-            <Button size="lg" block busy={saving} icon={saved ? 'check' : undefined} onClick={() => void handleSave()}>
-              {saved ? t('jobDetail.saved') : t('jobDetail.save')}
-            </Button>
-
-            {/*
-              Delete used to fire on first tap, directly below Save in the same
-              full-width stack, while Services already had an inline confirm.
-              Both now use the app's single ConfirmAction pattern, and the
-              destructive control is separated from Save by a rule.
-            */}
-            <div className="border-t border-line pt-4">
-              {job.deleted_at ? (
-                <Button variant="secondary" icon="sync" block onClick={() => void handleRestore()}>
-                  {t('jobDetail.restore')}
-                </Button>
-              ) : (
-                <ConfirmAction
-                  block
-                  trigger={t('jobDetail.deleteAction')}
-                  question={t('jobDetail.deleteConfirm')}
-                  confirmLabel={t('jobDetail.delete')}
-                  onConfirm={() => void handleDelete()}
-                />
+              {/* One Save for both sections, as before. Shown while either is
+                  open (or holds edits); errors show whenever they exist. */}
+              {fieldsInvalid && (
+                <StatusBanner tone="error" live>
+                  {t('jobDetail.fixFields')}
+                </StatusBanner>
               )}
-            </div>
-          </Card>
-        )}
-      </div>
+              {saveError && <StatusBanner tone="error">{t('jobDetail.saveFailed')}</StatusBanner>}
+              {(editOpen || billingOpen || editDirty || billingDirty || saved) && (
+                <Button size="lg" block busy={saving} icon={saved ? 'check' : undefined} onClick={() => void handleSave()}>
+                  {saved ? t('jobDetail.saved') : t('jobDetail.save')}
+                </Button>
+              )}
 
-      {canManage && <EditHistory jobId={job.id} refreshKey={historyKey} services={chipServices} sites={sites} />}
+              <EditHistory jobId={job.id} refreshKey={historyKey} services={chipServices} sites={sites} />
+
+              {/* Delete stays two taps (ConfirmAction), and now also behind this row. */}
+              <EditSection title={t('jobDetail.moreActions')}>
+                {job.deleted_at ? (
+                  <Button variant="secondary" icon="sync" block onClick={() => void handleRestore()}>
+                    {t('jobDetail.restore')}
+                  </Button>
+                ) : (
+                  <ConfirmAction
+                    block
+                    trigger={t('jobDetail.deleteAction')}
+                    question={t('jobDetail.deleteConfirm')}
+                    confirmLabel={t('jobDetail.delete')}
+                    onConfirm={() => void handleDelete()}
+                  />
+                )}
+              </EditSection>
+            </>
+          )}
+        </div>
+      </div>
     </Page>
+  );
+}
+
+/**
+ * A collapsed editing section (native details, same row shape as New Job's
+ * "More details"). `locked` holds it open: a section with unsaved changes or an
+ * error never folds them out of sight, and the summary says why.
+ */
+function EditSection({
+  title,
+  status,
+  open = false,
+  onOpenChange,
+  locked = false,
+  children,
+}: {
+  title: string;
+  status?: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  locked?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      open={open || locked}
+      onToggle={(e) => {
+        const el = e.currentTarget;
+        if (!el.open && locked) el.open = true;
+        else onOpenChange?.(el.open);
+      }}
+      className="group rounded-xl border border-line bg-surface shadow-card"
+    >
+      <summary className="flex min-h-control cursor-pointer list-none items-center justify-between gap-3 px-4 text-base font-semibold text-ink-900 [&::-webkit-details-marker]:hidden">
+        <span>{title}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink-600">
+          {status && <span className="truncate">{status}</span>}
+          <Icon
+            name="chevronRight"
+            size={16}
+            className="shrink-0 transition-transform group-open:rotate-90 rtl:-scale-x-100"
+          />
+        </span>
+      </summary>
+      <div className="space-y-4 border-t border-line p-4">{children}</div>
+    </details>
   );
 }

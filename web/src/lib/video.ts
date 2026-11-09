@@ -5,13 +5,13 @@
  */
 
 /** Hard stop. The recorder ends the clip itself at this length. */
-export const MAX_VIDEO_SECONDS = 120;
+export const MAX_VIDEO_SECONDS = 150;
 
-/** Requested bitrate: 1080p at 4 Mbps (~60MB for 2 min) keeps scratches and panel gaps readable. Safari may treat it as a suggestion; tune per phone model here. */
+/** Requested bitrate: 1080p at 4 Mbps (~75MB for 2.5 min) keeps scratches and panel gaps readable. Safari may treat it as a suggestion; tune per phone model here. */
 export const VIDEO_BITRATE = 4_000_000;
 
 /** Must match MAX_VIDEO_BYTES in worker/src/upload.ts. Refusing on the phone keeps a certain 413 out of the retry queue. */
-export const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 90 * 1024 * 1024;
 
 /** Must match VIDEO_PART_BYTES in worker/src/upload.ts. One resumable piece: an interrupted upload loses at most this much. */
 export const VIDEO_PART_BYTES = 8 * 1024 * 1024;

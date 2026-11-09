@@ -31,7 +31,7 @@ export function objectKey(jobId: string, kind: PhotoKind): string {
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 /** Largest video /upload stores. Mirrored as MAX_VIDEO_BYTES in web/src/lib/video.ts. */
-export const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 90 * 1024 * 1024;
 
 /**
  * Accepted image formats, recognised by their leading bytes. Wider than JPEG

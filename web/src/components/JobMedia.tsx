@@ -18,8 +18,9 @@ type MediaProblem = 'error' | 'photoTooLarge' | 'photoUnsupported' | 'videoTooLa
 
 /**
  * A job's photos and video. Read-only: only the slots that hold something.
- * `editable` (managers/admins): all six slots, each with Add, or Replace and
- * Remove. Those take effect at once, separate from the job's Save button.
+ * `editable` (managers/admins) adds a "Manage photos & video" toggle; while it
+ * is open, all six slots show, each with Add, or Replace and Remove. Those take
+ * effect at once, separate from the job's Save button.
  * Reads `photos` (RLS covers Carasso for jobs on its sites).
  */
 export default function JobMedia({
@@ -40,6 +41,8 @@ export default function JobMedia({
   const [versions, setVersions] = useState<Partial<Record<PhotoKind, number>>>({});
   const [busy, setBusy] = useState<PhotoKind | null>(null);
   const [problem, setProblem] = useState<{ kind: PhotoKind; problem: MediaProblem } | null>(null);
+  const [managing, setManaging] = useState(false);
+  const edit = editable && managing;
   const fileInputs = useRef<Partial<Record<PhotoKind, HTMLInputElement | null>>>({});
 
   /** The read failed: rows kept as they were (null before the first read), banner shown. */
@@ -127,7 +130,7 @@ export default function JobMedia({
     );
   }
 
-  const visible = PHOTO_SLOTS.filter((k) => editable || shown(k));
+  const visible = PHOTO_SLOTS.filter((k) => edit || shown(k));
   let extraIndex = 0;
 
   const problemFor = (kind: PhotoKind) =>
@@ -194,8 +197,7 @@ export default function JobMedia({
   return (
     <>
       {loadBanner}
-      {editable && <StatusBanner tone="info">{t('jobDetail.media.hint')}</StatusBanner>}
-      <div className="grid grid-cols-2 gap-3">
+      <div id={`media-${jobId}`} className="grid grid-cols-2 gap-3">
         {visible.map((kind) => {
           if (kind.startsWith('extra')) extraIndex++;
           const label = photoLabel(kind, extraIndex);
@@ -214,13 +216,14 @@ export default function JobMedia({
                   </div>
                 </figure>
               )}
-              {editable && controls(kind, exists, label)}
+              {edit && controls(kind, exists, label)}
             </div>
           );
         })}
       </div>
       {videoExists && <VideoViewer key={versions.video ?? 0} jobId={jobId} downloadName={downloadName} fresh={(versions.video ?? 0) > 0} />}
-      {editable && (
+      {edit && <StatusBanner tone="info">{t('jobDetail.media.hint')}</StatusBanner>}
+      {edit && (
         <section aria-label={t('newJob.video')} className="space-y-2">
           {!videoExists && <p className="text-sm font-medium text-ink-700">{t('newJob.video')}</p>}
           {busy === 'video' ? (
@@ -267,6 +270,20 @@ export default function JobMedia({
           )}
           {problemFor('video')}
         </section>
+      )}
+      {/* Held open while a change is uploading, so it can't be folded mid-save. */}
+      {editable && (
+        <Button
+          variant="secondary"
+          block
+          icon={managing ? 'check' : 'pencil'}
+          aria-expanded={managing}
+          aria-controls={`media-${jobId}`}
+          disabled={busy !== null}
+          onClick={() => setManaging((m) => !m)}
+        >
+          {managing ? t('jobDetail.media.doneManaging') : t('jobDetail.media.manage')}
+        </Button>
       )}
     </>
   );

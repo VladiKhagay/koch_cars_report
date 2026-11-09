@@ -196,7 +196,7 @@ describe('video upload endpoints', () => {
   });
 
   it.each([MAX_VIDEO_PARTS + 1, 0, 'abc', '2.5'])('partNumber %j is refused', async (n) => {
-    expect(MAX_VIDEO_PARTS).toBe(10);
+    expect(MAX_VIDEO_PARTS).toBe(12);
     expect((await part(J1, 'up-1', n, piece(100))).status).toBe(400);
     expect(r2.calls).toEqual([]);
   });
@@ -242,7 +242,7 @@ describe('video upload endpoints', () => {
     expect((await complete(J2, 'up-1', [{ partNumber: 1, etag: 'e1' }])).status).toBe(410);
   });
 
-  it('deletes an over-75MB result and answers 413', async () => {
+  it('deletes an over-90MB result and answers 413', async () => {
     await start(J1, piece(P));
     const parts = [{ partNumber: 1, etag: 'e1' }];
     for (let n = 2; n <= MAX_VIDEO_PARTS; n++) {
@@ -371,9 +371,9 @@ describe('video upload endpoints', () => {
   it.each([
     ['too small for 2 parts', 2, P],
     ['too big for 2 parts', 2, 2 * P + 1],
-    ['over the video limit', 10, MAX_VIDEO_BYTES + 1],
+    ['over the video limit', 12, MAX_VIDEO_BYTES + 1],
   ])('a stored object %s is not taken as this complete (410)', async (_why, n, size) => {
-    expect(9 * P < MAX_VIDEO_BYTES + 1 && MAX_VIDEO_BYTES + 1 <= 10 * P).toBe(true);
+    expect(11 * P < MAX_VIDEO_BYTES + 1 && MAX_VIDEO_BYTES + 1 <= 12 * P).toBe(true);
     r2.objects.set(`video/${J1}`, { size, etag: `h-${n}` });
     failWith(10024);
     const parts = Array.from({ length: n }, (_, i) => ({ partNumber: i + 1, etag: `e${i + 1}` }));

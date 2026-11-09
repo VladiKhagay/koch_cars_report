@@ -115,7 +115,7 @@ The bounded video branch:
 The clip is not strictly write-once. Exceptions, accepted (low):
 
 - inside the 15-minute lock the clip can be overwritten, like any photo;
-- R2 write-once TOCTOU: the "no video row" check runs before the up-to-75MB R2
+- R2 write-once TOCTOU: the "no video row" check runs before the up-to-90MB R2
   put, and the row is written only after it. Until the row lands, a
   hand-crafted concurrent upload by the same worker can overwrite the clip at
   the same key. (A conditional R2 put / per-upload nonce would close it; not
@@ -153,13 +153,13 @@ Resumable video upload (`/video/*`, `worker/src/videoUpload.ts`):
   with a `console.warn` (the phone ignores abort failures; nothing leaks).
 - The type is sniffed from piece 1 (MP4/MOV/WebM, else 415). Each piece is
   counted on the Worker (8 MiB cap, 413, with or without a Content-Length); at
-  complete the stored size is checked against 75 MB and an oversized object is
+  complete the stored size is checked against 90 MB and an oversized object is
   deleted (413). Pieces are buffered in the isolate (~16 MiB peak per request:
   the body plus the copy handed to R2), accepted.
 - Complete is idempotent: a retry after a lost or timed-out response answers
   200 only if the object at the key looks like that complete's result
   (multipart etag ending `-N`, `(N-1) x 8 MiB < size <= N x 8 MiB`, size <=
-  75 MB; the etag format is an assumption until the live check).
+  90 MB; the etag format is an assumption until the live check).
 - `/video/start` has its own limiter, `VIDEO_START_LIMITER` (10/min per user,
   on top of `UPLOAD_LIMITER`), because every start opens a new multipart
   upload. A legitimate phone starts once per clip (twice after a 410). The

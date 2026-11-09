@@ -68,7 +68,7 @@ export interface NewJobPayload {
   vinBlob: Blob | null;
   /** Up to three optional photos — damage, interior, anything worth a record. */
   extraBlobs?: Blob[];
-  /** Optional condition video (≤2 min, recorded in-app). Missing on payloads queued before it existed. */
+  /** Optional condition video (≤2.5 min, recorded in-app). Missing on payloads queued before it existed. */
   videoBlob?: Blob | null;
   /** Set once the row exists, so a retry after a failed upload resumes instead of inserting a second job. */
   jobId?: string;

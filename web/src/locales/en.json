@@ -186,7 +186,7 @@
     "site": "Site",
     "videoSection": "Condition video",
     "video": "Condition video",
-    "videoHint": "Walk around the finished car — up to 2 minutes.",
+    "videoHint": "Walk around the finished car — up to 2.5 minutes.",
     "recordVideo": "Record video",
     "recording": "Recording video",
     "stopRecording": "Stop",
@@ -372,8 +372,10 @@
       "error": "That change wasn't saved. Check your connection and try again.",
       "photoTooLarge": "That photo is too large (max 8MB).",
       "photoUnsupported": "This browser can't open that photo format.",
-      "videoTooLarge": "That video is too large to upload (max 75MB).",
-      "loadFailed": "Couldn't load the photos and video. Check your connection and reload the page."
+      "videoTooLarge": "That video is too large to upload (max 90MB).",
+      "loadFailed": "Couldn't load the photos and video. Check your connection and reload the page.",
+      "manage": "Manage photos & video",
+      "doneManaging": "Done managing media"
     },
     "history": {
       "title": "Edit history",
@@ -425,7 +427,11 @@
         "extra_3": "Extra photo 3",
         "video": "Condition video"
       }
-    }
+    },
+    "editDetails": "Edit job details",
+    "billingSection": "Billing & pricing",
+    "moreActions": "More actions",
+    "unsaved": "Unsaved changes"
   },
   "photo": {
     "download": "Download photo",

@@ -55,8 +55,8 @@ describe('MAX_UPLOAD_BYTES', () => {
     expect(MAX_UPLOAD_BYTES).toBe(8 * 1024 * 1024);
   });
 
-  it('allows 75MB for video — ~3x the recorder target of a 2-minute clip', () => {
-    expect(MAX_VIDEO_BYTES).toBe(75 * 1024 * 1024);
+  it('allows 90MB for video — headroom over the recorder target of a 2.5-minute clip', () => {
+    expect(MAX_VIDEO_BYTES).toBe(90 * 1024 * 1024);
   });
 });
 
@@ -176,7 +176,7 @@ describe('handleUpload', () => {
     const { run, stored } = upload('video', bytesOf(64, MP4), String(MAX_VIDEO_BYTES + 1));
     const res = await run();
     expect(res.status).toBe(413);
-    expect(res.data.error).toBe('Video too large (max 75MB)');
+    expect(res.data.error).toBe('Video too large (max 90MB)');
     expect(stored).toEqual([]);
   });
 

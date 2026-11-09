@@ -33,7 +33,7 @@ Excel.
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
 | Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
 | Photos | 2/car (plate + VIN), 60-day retention | ~6 GB rolling window. Drove the storage choice. |
-| Video | optional ≤2 min walkaround/car, in-app 1080p @ 4 Mbps (≤~60 MB), 60-day retention | ~80–160 GB rolling window (~$1–3/mo at 1,300 cars, ~$5/mo at 3,000). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
+| Video | optional ≤2.5 min walkaround/car, in-app 1080p @ 4 Mbps (≤~75 MB, cap 90 MB), 60-day retention | ~80–160 GB rolling window (~$1–3/mo at 1,300 cars, ~$5/mo at 3,000). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
 | Devices | Modern phones, decent connectivity | Mobile-first PWA is enough; no native app. |
@@ -371,7 +371,7 @@ Use it rather than restyling per screen. Notable rules baked in:
 Every submission that fails is kept in IndexedDB (`web/src/lib/offlineQueue.ts`,
 store `pending-jobs`) and retried on `online`, on app start and when the app
 returns to the foreground (`visibilitychange`). Submit waits for the job and its
-photos only. The condition video (up to 75MB) follows as its own queue entry
+photos only. The condition video (up to 90MB) follows as its own queue entry
 (`stage: 'video'`, linked by `jobId`) so the worker can start the next car:
 
 - A job entry that lands with a video is rewritten in place into its video
