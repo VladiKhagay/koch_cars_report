@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Copy,
   Clock,
   Download,
   Eye,
@@ -72,6 +73,7 @@ export type IconName =
   | 'arrowUp'
   | 'arrowDown'
   | 'clipboard'
+  | 'copy'
   | 'list'
   | 'menu'
   | 'chart'
@@ -112,6 +114,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   arrowUp: ArrowUp,
   arrowDown: ArrowDown,
   clipboard: ClipboardList,
+  copy: Copy,
   list: List,
   menu: Menu,
   chart: BarChart3,

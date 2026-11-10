@@ -422,8 +422,8 @@ function StaffJobDetail() {
               value column further.
             */}
             <dl className="space-y-3">
-              <DetailRow label={t('newJob.plate')} value={job.plate ?? '—'} mono />
-              <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono />
+              <DetailRow label={t('newJob.plate')} value={job.plate ?? '—'} mono copy={!!job.plate} />
+              <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono copy={!!job.vin} />
               <DetailRow label={t('newJob.brand')} value={job.brand ?? '—'} />
               <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
               <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />

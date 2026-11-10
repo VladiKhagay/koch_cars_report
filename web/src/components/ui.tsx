@@ -159,13 +159,45 @@ export function LanguageToggle({ compact, block }: { compact?: boolean; block?: 
   );
 }
 
-/** One label-over-value row of a read-only detail card (a `dl` child). */
-export function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+/** One label-over-value row of a read-only detail card (a `dl` child). `copy` adds a copy-to-clipboard button. */
+export function DetailRow({ label, value, mono, copy }: { label: string; value: string; mono?: boolean; copy?: boolean }) {
   return (
     <div className="border-b border-line pb-3 last:border-0 last:pb-0">
       <dt className="text-sm font-medium text-ink-600">{label}</dt>
-      <dd className={`mt-0.5 break-words text-ink-900 ${mono ? 'font-mono tracking-wide' : ''}`}>{value}</dd>
+      <dd className={`mt-0.5 flex items-center gap-2 text-ink-900 ${mono ? 'font-mono tracking-wide' : ''}`}>
+        <span className="min-w-0 break-words">{value}</span>
+        {copy && <CopyButton value={value} label={label} />}
+      </dd>
     </div>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle');
+  function copy() {
+    // writeText rejects without a secure context or permission; say so rather than look copied.
+    navigator.clipboard.writeText(value).then(
+      () => setState('done'),
+      () => setState('failed'),
+    );
+    setTimeout(() => setState('idle'), 1500);
+  }
+  return (
+    <>
+      {/* 44px tap target; negative margins keep the row as tall as the text. */}
+      <button
+        type="button"
+        aria-label={t('common.copyValue', { label })}
+        onClick={copy}
+        className="-my-2 -me-2 grid size-tap shrink-0 cursor-pointer place-items-center rounded-lg text-ink-600 transition-colors hover:bg-surface active:bg-line"
+      >
+        <Icon name={state === 'done' ? 'check' : state === 'failed' ? 'alertTriangle' : 'copy'} size={18} />
+      </button>
+      <span role="status" className="sr-only">
+        {state === 'done' ? t('common.copied') : state === 'failed' ? t('common.copyFailed') : ''}
+      </span>
+    </>
   );
 }
 

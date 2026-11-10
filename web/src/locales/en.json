@@ -537,6 +537,9 @@
     "loading": "Loading…",
     "error": "Something went wrong",
     "optional": "optional",
+    "copyValue": "Copy {{label}}",
+    "copied": "Copied",
+    "copyFailed": "Could not copy",
     "close": "Close",
     "retry": "Try again",
     "language": "Language"

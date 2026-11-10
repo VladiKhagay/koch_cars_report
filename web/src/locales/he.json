@@ -556,6 +556,9 @@
     "loading": "טוען…",
     "error": "משהו השתבש",
     "optional": "לא חובה",
+    "copyValue": "העתקת {{label}}",
+    "copied": "הועתק",
+    "copyFailed": "ההעתקה נכשלה",
     "close": "סגירה",
     "retry": "ניסיון נוסף",
     "language": "שפה"
