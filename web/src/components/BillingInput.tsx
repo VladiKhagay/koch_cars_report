@@ -68,7 +68,7 @@ export default function BillingInput({
             e.currentTarget.blur();
           }
         }}
-        className={`${fieldClass} h-10 px-2 font-mono text-sm ${fill ? 'min-w-0 flex-1' : 'w-32'} ${
+        className={`${fieldClass} h-10 px-2 font-mono text-sm ${fill ? 'min-w-0 flex-1' : 'w-32 shrink-0'} ${
           state === 'error' ? 'border-danger-600 bg-danger-50' : ''
         } ${className}`}
       />

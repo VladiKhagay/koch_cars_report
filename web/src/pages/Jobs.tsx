@@ -27,7 +27,6 @@ import type { AppUser, CarassoJob, PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
 import { carassoRow, gridColumnPlan, gridRows, managerRow, type JobRow } from './jobsGrid';
 import BillingInput from '../components/BillingInput';
-import JobCard from '../components/JobCard';
 import StatusBanner from '../components/StatusBanner';
 import {
   CellMuted,
@@ -53,8 +52,7 @@ import {
   SearchField,
   Select,
   Skeleton,
-  SkeletonList,
-  fieldClass,
+  DateInput,
 } from '../components/ui';
 import { formatDate, DAY_MONTH } from '../lib/formatDate';
 
@@ -114,7 +112,7 @@ function buildColumns(
               {formatDate(d, handlers.current.locale, DAY_MONTH)}
             </CellTitle>{' '}
             <CellMuted>
-              {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit' })}
+              {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
             </CellMuted>
           </span>
         );
@@ -599,12 +597,12 @@ export default function Jobs() {
 
                 <label className="min-w-32 flex-1">
                   <span className={filterLabelClass}>{t('jobs.from')}</span>
-                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldClass} />
+                  <DateInput value={from} onChange={(e) => setFrom(e.target.value)} />
                 </label>
 
                 <label className="min-w-32 flex-1">
                   <span className={filterLabelClass}>{t('jobs.to')}</span>
-                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
+                  <DateInput value={to} onChange={(e) => setTo(e.target.value)} />
                 </label>
 
                 {/* A view setting, not a filter: it never counts as "filtered" and
@@ -651,7 +649,6 @@ export default function Jobs() {
             </div>
           }
         >
-          <div className="hidden md:block">
           <Table minWidth={68}>
             <THead>
               {table.getHeaderGroups().map((group) => (
@@ -697,37 +694,7 @@ export default function Jobs() {
               ))}
             </TBody>
           </Table>
-          </div>
         </TableCard>
-
-        {/* Phone: the same rows as cards, so the plate, crew and reservation field
-            are all on screen — the table pushed the field past the edge. */}
-        <div className="space-y-2 md:hidden">
-          {loading && rows.length === 0 && <SkeletonList rows={4} />}
-          {shownRows.map((job, i) => (
-            <JobCard
-              key={`${job.id}-${i}`}
-              job={job}
-              meta={[
-                plan.worker ? crewName(job) : null,
-                new Date(job.created_at).toLocaleString(i18n.language, {
-                  day: '2-digit',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
-                serviceName(job),
-              ]}
-              showBilling
-              onSaveBilling={plan.editBilling ? (value) => saveBillingCode(job, value) : undefined}
-              onDuplicate={plan.flags ? () => openDuplicate(job.id) : undefined}
-            >
-              {dupeFor === job.id && firstOfJob(i) && (
-                <div className="mt-2 rounded-xl bg-sunken p-4">{duplicatePanel(job)}</div>
-              )}
-            </JobCard>
-          ))}
-        </div>
 
         {failed && (
           <EmptyState icon="alertCircle" title={t('common.error')} action={<Button icon="sync" onClick={() => void load()}>{t('common.retry')}</Button>} />

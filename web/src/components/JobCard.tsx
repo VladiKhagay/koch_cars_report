@@ -22,6 +22,8 @@ export default function JobCard({
   onSaveBilling,
   onDuplicate,
   children,
+  time,
+  services,
 }: {
   job: JobCardData;
   /** Crew, time, service — already formatted, one entry each. Each is isolated
@@ -33,6 +35,10 @@ export default function JobCard({
   onSaveBilling?: (value: string) => Promise<boolean>;
   /** When set, the duplicate flag is a button that opens the resolve panel. */
   onDuplicate?: () => void;
+  /** Shown at the trailing edge of the top row (opposite the plate in both directions). */
+  time?: string;
+  /** Localized service names, drawn as tags. */
+  services?: string[];
   /** Rendered under the card — the duplicate panel. */
   children?: ReactNode;
 }) {
@@ -52,21 +58,47 @@ export default function JobCard({
             to={`/jobs/${job.id}`}
             className="flex min-h-control-lg min-w-0 flex-1 items-center justify-between gap-3 rounded-xl p-4 active:bg-ink-50"
           >
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-base font-semibold tracking-wide text-ink-900">
-                {job.plate ?? job.vin ?? '—'}
-                {job.brand && <span className="ms-2 font-sans text-sm font-normal text-ink-600">{job.brand}</span>}
-              </p>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              {/* `.font-mono` pins direction:ltr, so it sits on inline spans: on a
+                  block it would flip "start" to the left inside a Hebrew card. */}
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="min-w-0 truncate text-base font-semibold text-ink-900">
+                  <span className="font-mono tracking-wide">{job.plate ?? job.vin ?? '—'}</span>
+                  {job.brand && <span className="ms-2 text-sm font-normal text-ink-600">{job.brand}</span>}
+                </p>
+                {time && <span className="shrink-0 text-xs font-medium tabular-nums text-ink-600">{time}</span>}
+              </div>
               {/* A plate-less job already shows its VIN above. */}
-              {job.plate && job.vin && <p className="truncate font-mono text-xs text-ink-600">{job.vin}</p>}
-              <p className="break-words text-xs text-ink-600">
-                {meta.filter(Boolean).map((part, i) => (
-                  <span key={i}>
-                    {i > 0 && ' · '}
-                    <bdi>{part}</bdi>
+              {job.plate && job.vin && (
+                <p className="truncate text-xs text-ink-600">
+                  <span className="font-mono">{job.vin}</span>
+                </p>
+              )}
+              {services && services.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5" aria-label={t('jobs.service')}>
+                  {services.map((name, i) => (
+                    <li
+                      key={i}
+                      className="rounded-md border border-line bg-ink-50 px-2 py-0.5 text-xs font-semibold text-ink-700"
+                    >
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {meta.some(Boolean) && (
+                <p className="flex items-start gap-1.5 break-words text-xs text-ink-600">
+                  <Icon name="user" size={14} className="mt-0.5 shrink-0 text-ink-500" />
+                  <span className="min-w-0">
+                    {meta.filter(Boolean).map((part, i) => (
+                      <span key={i}>
+                        {i > 0 && ' · '}
+                        <bdi>{part}</bdi>
+                      </span>
+                    ))}
                   </span>
-                ))}
-              </p>
+                </p>
+              )}
             </div>
             {!onDuplicate && flag}
             <Icon name="chevronRight" size={18} className="shrink-0 text-ink-500 rtl:-scale-x-100" />

@@ -100,7 +100,7 @@ export default function CarassoJobDetail() {
           <Card>
             <SectionHeading icon="clipboard">{t('jobDetail.details')}</SectionHeading>
             <dl className="space-y-3">
-              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} />
               <DetailRow label={t('newJob.site')} value={job.site_name} />
               <DetailRow label={t('jobDetail.service')} value={service || '—'} />
               <DetailRow label={t('newJob.plate')} value={job.plate ?? '—'} mono />

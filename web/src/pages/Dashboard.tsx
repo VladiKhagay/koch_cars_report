@@ -6,6 +6,7 @@ import { saveBilling } from '../lib/jobs';
 import { useAuth } from '../context/AuthContext';
 import { staffNames, useStaff } from '../lib/useStaff';
 import { useSiteScope } from '../lib/useSiteScope';
+import { serviceName } from '../lib/serviceName';
 import type { Job } from '../lib/types';
 import Icon from '../components/Icon';
 import JobCard from '../components/JobCard';
@@ -235,10 +236,9 @@ export default function Dashboard() {
             <JobCard
               key={job.id}
               job={job}
-              meta={[
-                [job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
-                new Date(job.created_at).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }),
-              ]}
+              meta={[[job.worker_name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', ')]}
+              time={new Date(job.created_at).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
+              services={(job.services ?? []).map((l) => serviceName(l, i18n.language) ?? '')}
               showBilling={!job.billing_code || justSaved.has(job.id)}
               onSaveBilling={(value) => saveBillingCode(job, value)}
             />

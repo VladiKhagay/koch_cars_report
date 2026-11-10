@@ -70,9 +70,11 @@ export default function Layout() {
   useEffect(() => startQueueSync(), []);
 
   return (
-        /* App shell: exactly one viewport tall (`dvh`) with only <main> scrolling,
-           so the tab bar stays pinned without content padding. */
-    <div className="flex h-dvh flex-col bg-sunken md:flex-row">
+        /* App shell: pinned to all four screen edges with only <main> scrolling,
+           so the tab bar stays put without content padding. `fixed inset-0`, not
+           `h-dvh`: an iPhone home-screen app can report a viewport shorter than the
+           screen, leaving the tab bar floating above a grey band. */
+    <div className="fixed inset-0 flex flex-col bg-sunken md:flex-row">
       {/* The nav is the same five-to-seven stops on every page. Without this a
           keyboard user tabs through all of them before reaching the form they
           came for — and on New Job that is the difference between one car and

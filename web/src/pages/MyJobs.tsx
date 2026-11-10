@@ -57,7 +57,7 @@ import {
   SectionHeading,
   Select,
   Skeleton,
-  fieldClass,
+  DateInput,
 } from '../components/ui';
 import { formatDate, DAY_MONTH } from '../lib/formatDate';
 
@@ -132,7 +132,7 @@ function buildColumns(
               {formatDate(d, handlers.current.locale, DAY_MONTH)}
             </CellTitle>{' '}
             <CellMuted>
-              {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit' })}
+              {d.toLocaleTimeString(handlers.current.locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
             </CellMuted>
           </span>
         );
@@ -155,6 +155,7 @@ function buildColumns(
               month: 'short',
               hour: '2-digit',
               minute: '2-digit',
+              hourCycle: 'h23',
             })}
           </span>
         </>
@@ -722,23 +723,21 @@ export default function MyJobs() {
 
                 <label className="min-w-32 flex-1">
                   <span className={filterLabelClass}>{t('jobs.from')}</span>
-                  <input
-                    type="date"
+                  <DateInput
+                   
                     value={from}
                     max={to}
                     onChange={(e) => setFilters({ from: e.target.value })}
-                    className={fieldClass}
                   />
                 </label>
 
                 <label className="min-w-32 flex-1">
                   <span className={filterLabelClass}>{t('jobs.to')}</span>
-                  <input
-                    type="date"
+                  <DateInput
+                   
                     value={to}
                     min={from}
                     onChange={(e) => setFilters({ to: e.target.value })}
-                    className={fieldClass}
                   />
                 </label>
               </div>

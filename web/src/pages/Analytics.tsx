@@ -11,7 +11,7 @@ import { useExportLang } from '../components/useExportLang';
 import ExportLangSelect from '../components/ExportLangSelect';
 import BarChart from '../components/BarChart';
 import StatTile from '../components/StatTile';
-import { Button, Card, Field, fieldClass, Group, Page, PageHeading, SectionHeading, Select, Skeleton } from '../components/ui';
+import { Button, Card, Field, Group, Page, PageHeading, SectionHeading, Select, Skeleton, DateInput } from '../components/ui';
 import { formatDate, MONTH_YEAR } from '../lib/formatDate';
 
 function isoDaysAgo(days: number) {
@@ -249,16 +249,15 @@ export default function Analytics() {
         <SectionHeading icon="calendar">{t('stats.filters')}</SectionHeading>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field htmlFor="stats-from" label={t('export.from')}>
-            <input
+            <DateInput
               id="stats-from"
-              type="date"
+             
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className={fieldClass}
             />
           </Field>
           <Field htmlFor="stats-to" label={t('export.to')}>
-            <input id="stats-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className={fieldClass} />
+            <DateInput id="stats-to" value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
           <Field htmlFor="stats-worker" label={t('jobDetail.worker')}>
             <Select id="stats-worker" value={workerFilter} onChange={(e) => setWorkerFilter(e.target.value)}>

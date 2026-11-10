@@ -62,7 +62,7 @@ export default function EditHistory({
       const s = services.find((x) => x.id === id);
       return s ? serviceLabel([s], i18n.language) : '—';
     },
-    date: (iso) => new Date(iso).toLocaleString(i18n.language),
+    date: (iso) => new Date(iso).toLocaleString(i18n.language, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }),
     slot: (kind) => t(`jobDetail.history.slots.${kind}`, { defaultValue: kind }),
     bool: (b) => t(b ? 'jobDetail.history.yes' : 'jobDetail.history.no'),
     money: (n) => formatMoney(n, i18n.language),
@@ -96,7 +96,7 @@ export default function EditHistory({
                     </p>
                     <p className="text-xs text-ink-600">
                       {r.user_id ? fmt.person(r.user_id) : t('jobDetail.history.system')} ·{' '}
-                      {new Date(r.at).toLocaleString(i18n.language)}
+                      {new Date(r.at).toLocaleString(i18n.language, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
                     </p>
                     {changes.length > 0 && (
                       <ul className="mt-1 space-y-0.5 text-sm text-ink-800">

@@ -3,7 +3,7 @@
  * every screen. Interactive elements default to at least `min-h-tap` (44px)
  * because the primary user holds a phone in one hand next to a car.
  */
-import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LANGUAGES, setLanguage, type Lang } from '../lib/i18n';
@@ -452,6 +452,48 @@ const fieldBase =
   'w-full rounded-lg border border-line-strong bg-surface px-3.5 text-base text-ink-900 transition-colors duration-150 focus:border-ink-900';
 
 export const fieldClass = `h-control ${fieldBase}`;
+
+/** `yyyy-mm-dd` → `dd/mm/yyyy` by string, never through Date: no timezone can shift the day. */
+export function formatIsoDmy(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return y && m && d ? `${d}/${m}/${y}` : '';
+}
+
+/**
+ * A date field that always reads dd/mm/yyyy. A native date input draws in the
+ * device's own format (an English phone shows "10 Nov 2026") and iOS gives it an
+ * intrinsic width that overflows a narrow card. So the text is drawn here and the
+ * real input sits invisibly on top: the tap still opens the native picker, and
+ * the value stays `yyyy-mm-dd`. `min-w-0` + `w-full` keep it inside its column.
+ */
+export function DateInput({ value, className = '', ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const shown = formatIsoDmy(String(value ?? ''));
+  return (
+    <div className={`relative w-full min-w-0 ${className}`}>
+      <div
+        aria-hidden
+        className={`${fieldClass} flex items-center justify-between gap-2 tabular-nums ${shown ? '' : 'text-ink-500'}`}
+      >
+        <span dir="ltr">{shown || 'dd/mm/yyyy'}</span>
+        <Icon name="calendar" size={18} className="shrink-0 text-ink-500" />
+      </div>
+      <input
+        {...rest}
+        type="date"
+        value={value}
+        onClick={(e) => {
+          rest.onClick?.(e);
+          try {
+            e.currentTarget.showPicker?.();
+          } catch {
+            /* not allowed here: the native control still works */
+          }
+        }}
+        className="absolute inset-0 size-full min-w-0 max-w-full cursor-pointer opacity-0"
+      />
+    </div>
+  );
+}
 
 export const fieldErrorClass = 'border-danger-600 bg-danger-50';
 

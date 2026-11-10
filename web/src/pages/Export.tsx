@@ -39,7 +39,7 @@ import {
   SearchField,
   SectionHeading,
   Select,
-  fieldClass,
+  DateInput,
 } from '../components/ui';
 import { formatDate, LONG_DATE } from '../lib/formatDate';
 
@@ -368,27 +368,25 @@ export default function Export() {
             at half of a 360px row. */}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field htmlFor="export-from" label={t('export.from')}>
-            <input
+            <DateInput
               id="export-from"
-              type="date"
+             
               value={from}
               onChange={(e) => {
                 setFrom(e.target.value);
                 setResult(null);
               }}
-              className={fieldClass}
             />
           </Field>
           <Field htmlFor="export-to" label={t('export.to')}>
-            <input
+            <DateInput
               id="export-to"
-              type="date"
+             
               value={to}
               onChange={(e) => {
                 setTo(e.target.value);
                 setResult(null);
               }}
-              className={fieldClass}
             />
           </Field>
         </div>

@@ -425,7 +425,7 @@ function StaffJobDetail() {
               <DetailRow label={t('newJob.plate')} value={job.plate ?? '—'} mono copy={!!job.plate} />
               <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono copy={!!job.vin} />
               <DetailRow label={t('newJob.brand')} value={job.brand ?? '—'} />
-              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language)} />
+              <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} />
               <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
               {job.coworker_ids.length > 0 && (
                 <DetailRow label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
