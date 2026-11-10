@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchPhotoUrl, type PhotoFailure } from '../lib/workerApi';
 import type { PhotoKind } from '../lib/types';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,7 @@ export default function PhotoViewer({
   const [failure, setFailure] = useState<PhotoFailure | null>(null);
   /** Bumped by "Try again" — the only way to re-run the effect for one tile. */
   const [attempt, setAttempt] = useState(0);
+  const full = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     let revoke: string | null = null;
@@ -56,11 +57,26 @@ export default function PhotoViewer({
       <figcaption className="mb-1.5 text-sm font-medium text-ink-700">{label}</figcaption>
 
       {url && (
-        <img
-          src={url}
-          alt={label}
-          className="h-44 w-full rounded-xl border border-line object-cover"
-        />
+        <>
+          <button type="button" onClick={() => full.current?.showModal()} className="block w-full cursor-zoom-in">
+            <img src={url} alt={label} className="h-44 w-full rounded-xl border border-line object-cover" />
+          </button>
+          {/* Native modal dialog: Esc, focus trap and backdrop for free; a click anywhere closes it. */}
+          <dialog
+            ref={full}
+            onClick={() => full.current?.close()}
+            className="m-auto max-h-[100dvh] max-w-[100vw] bg-transparent p-0 backdrop:bg-black/85"
+          >
+            <img src={url} alt={label} className="max-h-[100dvh] max-w-[100vw] object-contain" />
+            <button
+              type="button"
+              aria-label={t('common.close')}
+              className="absolute end-3 top-3 grid size-11 place-items-center rounded-full bg-black/60 text-white"
+            >
+              <Icon name="x" size={22} />
+            </button>
+          </dialog>
+        </>
       )}
 
       {url && downloadName && (
