@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from './supabase';
+import { getSiteChoice, setSiteChoice } from './siteChoice';
 import type { Site } from './types';
 
 /** The site a screen opens on: the one the person works at, admins included. */
@@ -19,15 +20,21 @@ export function defaultSiteId(sites: Site[], homeSiteId: string | null): string 
 export function useSiteScope() {
   const { appUser } = useAuth();
   const [sites, setSites] = useState<Site[]>([]);
-  const [siteId, setSiteId] = useState<string | null>(null);
+  const [siteId, setSiteIdState] = useState<string | null>(null);
   const isCarasso = appUser?.role === 'carasso';
   const canSwitch = appUser?.role === 'admin' || isCarasso;
+
+  /** A pick is remembered, so the next visit opens on it. */
+  const setSiteId = (id: string | null) => {
+    setSiteIdState(id);
+    if (appUser && id) setSiteChoice(appUser.id, id);
+  };
 
   useEffect(() => {
     if (!appUser) return;
     let cancelled = false;
 
-    if (!canSwitch) setSiteId(appUser.site_id);
+    if (!canSwitch) setSiteIdState(appUser.site_id);
 
     void supabase
       .from('sites')
@@ -40,7 +47,11 @@ export function useSiteScope() {
         // Only seed the default; never clobber a site the admin picked while
         // this request was in flight.
         // Carasso opens on "all my sites" (null), not on one of them.
-        if (canSwitch && !isCarasso) setSiteId((prev) => prev ?? defaultSiteId(list, appUser.site_id));
+        if (canSwitch && !isCarasso) {
+          const saved = getSiteChoice(appUser.id);
+          const start = list.some((x) => x.id === saved) ? saved : defaultSiteId(list, appUser.site_id);
+          setSiteIdState((prev) => prev ?? start);
+        }
       });
 
     return () => {

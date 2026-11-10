@@ -29,7 +29,7 @@ vi.mock('../lib/jobs', () => ({
   },
 }));
 
-const { editableServices, migrateDraft, saveWorkerEdit, toggleId } = await import('./workerJobs');
+const { editableServices, mediaEditState, migrateDraft, nextBusyJob, saveWorkerEdit, toggleId } = await import('./workerJobs');
 const { default: ServiceChips } = await import('../components/ServiceChips');
 
 const svc = (id: string): Service => ({
@@ -163,5 +163,47 @@ describe('worker edit edge cases', () => {
     const gone = { service_id: 'gone', name_en: 'Wax', name_ru: 'Воск', name_he: 'ווקס', catalog_number: 'W', worker_price: 7 } as JobServiceLine;
     const [, extra] = editableServices([svc('a')], [gone]);
     expect(extra).toMatchObject({ id: 'gone', name_ru: 'Воск', name_he: 'ווקס', active: false });
+  });
+});
+
+describe('mediaEditState — the worker panel only manages media in the open window (0035)', () => {
+  const now = Date.parse('2026-11-10T10:00:00Z');
+  const job = { id: 'j1', worker_id: 'me', locked_at: '2026-11-10T10:05:00Z' };
+
+  it('own job, window open, nothing queued: open', () => {
+    expect(mediaEditState(job, 'me', [], now)).toBe('open');
+    expect(mediaEditState(job, 'me', [{ jobId: 'other' }, {}], now)).toBe('open');
+  });
+
+  it('own job with a queue entry for it (photos or video still sending): queued', () => {
+    expect(mediaEditState(job, 'me', [{ jobId: 'j1' }], now)).toBe('queued');
+  });
+
+  it('closed window, the exact lock instant, a co-worker or no user: closed', () => {
+    expect(mediaEditState({ ...job, locked_at: '2026-11-10T09:59:00Z' }, 'me', [], now)).toBe('closed');
+    expect(mediaEditState({ ...job, locked_at: '2026-11-10T10:00:00Z' }, 'me', [], now)).toBe('closed');
+    expect(mediaEditState(job, 'coworker', [], now)).toBe('closed');
+    expect(mediaEditState(job, undefined, [], now)).toBe('closed');
+  });
+
+  it('a failed entry for the job (needsAttention) still holds: a Retry would overwrite a manual change', () => {
+    const failed = { jobId: 'j1', needsAttention: true };
+    expect(mediaEditState(job, 'me', [failed], now)).toBe('queued');
+  });
+
+  it('a closed window wins over a queue entry', () => {
+    expect(mediaEditState({ ...job, locked_at: '2026-11-10T09:00:00Z' }, 'me', [{ jobId: 'j1' }], now)).toBe('closed');
+  });
+});
+
+describe('nextBusyJob — the My Jobs hold is keyed by job', () => {
+  it('a start holds that job; its own settle frees it', () => {
+    expect(nextBusyJob(null, 'a', true)).toBe('a');
+    expect(nextBusyJob('a', 'a', false)).toBeNull();
+  });
+
+  it("another job's late settle leaves the current hold alone", () => {
+    expect(nextBusyJob('b', 'a', false)).toBe('b');
+    expect(nextBusyJob(null, 'a', false)).toBeNull();
   });
 });

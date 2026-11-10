@@ -21,6 +21,7 @@ import {
   fetchCarassoServices,
 } from '../lib/carasso';
 import { useSiteScope } from '../lib/useSiteScope';
+import { getSiteChoice, setSiteChoice } from '../lib/siteChoice';
 import { staffNames, useStaff } from '../lib/useStaff';
 import type { AppUser, CarassoJob, PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
@@ -232,7 +233,11 @@ export default function Jobs() {
   const [params] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [missingBilling, setMissingBilling] = useState(params.get('billing') === 'missing');
-  const [siteFilter, setSiteFilter] = useState<string | null>(null);
+  const [siteFilter, setSiteFilterState] = useState<string | null>(null);
+  const setSiteFilter = (id: string) => {
+    setSiteFilterState(id);
+    if (appUser && canSwitch) setSiteChoice(appUser.id, id);
+  };
   const [workerFilter, setWorkerFilter] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
   const [from, setFrom] = useState(params.get('from') ?? '');
@@ -246,8 +251,11 @@ export default function Jobs() {
 
   // Managers are pinned to their own site; admins start there and may widen.
   useEffect(() => {
-    if (siteFilter === null && siteId) setSiteFilter(siteId);
-  }, [siteId, siteFilter]);
+    if (siteFilter !== null || !siteId) return;
+    // The last pick ('' = all sites) wins over the home site, if it still exists.
+    const saved = appUser && canSwitch ? getSiteChoice(appUser.id) : null;
+    setSiteFilterState(saved === '' || sites.some((x) => x.id === saved) ? saved : siteId);
+  }, [siteId, siteFilter, sites, appUser, canSwitch]);
 
   const effectiveSite = canSwitch ? siteFilter : siteId;
 
@@ -633,7 +641,7 @@ export default function Jobs() {
                       setServiceFilter('');
                       setFrom('');
                       setTo('');
-                      if (showSiteFilter) setSiteFilter(siteId);
+                      if (showSiteFilter) setSiteFilterState(siteId);
                     }}
                   >
                     {t('jobs.clearFilters')}

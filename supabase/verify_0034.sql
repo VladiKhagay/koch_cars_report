@@ -12,15 +12,16 @@ select 'photos.removed_at (0034)' as check,
        then 'ok' else 'MISSING — run 0034' end as status
 
 union all
-select 'photos_update exists, manager/admin only',
+-- 0035 adds a bounded worker branch; verify_0035.sql checks it.
+select 'photos_update exists, manager/admin branches present',
        case when exists (
          select 1 from pg_policies
          where schemaname = 'public' and tablename = 'photos' and policyname = 'photos_update'
            and cmd = 'UPDATE'
            and coalesce(qual, '') like '%admin%' and coalesce(with_check, '') like '%admin%'
-           and coalesce(qual, '') || coalesce(with_check, '') not like '%worker%'
+           and coalesce(qual, '') like '%manager%' and coalesce(with_check, '') like '%manager%'
            and coalesce(qual, '') || coalesce(with_check, '') not like '%coworker_ids%'
-       ) then 'ok' else 'MISSING/LEAK — photos_update absent or open to workers' end
+       ) then 'ok' else 'MISSING/LEAK — photos_update absent or open to co-workers' end
 
 union all
 select 'no DELETE policy on photos (removal is the tombstone)',

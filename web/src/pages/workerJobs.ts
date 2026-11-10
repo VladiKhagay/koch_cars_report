@@ -80,3 +80,32 @@ export async function saveWorkerEdit(
     .eq('id', job.id);
   return error ? 'job' : null;
 }
+
+/**
+ * What the worker's edit panel offers for a job's media (0035):
+ *   'open'    own job, window open: add/replace/remove (plate/VIN replace only);
+ *   'queued'  own job, window open, but the offline queue still holds an entry
+ *             for it, sending or failed (needsAttention): editing now would race
+ *             the queue's upload of the same slot, and a later Retry re-uploads
+ *             the originals over a manual replace. Wait, or Retry/Discard it;
+ *   'closed'  someone else's job, or the window has closed: read-only.
+ * The database enforces the same window; this only decides what to show.
+ */
+export function mediaEditState(
+  job: Pick<Job, 'id' | 'worker_id' | 'locked_at'>,
+  userId: string | undefined,
+  queued: readonly { jobId?: string }[],
+  now = Date.now(),
+): 'open' | 'queued' | 'closed' {
+  if (!userId || job.worker_id !== userId || new Date(job.locked_at).getTime() <= now) return 'closed';
+  return queued.some((e) => e.jobId === job.id) ? 'queued' : 'open';
+}
+
+/**
+ * The job whose media change holds My Jobs (`busyJobId`), after `jobId`'s panel
+ * reports busy or settled. A settle only frees its own job, so a late settle
+ * from a panel that has gone can never free (or hold) another job's.
+ */
+export function nextBusyJob(cur: string | null, jobId: string, busy: boolean): string | null {
+  return busy ? jobId : cur === jobId ? null : cur;
+}

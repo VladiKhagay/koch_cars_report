@@ -160,6 +160,8 @@ The app itself is low-XSS-risk — React throughout, zero `dangerouslySetInnerHT
 >
 > It mirrors `photos_insert` rather than `jobs_update` because `/upload` is the R2 half of precisely the operation that policy governs, and the two drifting apart *is* the bug. In particular the worker branch checks `locked_at` but not `deleted_at`, because `photos_insert` does not either — a manager restoring a soft-deleted job is a supported flow and must not be blocked here on a rule the database does not itself apply.
 >
+> **Update (0035).** `can_write_photo` (0031, which replaced `can_write_job` for photos) now requires `deleted_at is null` in every **worker** branch: the 15-minute window branch and the "no photo rows yet" branch (the bounded video branch already did). Workers cannot soft-delete (`jobs_guard_worker_columns` pins `deleted_at`), so this covers a manager deleting a job while the worker's window is open. The manager/admin branches are untouched, so the manager-restore flow above still works. See SECURITY-NOTES.md §7.
+>
 > ⚠️ **Deployment ordering is load-bearing.** The Worker calls an RPC that does not exist until 0009 is applied. Deploying the Worker first makes every photo upload fail closed (403). **Apply 0009 before deploying the Worker.**
 
 The `/upload` authorization check is *"can the caller **SELECT** this job?"* But the 15-minute `locked_at` window is expressed on **UPDATE** — `jobs_update` and `photos_insert` both require `locked_at > now()` for the worker role, while `jobs_select` (as tightened in 0003) lets a worker read their own jobs forever.

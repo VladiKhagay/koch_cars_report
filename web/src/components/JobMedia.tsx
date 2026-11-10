@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
-import { removeMedia, setMedia, slotExists, type SlotRow } from '../lib/jobs';
+import { mediaRefused, removeMedia, setMedia, slotExists, slotRemovable, type SlotRow } from '../lib/jobs';
 import { MAX_UPLOAD_BYTES, UNDECODABLE_IMAGE, downscaleImage } from '../lib/image';
 import { MAX_VIDEO_BYTES } from '../lib/video';
 import type { PhotoKind } from '../lib/types';
@@ -13,8 +13,9 @@ import Icon from './Icon';
 import { Button, ConfirmAction, Skeleton, Spinner } from './ui';
 
 const PHOTO_SLOTS: PhotoKind[] = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3'];
+const NO_SLOTS: PhotoKind[] = [];
 
-type MediaProblem = 'error' | 'photoTooLarge' | 'photoUnsupported' | 'videoTooLarge';
+type MediaProblem = 'error' | 'windowClosed' | 'photoTooLarge' | 'photoUnsupported' | 'videoTooLarge';
 
 /**
  * A job's photos and video. Read-only: only the slots that hold something.
@@ -22,18 +23,30 @@ type MediaProblem = 'error' | 'photoTooLarge' | 'photoUnsupported' | 'videoTooLa
  * is open, all six slots show, each with Add, or Replace and Remove. Those take
  * effect at once, separate from the job's Save button.
  * Reads `photos` (RLS covers Carasso for jobs on its sites).
+ *
+ * `alwaysManage` is the worker's own job inside its 15-minute window (MyJobs,
+ * 0035): no toggle, the slots are manageable while `editable`, the hint says
+ * Save/Cancel don't undo media, and a refusal reads as "the window closed".
+ * `keepSlots` can be replaced but never removed (a worker's plate/VIN).
  */
 export default function JobMedia({
   jobId,
   downloadName,
   editable = false,
+  alwaysManage = false,
+  keepSlots = NO_SLOTS,
   onChanged,
+  onBusyChange,
 }: {
   jobId: string;
   downloadName: string;
   editable?: boolean;
+  alwaysManage?: boolean;
+  keepSlots?: PhotoKind[];
   /** After a slot changed, so the page can refresh the edit history. */
   onChanged?: () => void;
+  /** A change started (true) or settled (false), so the page can hold its own Save/Cancel. */
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<SlotRow[] | null>(null);
@@ -41,8 +54,9 @@ export default function JobMedia({
   const [versions, setVersions] = useState<Partial<Record<PhotoKind, number>>>({});
   const [busy, setBusy] = useState<PhotoKind | null>(null);
   const [problem, setProblem] = useState<{ kind: PhotoKind; problem: MediaProblem } | null>(null);
-  const [managing, setManaging] = useState(false);
-  const edit = editable && managing;
+  const [managing, setManaging] = useState(alwaysManage);
+  /* Kept open while a change is in flight, even if `editable` drops (the window closed mid-upload). */
+  const edit = managing && (editable || busy !== null);
   const fileInputs = useRef<Partial<Record<PhotoKind, HTMLInputElement | null>>>({});
 
   /** The read failed: rows kept as they were (null before the first read), banner shown. */
@@ -72,30 +86,40 @@ export default function JobMedia({
 
   async function change(kind: PhotoKind, run: () => Promise<void>) {
     setBusy(kind);
+    onBusyChange?.(true);
     setProblem(null);
     try {
       await run();
     } catch (err) {
       console.error('Media change failed', err);
-      setProblem({ kind, problem: 'error' });
+      setProblem({ kind, problem: alwaysManage && mediaRefused(err) ? 'windowClosed' : 'error' });
     }
     // Re-read either way: a failed video may still have landed its row.
     apply(await load());
     setVersions((v) => ({ ...v, [kind]: (v[kind] ?? 0) + 1 }));
     setBusy(null);
+    onBusyChange?.(false);
     onChanged?.();
   }
 
   async function photoPicked(kind: PhotoKind, file: File | undefined) {
     if (!file) return;
+    // Busy from the pick, not from the upload: the downscale takes seconds on a phone.
+    setBusy(kind);
+    onBusyChange?.(true);
+    const refuse = (problem: MediaProblem) => {
+      setBusy(null);
+      onBusyChange?.(false);
+      setProblem({ kind, problem });
+    };
     let blob: Blob;
     try {
       blob = await downscaleImage(file);
     } catch (err) {
       // Same rules as PhotoCapture: an undecodable file is refused; a canvas
       // quirk falls back to the original if the Worker would take it.
-      if (err instanceof Error && err.name === UNDECODABLE_IMAGE) return setProblem({ kind, problem: 'photoUnsupported' });
-      if (file.size > MAX_UPLOAD_BYTES) return setProblem({ kind, problem: 'photoTooLarge' });
+      if (err instanceof Error && err.name === UNDECODABLE_IMAGE) return refuse('photoUnsupported');
+      if (file.size > MAX_UPLOAD_BYTES) return refuse('photoTooLarge');
       blob = file;
     }
     await change(kind, () => setMedia(jobId, kind, blob));
@@ -108,8 +132,7 @@ export default function JobMedia({
   }
 
   const shown = (kind: PhotoKind) => rows !== null && slotExists(rows, kind);
-  /* Remove tombstones a row; a legacy plate/VIN shown without one can only be replaced. */
-  const removable = (kind: PhotoKind) => !!rows?.some((r) => r.kind === kind && r.removed_at === null);
+  const removable = (kind: PhotoKind) => rows !== null && slotRemovable(rows, kind, keepSlots);
   const photoLabel = (kind: PhotoKind, extraIndex: number) =>
     kind === 'plate' ? t('newJob.platePhoto') : kind === 'vin' ? t('newJob.vinPhoto') : t('newJob.extraPhoto', { n: extraIndex });
 
@@ -197,6 +220,13 @@ export default function JobMedia({
   return (
     <>
       {loadBanner}
+      {/* The controls (and their per-slot message) are gone once editing closes,
+          e.g. the window shut mid-upload: the refusal must still be said. */}
+      {!edit && problem && (
+        <StatusBanner tone="error" live>
+          {t(`jobDetail.media.${problem.problem}`)}
+        </StatusBanner>
+      )}
       <div id={`media-${jobId}`} className="grid grid-cols-2 gap-3">
         {visible.map((kind) => {
           if (kind.startsWith('extra')) extraIndex++;
@@ -222,7 +252,7 @@ export default function JobMedia({
         })}
       </div>
       {videoExists && <VideoViewer key={versions.video ?? 0} jobId={jobId} downloadName={downloadName} fresh={(versions.video ?? 0) > 0} />}
-      {edit && <StatusBanner tone="info">{t('jobDetail.media.hint')}</StatusBanner>}
+      {edit && <StatusBanner tone="info">{t(alwaysManage ? 'jobDetail.media.hintWorker' : 'jobDetail.media.hint')}</StatusBanner>}
       {edit && (
         <section aria-label={t('newJob.video')} className="space-y-2">
           {!videoExists && <p className="text-sm font-medium text-ink-700">{t('newJob.video')}</p>}
@@ -272,7 +302,7 @@ export default function JobMedia({
         </section>
       )}
       {/* Held open while a change is uploading, so it can't be folded mid-save. */}
-      {editable && (
+      {editable && !alwaysManage && (
         <Button
           variant="secondary"
           block
@@ -280,7 +310,10 @@ export default function JobMedia({
           aria-expanded={managing}
           aria-controls={`media-${jobId}`}
           disabled={busy !== null}
-          onClick={() => setManaging((m) => !m)}
+          onClick={() => {
+            setManaging((m) => !m);
+            setProblem(null);
+          }}
         >
           {managing ? t('jobDetail.media.doneManaging') : t('jobDetail.media.manage')}
         </Button>

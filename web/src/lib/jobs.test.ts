@@ -128,7 +128,7 @@ vi.mock('./workerApi', () => ({
 /* 4-byte pieces, so a 10-byte "video" is three pieces: '0123' '4567' '89'. */
 vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 4 }));
 
-const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal, setMedia, removeMedia, slotExists } =
+const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal, setMedia, removeMedia, slotExists, slotRemovable, mediaRefused } =
   await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
@@ -916,5 +916,52 @@ describe('slotExists', () => {
   it('a removed slot is empty, plate included', () => {
     expect(slotExists([{ kind: 'plate', removed_at: gone }], 'plate')).toBe(false);
     expect(slotExists([{ kind: 'extra_2', removed_at: gone }], 'extra_2')).toBe(false);
+  });
+});
+
+describe('worker media edit (0035) — refusals and kept slots', () => {
+  it('a zero-row write or tombstone is a refusal (42501), not a transport failure', async () => {
+    selectRows = [];
+    const write = await setMedia('job-9', 'extra_1', blob()).catch((e: unknown) => e);
+    const remove = await removeMedia('job-9', 'extra_1').catch((e: unknown) => e);
+    expect(write).toMatchObject({ code: '42501' });
+    expect(remove).toMatchObject({ code: '42501' });
+    expect(mediaRefused(write)).toBe(true);
+    expect(mediaRefused(remove)).toBe(true);
+  });
+
+  it('a PostgREST 42501 passes through unchanged and reads as refused', async () => {
+    selectError = { message: 'new row violates row-level security policy', code: '42501' } as { message: string };
+    const err = await removeMedia('job-9', 'plate').catch((e: unknown) => e);
+    expect(err).toEqual({ message: 'new row violates row-level security policy', code: '42501' });
+    expect(mediaRefused(err)).toBe(true);
+  });
+
+  it('the Worker 403 is a refusal; offline, a 500 or any other error is not', () => {
+    expect(mediaRefused(new w.HttpError(403, 'Forbidden'))).toBe(true);
+    expect(mediaRefused(new w.HttpError(500, 'boom'))).toBe(false);
+    expect(mediaRefused(new w.HttpError(413, 'too large'))).toBe(false);
+    expect(mediaRefused(new Error('offline'))).toBe(false);
+    expect(mediaRefused({ code: '23505' })).toBe(false);
+    expect(mediaRefused(null)).toBe(false);
+  });
+
+  it('kept slots (a worker\'s plate/VIN) never offer Remove; others need a live row', () => {
+    const rows = [
+      { kind: 'plate' as const, removed_at: null },
+      { kind: 'vin' as const, removed_at: null },
+      { kind: 'extra_1' as const, removed_at: null },
+      { kind: 'extra_2' as const, removed_at: '2026-01-01T00:00:00Z' },
+      { kind: 'video' as const, removed_at: null },
+    ];
+    const keep = ['plate', 'vin'] as const;
+    expect(slotRemovable(rows, 'plate', keep)).toBe(false);
+    expect(slotRemovable(rows, 'vin', keep)).toBe(false);
+    expect(slotRemovable(rows, 'extra_1', keep)).toBe(true);
+    expect(slotRemovable(rows, 'video', keep)).toBe(true);
+    expect(slotRemovable(rows, 'extra_2', keep)).toBe(false);
+    expect(slotRemovable(rows, 'extra_3', keep)).toBe(false);
+    // Managers keep nothing back.
+    expect(slotRemovable(rows, 'plate')).toBe(true);
   });
 });

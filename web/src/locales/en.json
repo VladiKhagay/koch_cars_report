@@ -360,6 +360,7 @@
     "saveFailed": "Not saved. Check your connection and try again.",
     "media": {
       "hint": "Photo and video changes are saved as soon as you make them, separately from Save.",
+      "hintWorker": "Photo and video changes are saved as soon as you make them. Save and Cancel below don't undo them.",
       "add": "Add photo",
       "replace": "Replace",
       "remove": "Remove",
@@ -370,6 +371,8 @@
       "chooseVideo": "Choose a video file",
       "replaceVideoFile": "Replace with a video file",
       "error": "That change wasn't saved. Check your connection and try again.",
+      "windowClosed": "The 15-minute edit window closed, so this change may not have been saved. Reload to see the current photo.",
+      "queuedNote": "This job is still in the sending queue above. Wait for it to send, or use Try again or Discard on its card, before changing its photos or video here.",
       "photoTooLarge": "That photo is too large (max 8MB).",
       "photoUnsupported": "This browser can't open that photo format.",
       "videoTooLarge": "That video is too large to upload (max 90MB).",

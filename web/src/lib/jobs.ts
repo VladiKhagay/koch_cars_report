@@ -337,6 +337,15 @@ export function slotExists(rows: SlotRow[], kind: PhotoKind): boolean {
 }
 
 /**
+ * Whether a slot offers Remove: it needs a live row to tombstone (a legacy
+ * plate/VIN shown without one can only be replaced), and `keep` slots are
+ * never removed (a worker's plate/VIN, 0035).
+ */
+export function slotRemovable(rows: SlotRow[], kind: PhotoKind, keep: readonly PhotoKind[] = []): boolean {
+  return !keep.includes(kind) && rows.some((r) => r.kind === kind && r.removed_at === null);
+}
+
+/**
  * Upserts one slot's row live. Never ignoreDuplicates: that would turn a
  * replace into a silent no-op. Zero rows back means RLS refused it.
  */
@@ -346,12 +355,28 @@ async function writeSlot(jobId: string, kind: PhotoKind, fields: { r2_key: strin
     .upsert({ job_id: jobId, kind, ...fields }, { onConflict: 'job_id,kind' })
     .select('id');
   if (error) throw error;
-  if (!data?.length) throw new Error(`photo slot ${kind} was not saved`);
+  if (!data?.length) throw refused(`photo slot ${kind} was not saved`);
+}
+
+/** A zero-row write: RLS filtered the row out, which is a refusal like PostgREST's 42501. */
+function refused(message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code: '42501' });
 }
 
 /**
- * Manager/admin: adds or replaces one media slot. The object overwrites the
- * same R2 key; the row is (re)marked live. The database logs the change.
+ * Whether a media change was refused (rather than failed in transit): the
+ * Worker's 403 before the R2 put, PostgREST's 42501, or a zero-row write.
+ * For a worker that means the 15-minute window has closed (0035).
+ */
+export function mediaRefused(err: unknown): boolean {
+  if (err instanceof HttpError) return err.status === 403;
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '42501';
+}
+
+/**
+ * Manager/admin, or the job's worker inside its window (0035): adds or replaces
+ * one media slot. The object overwrites the same R2 key; the row is (re)marked
+ * live. The database logs a manager/admin change (never a worker's).
  */
 export async function setMedia(jobId: string, kind: PhotoKind, blob: Blob): Promise<void> {
   if (kind === 'video') return submitVideo(jobId, blob, { replace: true });
@@ -360,7 +385,8 @@ export async function setMedia(jobId: string, kind: PhotoKind, blob: Blob): Prom
 }
 
 /**
- * Manager/admin: clears a slot by tombstoning its row; the R2 object is left
+ * Manager/admin, or the job's worker inside its window (0035; never plate/VIN):
+ * clears a slot by tombstoning its row; the R2 object is left
  * to the 60-day lifecycle. Needs a row: a legacy plate/VIN with none can only
  * be replaced (which writes one). Zero rows back means nothing was removed.
  */
@@ -372,7 +398,7 @@ export async function removeMedia(jobId: string, kind: PhotoKind): Promise<void>
     .eq('kind', kind)
     .select('id');
   if (error) throw error;
-  if (!data?.length) throw new Error(`photo slot ${kind} was not removed`);
+  if (!data?.length) throw refused(`photo slot ${kind} was not removed`);
 }
 
 /**

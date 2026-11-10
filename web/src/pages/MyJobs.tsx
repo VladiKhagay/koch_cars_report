@@ -14,7 +14,7 @@ import { serviceName } from '../lib/serviceName';
 import { applyJobFilters, crewIds, shareFor } from '../lib/jobs';
 import { serviceLabel as joinServiceNames } from '../lib/serviceRows';
 import { formatMoney } from '../components/money';
-import { editableServices, saveWorkerEdit, toggleId, type WorkerEdit } from './workerJobs';
+import { editableServices, mediaEditState, nextBusyJob, saveWorkerEdit, toggleId, type WorkerEdit } from './workerJobs';
 import { MY_JOBS_HEADERS, SHEET_NAMES, buildMyJobsSheet, exportServiceName } from '../lib/exports';
 import { buildWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
@@ -24,12 +24,13 @@ import { useQueuedJobs, useUploadingId, useUploadProgress } from '../lib/useQueu
 import { discardQueued, retryQueued } from '../lib/offlineQueue';
 import { useSiteScope } from '../lib/useSiteScope';
 import { staffNames, useStaff } from '../lib/useStaff';
-import { SERVICE_COLUMNS, type Job, type Service } from '../lib/types';
+import { SERVICE_COLUMNS, type Job, type PhotoKind, type Service } from '../lib/types';
 import Icon from '../components/Icon';
 import MonthNav from '../components/MonthNav';
 import ServiceChips from '../components/ServiceChips';
 import CoworkerPicker from '../components/CoworkerPicker';
 import StatusBanner from '../components/StatusBanner';
+import JobMedia from '../components/JobMedia';
 import {
   CellMuted,
   CellTitle,
@@ -61,6 +62,9 @@ import {
 import { formatDate, DAY_MONTH } from '../lib/formatDate';
 
 const PAGE_SIZE = 25;
+
+/** A worker replaces the plate and VIN photos but never removes them (0035, DB-enforced). */
+const WORKER_KEEP_SLOTS: PhotoKind[] = ['plate', 'vin'];
 
 /** Stable identity: a fresh `[]` fallback would invalidate the table's models. */
 const NO_ROWS: Job[] = [];
@@ -107,6 +111,8 @@ interface Handlers {
   isMine: (job: Job) => boolean;
   startEdit: (job: Job) => void;
   editingId: string | null;
+  /** A media change is uploading in the open panel: no Edit elsewhere. */
+  holding: boolean;
   locale: string;
 }
 
@@ -218,10 +224,16 @@ function buildColumns(
               icon="pencil"
               label={t('newJob.edit')}
               className="sm:hidden"
+              disabled={handlers.current.holding}
               onClick={() => handlers.current.startEdit(row.original)}
             />
             <span className="hidden sm:inline-flex">
-              <Button variant="secondary" icon="pencil" onClick={() => handlers.current.startEdit(row.original)}>
+              <Button
+                variant="secondary"
+                icon="pencil"
+                disabled={handlers.current.holding}
+                onClick={() => handlers.current.startEdit(row.original)}
+              >
                 {t('newJob.edit')}
               </Button>
             </span>
@@ -259,6 +271,12 @@ export default function MyJobs() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<WorkerEdit | null>(null);
   const [saving, setSaving] = useState(false);
+  /* The job whose media change is uploading (downscale included). Anything
+     that would unmount its panel (Save/Cancel, Edit elsewhere, paging, sort,
+     filters) is held until it settles, or the outcome would be lost. Keyed by
+     job so a late settle can never hold or free another job's panel. */
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const holding = busyJobId !== null;
   /* Which write failed, shown in the open editor; the draft is kept so nothing typed is lost. */
   const [saveError, setSaveError] = useState<'services' | 'job' | null>(null);
   const [, forceTick] = useState(0);
@@ -307,10 +325,11 @@ export default function MyJobs() {
   const [term, setTerm] = useState(search);
   useEffect(() => setTerm(search), [search]);
   useEffect(() => {
-    if (term === search) return;
+    // Held while media uploads: a new search swaps the rows and unmounts the panel.
+    if (term === search || holding) return;
     const id = setTimeout(() => setFilters({ q: term || null }), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
-  }, [term, search, setFilters]);
+  }, [term, search, setFilters, holding]);
 
   const preset = presetFor({ from, to });
   const filtered = Boolean(search || serviceIds.length || preset !== 'thisMonth');
@@ -480,10 +499,10 @@ export default function MyJobs() {
 
   /* ----------------------------------------------------------------- table */
 
-  const handlers = useRef<Handlers>({ serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language });
+  const handlers = useRef<Handlers>({ serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, holding, locale: i18n.language });
   // Refreshed every render, but the ref identity never changes — so `columns`
   // below can be built once and still call the current closures.
-  handlers.current = { serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, locale: i18n.language };
+  handlers.current = { serviceLabel, payLabel, crewLabel, isMine, startEdit, editingId, holding, locale: i18n.language };
 
   const columns = useMemo(() => buildColumns(t, handlers), [t]);
   const table = useTable({ features, columns, data: jobs });
@@ -491,6 +510,7 @@ export default function MyJobs() {
   /* Paging swapped the rows out from under the reader: you pressed Next at the
      bottom of the page and stayed at the bottom. Send them back to the top. */
   function goToPage(next: (p: number) => number) {
+    if (holding) return;
     setPage(next);
     setEditingId(null);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -499,6 +519,7 @@ export default function MyJobs() {
   }
 
   function toggleSort(key: SortKey) {
+    if (holding) return;
     // A new column starts newest-first for dates, A-first for names; the same
     // column flips.
     setSort((s) => (s.key === key ? { key, asc: !s.asc } : { key, asc: key !== 'created_at' }));
@@ -595,7 +616,9 @@ export default function MyJobs() {
       <Group>
         <TableCard
           toolbar={
-            <div className="space-y-3">
+            /* Disabled as one while a media change uploads: any filter swaps the rows
+               and would unmount the panel showing its outcome. */
+            <fieldset disabled={holding} className="m-0 min-w-0 space-y-3 border-0 p-0">
               {/*
                 Month navigation, first and largest: the month is the window
                 this screen is read through, and stepping back one month is the
@@ -767,7 +790,7 @@ export default function MyJobs() {
               )}
                 </div>
               )}
-            </div>
+            </fieldset>
           }
         >
           <Table minWidth={56}>
@@ -789,6 +812,7 @@ export default function MyJobs() {
                         {header.isPlaceholder ? null : sortKey ? (
                           <button
                             type="button"
+                            disabled={holding}
                             onClick={() => toggleSort(sortKey)}
                             className="inline-flex items-center gap-1 hover:text-ink-900"
                           >
@@ -874,6 +898,32 @@ export default function MyJobs() {
                           className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-base text-ink-900 focus:border-ink-900"
                           placeholder={t('newJob.note')}
                         />
+                        {(() => {
+                          /* Last before Save so a phone keeps Save near the fields it
+                             saves. Media changes save at once, apart from Save/Cancel; kept
+                             mounted so an upload in flight keeps its busy state when
+                             the window closes or the queue picks the job up. */
+                          const media = mediaEditState(row.original, appUser?.id, queued);
+                          const job = row.original;
+                          return (
+                            <section aria-label={t('jobDetail.photos')} className="space-y-3">
+                              <JobMedia
+                                /* Re-read the slots once the queue entry is gone (sent or
+                                   discarded). Safe: nothing is in flight while it is queued. */
+                                key={media === 'queued' ? 'queued' : 'live'}
+                                jobId={job.id}
+                                downloadName={`${job.plate ?? job.vin ?? job.id}_${job.created_at.slice(0, 10)}`}
+                                editable={media === 'open'}
+                                alwaysManage
+                                keepSlots={WORKER_KEEP_SLOTS}
+                                onBusyChange={(b) => setBusyJobId((cur) => nextBusyJob(cur, job.id, b))}
+                              />
+                              {media === 'queued' && (
+                                <StatusBanner tone="info">{t('jobDetail.media.queuedNote')}</StatusBanner>
+                              )}
+                            </section>
+                          );
+                        })()}
                         {saveError && (
                           <StatusBanner tone="error" live>
                             {t(saveError === 'services' ? 'myJobs.servicesSaveFailed' : 'jobs.saveFailed')}
@@ -883,12 +933,16 @@ export default function MyJobs() {
                           <Button
                             busy={saving}
                             icon="check"
-                            disabled={editDraft.serviceIds.length === 0}
+                            disabled={editDraft.serviceIds.length === 0 || busyJobId === row.original.id}
                             onClick={() => void saveEdit(row.original)}
                           >
                             {t('jobDetail.save')}
                           </Button>
-                          <Button variant="secondary" onClick={() => setEditingId(null)}>
+                          <Button
+                            variant="secondary"
+                            disabled={busyJobId === row.original.id}
+                            onClick={() => setEditingId(null)}
+                          >
                             {t('common.cancel')}
                           </Button>
                         </div>
@@ -922,7 +976,7 @@ export default function MyJobs() {
                 <Button
                   variant="secondary"
                   icon="chevronLeft"
-                  disabled={page === 0 || loading}
+                  disabled={page === 0 || loading || holding}
                   onClick={() => goToPage((p) => Math.max(0, p - 1))}
                 >
                   {t('jobs.prev')}
@@ -933,7 +987,7 @@ export default function MyJobs() {
                 <Button
                   variant="secondary"
                   icon="chevronRight"
-                  disabled={page >= lastPage || loading}
+                  disabled={page >= lastPage || loading || holding}
                   onClick={() => goToPage((p) => Math.min(lastPage, p + 1))}
                 >
                   {t('jobs.next')}

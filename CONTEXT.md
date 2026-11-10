@@ -152,6 +152,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0004_user_mgmt_services_softdelete_stats.sql` | Service soft-delete, `update_my_name()`, `set_user_active()`, `job_daily_stats` |
 | `0033_multi_service_jobs.sql` | `job_services` + `job_service_client_prices` (per-line price snapshots, backfilled), `create_job()` / `set_job_services()`, `job_service_lines`, `job_daily_totals`; `job_daily_stats` per service; drops `job_service_stats` |
 | `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
+| `0035_worker_media_edit.sql` | `photos_update` worker branch (own job, 15-minute window, not deleted; never removes plate/VIN), `photos_insert` refuses removed rows, `can_write_photo` worker branches all need a live job |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -214,7 +215,7 @@ job twice — and `job_daily_totals` is per job for job/car counts and pay.
 `jobs.service_id` is **deprecated**, kept only for builds still in the field:
 an old-build insert seeds the first line, and an old-build change of it
 *replaces the job's services with that one service*. New code must not write
-it. Drop it in 0035 once no old build can be running.
+it. Drop it in 0036 once no old build can be running.
 
 **Deploy order: 0033 -> web. Rollback: web only; 0033 is roll-forward only.**
 0033 alone keeps the previous web build working. Until the new web is live, two
@@ -226,7 +227,8 @@ job has more than one service — that is the 0005 data loss again. Run
 
 **Manager/admin full edit and audit (0034).** Managers (own site) and admins
 edit every job field and every media slot at any age; workers keep the
-15-minute window and column guard unchanged. Two decisions:
+15-minute window and column guard (and, from 0035, edit their own media inside
+that window, below). Two decisions:
 
 - *Remove is a tombstone*, `photos.removed_at`, not a row delete: the R2
   object is left to the 60-day lifecycle (no hard deletes from the app), the
@@ -237,7 +239,7 @@ edit every job field and every media slot at any age; workers keep the
   filter `removed_at is null`. Replace is an upsert without `ignoreDuplicates`
   (an update of the live row); `photos_guard_update` pins id/job/kind/R2 key and
   restarts `expires_at` on a live row (the overwrite restarts the lifecycle).
-  Workers have no update policy on `photos`.
+  Workers update `photos` only through 0035's bounded branch (below).
 - *Audit is written by the database*, not the client. The old
   `recordAudit` insert was best-effort (any failure silently dropped the row),
   forgeable, and impossible after a manager moved a job off their site. Now
@@ -264,12 +266,39 @@ The old web keeps working on 0034 (its `recordAudit` inserts fail silently
 while the triggers log). A Worker before 0034 403s every photo view. Run
 `supabase/verify_0034.sql` (read-only) after applying.
 
+**Worker media edit (0035).** In My Jobs, the worker's own job (submitter,
+never a co-worker) shows its photos and video in the edit panel; while the
+15-minute window is open the worker adds, replaces and removes extra photos
+1-3 and the video, and replaces (never removes) plate and VIN. Same
+`JobMedia` component and `setMedia`/`removeMedia` calls as managers, with
+`alwaysManage` (no toggle) and `keepSlots={['plate','vin']}`; changes save at
+once, apart from Save/Cancel. Workers are no longer insert-only on `photos`:
+`photos_update` has a worker branch bounded by `worker_id`, `locked_at >
+now()` and `deleted_at is null`, and its WITH CHECK refuses a worker's
+plate/VIN tombstone, so the rule is the database's, not the UI's.
+`photos_insert` refuses an already-removed row, and every worker branch of
+`can_write_photo` now needs a live job. Worker media changes are not audited (no Edit
+history for workers either). While the offline queue holds any entry for the job
+(photos or video, sending or failed `needsAttention`) the panel shows a note
+instead of controls: a manual change would race the queue's upload of the same
+slot, and a later Retry re-uploads the originals over a manual replace. The
+worker waits, or uses Retry/Discard on the queued card. While a media change
+uploads (from the pick, downscale included), everything that would unmount the
+panel is held: Save/Cancel, Edit on other rows, paging, sort and the filters.
+A refusal (Worker 403, 42501, zero rows) reads as "the window closed, the
+change may not have been saved", and is still shown if the window shut
+mid-upload.
+
+**Deploy order: 0035 -> web (no Worker change). Rollback: web -> 0035 down**
+(commented in the migration header). Run `supabase/verify_0035.sql`.
+
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.
 
 ### Roles
-- **worker** — creates jobs at their own site; edits/deletes their own job
-  within 15 min; sees only their own rows. Cannot see billing codes.
+- **worker** — creates jobs at their own site; edits/deletes their own job,
+  and its photos/video (plate/VIN replace only — 0035), within 15 min; sees
+  only their own rows. Cannot see billing codes.
 - **manager** — everything within their own site: view/search/edit jobs (every
   field, including plate, VIN, brand, worker note and date, at any age — 0034),
   add/replace/remove media, read the job's edit history, fill billing codes, view photos, export, analytics, manage services, activate and

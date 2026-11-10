@@ -317,7 +317,7 @@ before `create_job`.
 - [ ] Rollback: **web only**. 0033 is roll-forward only — never drop
       `job_services` while any job has more than one service (the 0005 data
       loss again). A rolled-back web is an old build, with the caveats above.
-- [ ] Drop the deprecated `jobs.service_id` and its triggers in 0035, once no
+- [ ] Drop the deprecated `jobs.service_id` and its triggers in 0036, once no
       old build can still be running.
 
 ---
@@ -325,14 +325,14 @@ before `create_job`.
 ## 6. Manager/admin full edit, photo tombstones, trigger-written audit (migration 0034)
 
 Managers (own site) and admins can now edit plate, VIN, brand, worker note and
-the job date, and add, replace or remove any media slot at any age. Workers are
-unchanged: 15-minute window, column guard (0021/0028/0033), `can_write_photo`
-(0031), insert-only on `photos`.
+the job date, and add, replace or remove any media slot at any age. Workers
+kept the 15-minute window, column guard (0021/0028/0033) and `can_write_photo`
+(0031); from 0035 they also edit their own job's media inside that window (§7).
 
 What the database enforces:
 
-- `photos_update`: admin, or manager at the job's site (USING and WITH CHECK).
-  No worker branch, and still **no DELETE policy** on `photos`. Removal sets
+- `photos_update`: admin, or manager at the job's site (USING and WITH CHECK);
+  0035 adds a bounded worker branch (§7). Still **no DELETE policy** on `photos`. Removal sets
   `removed_at` (server-stamped); the R2 object is left to the 60-day lifecycle.
 - `photos_guard_update` pins `id`, `job_id`, `kind`, `r2_key`, `created_at`, so
   a row can never be repointed at another job's object.
@@ -370,10 +370,8 @@ What the database enforces:
 - Accepted (low), 0034 review L-2: `jobs_flag_duplicate` searches every site,
   so a manager editing plate/VIN can learn that the car was done earlier
   elsewhere (the flag is set; the other job's details stay hidden by RLS).
-- Accepted (low): a worker's offline queue retrying a photo/video upload
-  inside the job's 15-minute window can overwrite a manager's replacement of
-  that slot in R2 (the worker's `can_write_photo` allows it while the lock is
-  open; the worker's row insert is ignoreDuplicates, so no audit row).
+- Accepted (low): a worker overwriting a manager's replacement inside the
+  15-minute window, see §7.
 - Accepted (noise): a manager's own new job writes `media_add` audit rows for
   its photos (the photos trigger cannot tell creation from a later add; job
   services use the same-transaction rule, photos land in later requests).
@@ -386,3 +384,71 @@ What the database enforces:
       `can_view_photo` while the new Worker is live. Before redeploying an old
       web on a rolled-back database, recreate `audit_log_insert` (0001) or its
       audit rows are lost.
+
+---
+
+## 7. Worker media edit inside the 15-minute window (migration 0035)
+
+A worker can add, replace and remove extra photos 1-3 and the video, and replace
+(never remove) the plate and VIN photos, on **their own** job (`jobs.worker_id`,
+never `coworker_ids`) while `jobs.locked_at > now()` and the job is not
+soft-deleted. Worker changes are not audited (`photos_audit` skips worker
+callers, as in 0034). After the window, worker rules are 0031's, except that a deleted job is now
+refused in every worker branch of `can_write_photo`.
+
+What the database enforces:
+
+- `photos_update` worker branch (USING and WITH CHECK): `u.id = j.worker_id`,
+  `j.locked_at > now()`, `j.deleted_at is null`. WITH CHECK also requires
+  `removed_at is null or kind not in ('plate','vin')`: a worker's tombstone of
+  plate/VIN is refused with 42501. `photos_guard_update` (0034) still pins
+  id/job/kind/R2 key/created_at and server-stamps `removed_at`; WITH CHECK runs
+  on the row after it.
+- `photos_insert`: `can_write_photo(...) and removed_at is null`, so nobody
+  inserts an already-removed row. A worker's replace is an upsert, so it passes
+  both this (on the proposed row) and `photos_update` (on the conflict path).
+- `can_write_photo`: the worker's window branch and its "no photo rows yet"
+  branch (0014/0031) now also require `j.deleted_at is null` (the bounded video
+  branch already did), so `/upload` and `/video/*` refuse R2 writes to a
+  deleted job in every worker branch. Workers cannot soft-delete
+  (`jobs_guard_worker_columns` pins `deleted_at`); this covers a manager
+  deleting the job while the worker's window is still open. Managers/admins
+  are unchanged (a manager may restore a deleted job).
+- Still no DELETE policy. Managers/admins unchanged.
+
+Accepted (low):
+
+- **ACCEPTED (lead decision): a worker can un-remove a manager-removed slot.**
+  Inside their own job's 15-minute window, a worker can set `removed_at = null`
+  (PATCH or upsert) on any slot a manager removed, plate and VIN included
+  (WITH CHECK only stops a worker *ending* with a plate/VIN tombstoned). This
+  brings back no new media: it un-hides the object already stored at that
+  slot's R2 key (job id + kind), which stays until the 60-day lifecycle.
+  Bounded (15 minutes, own job only) and unaudited (worker changes write no
+  audit rows); managers rarely act on a job that young.
+- **ACCEPTED (lead decision): every Worker 403 reads as "window closed".**
+  The web cannot tell the Worker's refusals apart, so any 403 from `/upload` or
+  `/video/*` (and any 42501 or zero-row update) in the worker's panel shows the
+  window-closed message, which says the change *may* not have been saved and
+  asks for a reload.
+- Stale R2 objects: a removed slot's object stays in R2 until the lifecycle
+  (0025). An upload checked by `can_write_photo` just before the deadline
+  (each `/video/*` call and `/upload` check once, before the R2 write) can land
+  its object after the window closes; the row write that follows is refused,
+  and the worker sees "window closed". The overwritten object is what `/photo`
+  serves for that slot (it does not require a row, only no tombstone), so a
+  video or photo can change a few seconds to minutes after the window.
+- A worker (or their offline queue) can overwrite a manager's in-window
+  replacement of a slot, in R2 and in the row, with no audit row for the
+  worker's change. Same 15-minute bound; the manager's change is audited.
+
+- [ ] Deploy order: **0035 -> web**. No Worker change. 0035 alone keeps the
+      old web working (it never sends a worker update).
+- [ ] Run `supabase/verify_0035.sql` (read-only, SQL editor): every row `ok`.
+      `verify_0034.sql` now expects the manager/admin branches (it no longer
+      asserts "no worker" in `photos_update`).
+- [ ] Optional, on a local/branch database only: `supabase/scenarios_0035.sql`
+      (impersonates a worker, ends in ROLLBACK) raises on any leak.
+- [ ] Rollback: **web -> 0035 down** (the commented block in the migration
+      header): restores the 0034 `photos_update`, the 0031 `photos_insert` and
+      the 0031 `can_write_photo`.
