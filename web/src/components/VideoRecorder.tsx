@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS, VIDEO_BITRATE, pickVideoMimeType, seekableDuration } from '../lib/video';
+import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS, VIDEO_BITRATE, pickVideoMimeType, seekableDuration, videoExtension } from '../lib/video';
 import Icon from './Icon';
 
 /**
@@ -136,6 +136,25 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   }
 
+  /** Browsers can't write to the gallery silently; the share sheet ("Save Video") is the closest, with a plain download as fallback. */
+  async function saveToDevice() {
+    if (!video) return;
+    const file = new File([video], `car-video.${videoExtension(video.type)}`, { type: video.type });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return; // user closed the sheet
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(video);
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  }
+
   const shell = 'flex min-h-44 w-full flex-col rounded-xl border-2 p-3 text-start';
   const textAction = 'inline-flex min-h-tap items-center gap-1.5 text-sm font-bold underline underline-offset-2';
 
@@ -227,6 +246,10 @@ export default function VideoRecorder({ video, onRecorded, onRemove }: Props) {
             <button type="button" onClick={() => void openCamera()} className={textAction}>
               <Icon name="video" size={16} />
               {t('newJob.recordAgain')}
+            </button>
+            <button type="button" onClick={() => void saveToDevice()} className={textAction}>
+              <Icon name="download" size={16} />
+              {t('newJob.saveVideo')}
             </button>
             <button type="button" onClick={onRemove} className={`${textAction} text-danger-700`}>
               <Icon name="trash" size={16} />

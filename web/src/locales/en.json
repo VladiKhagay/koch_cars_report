@@ -192,6 +192,7 @@
     "stopRecording": "Stop",
     "videoRecorded": "Video recorded",
     "recordAgain": "Record again",
+    "saveVideo": "Save to device",
     "removeVideo": "Remove",
     "video_unsupported": "This browser can't record video. You can still submit the job.",
     "video_denied": "Camera access was refused. Allow the camera for this app in your phone settings, then try again.",
