@@ -182,7 +182,7 @@ function StaffJobDetail() {
     siteId,
   };
   const edit = job ? planJobEdit(job, draft, Date.now()) : null;
-  const vehicle = edit?.vehicle ?? { plateError: false, vinError: false, missingBoth: false, vinChecksum: null };
+  const vehicle = edit?.vehicle ?? { plateError: false, vinError: false, missingVin: false, vinChecksum: null };
   const dateError = edit?.dateError ?? false;
   const vinChanged = edit?.vinChanged ?? false;
 
@@ -353,7 +353,7 @@ function StaffJobDetail() {
 
   const savedServiceIds = job.service_ids ?? (job.services ?? []).map((l) => l.service_id);
   const servicesMissing = servicesError || missingServices(savedServiceIds, serviceIds);
-  const fieldsInvalid = vehicle.plateError || vehicle.vinError || vehicle.missingBoth || dateError;
+  const fieldsInvalid = vehicle.plateError || vehicle.vinError || vehicle.missingVin || dateError;
   const editDirty =
     plate !== (job.plate ?? '') ||
     vin !== (job.vin ?? '') ||
@@ -474,13 +474,7 @@ function StaffJobDetail() {
                   htmlFor="job-plate"
                   label={t('newJob.plate')}
                   optional
-                  error={
-                    vehicle.plateError
-                      ? t('newJob.plateInvalid')
-                      : vehicle.missingBoth
-                        ? t('newJob.needIdentifier')
-                        : undefined
-                  }
+                  error={vehicle.plateError ? t('newJob.plateInvalid') : undefined}
                 >
                   <input
                     id="job-plate"
@@ -492,15 +486,21 @@ function StaffJobDetail() {
                     spellCheck={false}
                     onChange={(e) => setPlate(stripPlate(e.target.value).slice(0, 8))}
                     className={`${fieldClass} font-mono tracking-wider ${
-                      vehicle.plateError || vehicle.missingBoth ? fieldErrorClass : ''
+                      vehicle.plateError ? fieldErrorClass : ''
                     }`}
                   />
                 </Field>
                 <Field
                   htmlFor="job-vin"
                   label={t('newJob.vin')}
-                  optional
-                  error={vehicle.vinError ? t('newJob.vinInvalid') : undefined}
+                  required
+                  error={
+                    vehicle.missingVin
+                      ? t('newJob.vinRequired')
+                      : vehicle.vinError
+                        ? t('newJob.vinInvalid')
+                        : undefined
+                  }
                 >
                   <input
                     id="job-vin"
@@ -512,7 +512,7 @@ function StaffJobDetail() {
                     spellCheck={false}
                     onChange={(e) => setVin(e.target.value.toUpperCase())}
                     className={`${fieldClass} font-mono tracking-wider uppercase ${
-                      vehicle.vinError ? fieldErrorClass : ''
+                      vehicle.vinError || vehicle.missingVin ? fieldErrorClass : ''
                     }`}
                   />
                   {/* Advisory only, as on New Job: imports can fail the check digit. */}

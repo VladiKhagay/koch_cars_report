@@ -532,6 +532,7 @@ export function Field({
   label,
   hint,
   optional,
+  required,
   error,
   children,
   htmlFor,
@@ -539,6 +540,7 @@ export function Field({
   label: ReactNode;
   hint?: ReactNode;
   optional?: boolean;
+  required?: boolean;
   error?: ReactNode;
   children: ReactNode;
   htmlFor?: string;
@@ -554,6 +556,7 @@ export function Field({
       >
         <span>{label}</span>
         {optional && <span className="text-ink-500">{t('common.optional')}</span>}
+        {required && <span className="text-ink-500">{t('common.required')}</span>}
         {hint}
       </label>
       {children}

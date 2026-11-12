@@ -402,10 +402,11 @@ describe('previous job text — several services (0033)', () => {
 });
 
 describe('job detail field edit (planJobEdit)', () => {
-  // A legacy 7-digit plate: from before today's 8-digit rule.
+  // A legacy 7-digit plate: from before today's 8-digit rule. The VIN is required (0036).
+  const SAVED_VIN = 'WVWZZZ1JZXW000001';
   const base: JobFieldsBase = {
     plate: '1234567',
-    vin: null,
+    vin: SAVED_VIN,
     brand: 'Kia',
     worker_note: 'scratch',
     created_at: '2026-03-02T08:00:00Z',
@@ -415,7 +416,7 @@ describe('job detail field edit (planJobEdit)', () => {
   const now = new Date('2026-03-10T12:00:00Z').getTime();
   const untouched: JobFieldDraft = {
     plate: '1234567',
-    vin: '',
+    vin: SAVED_VIN,
     brand: 'Kia',
     workerNote: 'scratch',
     date: toLocalInput(base.created_at),
@@ -477,8 +478,44 @@ describe('job detail field edit (planJobEdit)', () => {
     expect(r.changes).toMatchObject({ worker_id: 'c1', coworker_ids: ['w1'] });
   });
 
-  it('blocks clearing both plate and VIN', () => {
-    expect(plan({ plate: '' }).vehicle.missingBoth).toBe(true);
-    expect(plan({ plate: '' }).blocked).toBe(true);
+  it('saves a cleared plate as NULL: the plate is optional', () => {
+    const r = plan({ plate: '' });
+    expect(r.blocked).toBe(false);
+    expect(r.vehicle.missingVin).toBe(false);
+    expect(r.changes).toMatchObject({ plate: null });
+  });
+
+  it('blocks clearing the VIN: it is required (0036)', () => {
+    for (const vin of ['', '   ']) {
+      const r = plan({ vin });
+      expect(r.vehicle.missingVin).toBe(true);
+      expect(r.vehicle.vinError).toBe(false);
+      expect(r.blocked).toBe(true);
+    }
+  });
+
+  it('blocks a changed short, 18-char or I/O/Q VIN; a lowercase one is saved uppercased', () => {
+    for (const vin of [VALID_VIN.slice(0, 16), VALID_VIN + '1', 'IM8GDM9AXKP042788', '1M8GDM9AXKP04278O', '1M8GDM9AXKQ042788']) {
+      const r = plan({ vin });
+      expect(r.vehicle.vinError).toBe(true);
+      expect(r.blocked).toBe(true);
+    }
+    const r = plan({ vin: VALID_VIN.toLowerCase() });
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toMatchObject({ vin: VALID_VIN, vin_valid_checksum: true });
+  });
+
+  it('clearing the plate while the VIN stays put sends only the plate', () => {
+    const r = plan({ plate: '' });
+    expect(r.changes).not.toHaveProperty('vin');
+    expect(r.changes).not.toHaveProperty('vin_valid_checksum');
+  });
+
+  it('blocks an untouched job that has no VIN, until one is entered', () => {
+    const legacy = { ...base, vin: null };
+    expect(planJobEdit(legacy, { ...untouched, vin: '' }, now).blocked).toBe(true);
+    const r = planJobEdit(legacy, { ...untouched, vin: VALID_VIN }, now);
+    expect(r.blocked).toBe(false);
+    expect(r.changes).toMatchObject({ vin: VALID_VIN, vin_valid_checksum: true });
   });
 });

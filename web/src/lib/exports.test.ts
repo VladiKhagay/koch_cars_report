@@ -46,6 +46,12 @@ describe('buildMyJobsSheet', () => {
     expect(cells[2]).toBe('');
   });
 
+  /* The plate is optional (a car with no physical plate is stored as NULL). */
+  it('prints a missing plate as a blank cell', () => {
+    const [, cells] = buildMyJobsSheet([{ ...row, plate: null }], headers);
+    expect(cells[1]).toBe('');
+  });
+
   /* Nothing on this sheet may carry pay: it is the worker's own record of what
      they logged, but it is also a file that gets forwarded. */
   it('never emits the worker price', () => {
@@ -98,6 +104,12 @@ describe('buildCustomerReport', () => {
   it('writes a blank cell for a job with no worker', () => {
     const columns = resolveCustomerColumns({ columns: [{ key: 'worker', visible: true }] });
     const [, row] = buildCustomerReport([job({ worker: null })], columns, 'en-GB', 'en');
+    expect(row).toEqual(['']);
+  });
+
+  it('writes a blank cell for a job with no plate', () => {
+    const columns = resolveCustomerColumns({ columns: [{ key: 'plate', visible: true }] });
+    const [, row] = buildCustomerReport([job({ plate: null })], columns, 'en-GB', 'en');
     expect(row).toEqual(['']);
   });
 

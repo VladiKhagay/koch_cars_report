@@ -46,12 +46,12 @@ export interface Job {
   updated_at: string;
   /**
    * NULL when the car has no physical plate — a job is logged without one
-   * rather than with a placeholder. At least one of plate/vin is always set.
+   * rather than with a placeholder.
    */
   plate: string | null;
   /**
-   * NULL when the VIN was not readable — a car is logged without one rather
-   * than with a placeholder, so readers can tell "not known" from a value.
+   * Required since 0036 (NOT NULL); never a placeholder. Kept nullable in the
+   * type for the views and exports that still declare it so.
    */
   vin: string | null;
   /** NULL when there is no VIN to check, as well as when the check was skipped. */

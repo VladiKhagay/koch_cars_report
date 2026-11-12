@@ -21,9 +21,10 @@ describe('isPermanentError', () => {
 
   it('treats a check violation and a payload submitJob refuses as permanent', async () => {
     expect(isPermanentError({ code: '23514' })).toBe(true);
+    expect(isPermanentError({ code: '23502' })).toBe(true); // not_null_violation, e.g. no VIN (0036)
     expect(isPermanentError(new InvalidJobError('x'))).toBe(true);
     expect(isPermanentError(new Error('Job creation failed'))).toBe(false);
-    const noService = { plate: '1234567', vin: null, serviceIds: [] } as unknown as NewJobPayload;
+    const noService = { plate: '1234567', vin: 'WVWZZZ1JZXW000001', serviceIds: [] } as unknown as NewJobPayload;
     const err = await submitJob(noService).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(InvalidJobError);
     expect(isPermanentError(err)).toBe(true);

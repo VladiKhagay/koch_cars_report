@@ -11,6 +11,7 @@ import type { NewJobPayload } from './jobs';
 vi.mock('./supabase', () => ({ supabase: {} }));
 
 const { sendJob } = await import('./sendJob');
+const { InvalidJobError } = await import('./jobs');
 type Deps = NonNullable<Parameters<typeof sendJob>[2]>;
 
 const quota = () => new DOMException('Quota exceeded', 'QuotaExceededError');
@@ -22,7 +23,7 @@ function payload(): NewJobPayload {
     siteId: 's',
     workerId: 'w1',
     plate: '1234567',
-    vin: null,
+    vin: 'WVWZZZ1JZXW000001',
     brand: null,
     workerNote: null,
     serviceIds: ['svc'],
@@ -48,6 +49,18 @@ beforeEach(() => {
     flushQueue: vi.fn(async () => {}),
     isPermanentError: vi.fn(() => false),
   };
+});
+
+/* The one rejection allowed: a VIN-less job can never be created (0036), so it
+   is neither sent nor kept on the phone; the form keeps it. New Job's own gate
+   makes this unreachable from the UI. */
+describe('sendJob: no VIN', () => {
+  it.each([null, '', '   '])('refuses vin %j without sending or queueing', async (vin) => {
+    await expect(send({ ...payload(), vin }, video)).rejects.toBeInstanceOf(InvalidJobError);
+    expect(deps.submitJob).not.toHaveBeenCalled();
+    expect(deps.enqueueForRetry).not.toHaveBeenCalled();
+    expect(deps.enqueueVideo).not.toHaveBeenCalled();
+  });
 });
 
 describe('sendJob: the job lands', () => {

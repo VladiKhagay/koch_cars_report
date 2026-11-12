@@ -228,6 +228,25 @@ describe('job failures', () => {
     await q.flushQueue();
     expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
   });
+
+  /* Queued before 0036 made the VIN required: kept on the phone, flagged, never auto-resent. */
+  it('flags a queued job with no VIN for the worker at once, keeping its photos', async () => {
+    const { submitJob } = await vi.importActual<typeof import('./jobs')>('./jobs');
+    mocks.submitJob.mockImplementation(submitJob);
+    seed(base({ vin: null }));
+    await q.flushQueue();
+    expect(stored()).toHaveLength(1);
+    expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
+    expect(stored()[0].plateBlob).toBeTruthy();
+  });
+
+  /* The old web (or any client) reaching a 0036 database without a VIN gets 23502. */
+  it('flags a not-null violation from the database as permanent', async () => {
+    seed(base({ vin: 'WVWZZZ1JZXW000001' }));
+    mocks.submitJob.mockRejectedValue({ code: '23502', message: 'null value in column "vin"' });
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
+  });
 });
 
 describe('video failures', () => {

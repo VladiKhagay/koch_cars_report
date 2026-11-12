@@ -128,7 +128,7 @@ vi.mock('./workerApi', () => ({
 /* 4-byte pieces, so a 10-byte "video" is three pieces: '0123' '4567' '89'. */
 vi.mock('./video', async (importOriginal) => ({ ...(await importOriginal<object>()), VIDEO_PART_BYTES: 4 }));
 
-const { submitJob, submitVideo, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal, setMedia, removeMedia, slotExists, slotRemovable, mediaRefused } =
+const { submitJob, submitVideo, InvalidJobError, isPermanentError, applyJobFilters, shareFor, lineShareFor, findPreviousJob, setJobServices, serviceTotal, setMedia, removeMedia, slotExists, slotRemovable, mediaRefused } =
   await import('./jobs');
 import type { NewJobPayload } from './jobs';
 
@@ -551,50 +551,48 @@ describe('submitJob — photo slots', () => {
 });
 
 /*
- * A VIN plate is regularly unreadable — glare, a peeled sticker, a car whose
- * plate is somewhere this yard does not photograph. The car still has to be
- * logged, and the gap has to survive as a gap: '' would sort into the VIN index
- * like a real value and match every other blank in the duplicate check.
+ * The VIN is required (0036). A queued or direct payload without one is refused
+ * before create_job, as a permanent error (InvalidJobError): resending it can
+ * never succeed, and the database would refuse it anyway (NOT NULL, 23502).
  */
-describe('submitJob — a car with no readable VIN', () => {
+describe('submitJob — a car with no VIN', () => {
   const row = () => insertedJobs[0] as Record<string, unknown>;
 
-  it('stores NULL, not an empty string or a placeholder', async () => {
-    await submitJob({ ...payload(), vin: null });
-    expect(row().p_vin).toBeNull();
-    expect(row().p_vin_valid_checksum).toBeNull();
+  it.each([null, '', '   '])('refuses vin %j before asking the database', async (vin) => {
+    const err = await submitJob({ ...payload(), vin }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidJobError);
+    expect(isPermanentError(err)).toBe(true);
+    expect(rpcCalls).toEqual([]);
+    expect(insertedJobs).toHaveLength(0);
+    expect(uploads).toEqual([]);
   });
 
-  it('treats a blank typed VIN the same as no VIN at all', async () => {
-    await submitJob({ ...payload(), vin: '   ' });
-    expect(row().p_vin).toBeNull();
+  /* A job row created before 0036 (or a payload queued with its jobId already
+     set) only has photos left to send: the VIN check guards creation only. */
+  it('still finishes the photos of a job that already exists', async () => {
+    await submitJob({ ...payload(), vin: null, jobId: 'job-7' });
+    expect(rpcCalls).toEqual([]);
+    expect(uploads).toEqual(['plate', 'vin']);
   });
 
   /* The flag is the database's job (0029 insert trigger): the client sends none,
      so an offline-queued job is flagged exactly like an online one. */
   it('does not send a duplicate flag or ask the duplicate check on submit', async () => {
-    await submitJob({ ...payload(), vin: null });
+    await submitJob(payload());
     expect(row()).not.toHaveProperty('p_duplicate_of_job_id');
     expect(rpcCalls.map((c) => (c as { fn: string }).fn)).toEqual(['create_job']);
   });
 
-  it('still records everything else about the car', async () => {
-    await submitJob({ ...payload(), vin: null });
-    expect(row()).toMatchObject({ p_plate: '12-345-67', p_brand: 'VW', p_service_ids: ['svc-1'] });
-    expect(insertedPhotos).toHaveLength(2);
-  });
-
-  it('leaves a job that does have a VIN untouched', async () => {
-    await submitJob(payload());
+  it('sends the VIN trimmed and uppercased, with its check digit result', async () => {
+    await submitJob({ ...payload(), vin: ' wvwzzz1jzxw000001 ' });
     expect(row().p_vin).toBe('WVWZZZ1JZXW000001');
     expect(row().p_vin_valid_checksum).toBe(false); // real VIN, non-ISO check digit
   });
 });
 
 /*
- * Same treatment as the VIN, in the other direction: some cars arrive with no
- * physical plate at all. A job still needs SOMETHING to identify it by, so
- * plate and VIN can each go missing on their own, just not both at once.
+ * Some cars arrive with no physical plate at all. The plate is optional; the
+ * VIN still identifies the car (0036).
  */
 describe('submitJob — a car with no plate', () => {
   const row = () => insertedJobs[0] as Record<string, unknown>;
@@ -617,13 +615,6 @@ describe('submitJob — a car with no plate', () => {
   it('skips the plate photo slot entirely when no plate photo was taken', async () => {
     await submitJob({ ...payload(), plate: null, plateBlob: null });
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['vin']);
-  });
-
-  it('rejects a job with neither a plate nor a VIN', async () => {
-    await expect(
-      submitJob({ ...payload(), plate: null, plateBlob: null, vin: null, vinBlob: null }),
-    ).rejects.toThrow();
-    expect(insertedJobs).toHaveLength(0);
   });
 });
 

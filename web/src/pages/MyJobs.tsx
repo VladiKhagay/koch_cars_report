@@ -80,7 +80,7 @@ function minutesLeft(lockedAt: string): number {
  */
 const EXPORT_CHUNK = 1000;
 
-/** How long a worker gets to stop typing before the plate search hits Postgres. */
+/** How long a worker gets to stop typing before the plate/VIN search hits Postgres. */
 const SEARCH_DEBOUNCE_MS = 350;
 
 /** The quick-select options, in the order they are offered. */
@@ -347,8 +347,8 @@ export default function MyJobs() {
     if (!appUser) return;
     setLoading(true);
         /* Narrowed in Postgres so paging sees the right set. `searchColumns` is
-           plate-only: this view has no billing_code and PostgREST fails the whole
-           query on an unknown column. */
+           plate and VIN: this view has no billing_code and PostgREST fails the
+           whole query on an unknown column. */
     const { data, count } = await applyJobFilters(
       supabase
         .from('jobs_worker_view')
@@ -356,7 +356,7 @@ export default function MyJobs() {
         .order(sort.key, { ascending: sort.asc })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
       // Submitted OR co-worked — a shared car is in both people's lists.
-      { workerId: appUser.id, from, to, serviceIds, search, searchColumns: ['plate'] },
+      { workerId: appUser.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'] },
     );
 
     setJobs(data ?? NO_ROWS);
@@ -451,7 +451,7 @@ export default function MyJobs() {
           .select('*')
           .order(sort.key, { ascending: sort.asc })
           .range(start, start + EXPORT_CHUNK - 1),
-        { workerId: appUser!.id, from, to, serviceIds, search, searchColumns: ['plate'] },
+        { workerId: appUser!.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'] },
       );
       if (error) return null;
       all.push(...((data ?? []) as Job[]));

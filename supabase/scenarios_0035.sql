@@ -23,14 +23,14 @@ begin
     raise exception 'scenarios_0035 needs two active workers';
   end if;
 
-  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990001', null) returning id into j_open;
-  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990002', null) returning id into j_closed;
-  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(o.site_id, (select id from sites limit 1)), o.id, '9990003', null) returning id into j_other;
-  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990004', null) returning id into j_deleted;
+  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990001', 'SCN00350000000001') returning id into j_open;
+  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990002', 'SCN00350000000002') returning id into j_closed;
+  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(o.site_id, (select id from sites limit 1)), o.id, '9990003', 'SCN00350000000003') returning id into j_other;
+  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990004', 'SCN00350000000004') returning id into j_deleted;
   -- Another worker's job with w as a co-worker: co-workers never edit media.
-  insert into jobs (site_id, worker_id, coworker_ids, plate, vin) values (coalesce(o.site_id, (select id from sites limit 1)), o.id, array[w.id], '9990005', null) returning id into j_cowork;
+  insert into jobs (site_id, worker_id, coworker_ids, plate, vin) values (coalesce(o.site_id, (select id from sites limit 1)), o.id, array[w.id], '9990005', 'SCN00350000000005') returning id into j_cowork;
   -- w's own job, deleted by a manager, window closed, no photo rows at all.
-  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990006', null) returning id into j_deleted_empty;
+  insert into jobs (site_id, worker_id, plate, vin) values (coalesce(w.site_id, (select id from sites limit 1)), w.id, '9990006', 'SCN00350000000006') returning id into j_deleted_empty;
 
   update jobs set locked_at = now() + interval '10 minutes' where id in (j_open, j_other, j_deleted, j_cowork);
   update jobs set locked_at = now() - interval '1 minute' where id in (j_closed, j_deleted_empty);

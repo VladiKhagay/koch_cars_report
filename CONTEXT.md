@@ -153,6 +153,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0033_multi_service_jobs.sql` | `job_services` + `job_service_client_prices` (per-line price snapshots, backfilled), `create_job()` / `set_job_services()`, `job_service_lines`, `job_daily_totals`; `job_daily_stats` per service; drops `job_service_stats` |
 | `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
 | `0035_worker_media_edit.sql` | `photos_update` worker branch (own job, 15-minute window, not deleted; never removes plate/VIN), `photos_insert` refuses removed rows, `can_write_photo` worker branches all need a live job |
+| `0036_vin_required_plate_optional.sql` | `jobs.vin` NOT NULL (refuses to run while any job, soft-deleted included, has a NULL or blank VIN), `jobs_plate_or_vin_chk` dropped, `jobs.plate` stays nullable |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -215,7 +216,7 @@ job twice — and `job_daily_totals` is per job for job/car counts and pay.
 `jobs.service_id` is **deprecated**, kept only for builds still in the field:
 an old-build insert seeds the first line, and an old-build change of it
 *replaces the job's services with that one service*. New code must not write
-it. Drop it in 0036 once no old build can be running.
+it. Drop it in a later migration once no old build can be running.
 
 **Deploy order: 0033 -> web. Rollback: web only; 0033 is roll-forward only.**
 0033 alone keeps the previous web build working. Until the new web is live, two
@@ -291,6 +292,14 @@ mid-upload.
 
 **Deploy order: 0035 -> web (no Worker change). Rollback: web -> 0035 down**
 (commented in the migration header). Run `supabase/verify_0035.sql`.
+
+**VIN required, plate optional (0036).** Every job has a VIN (`jobs.vin NOT
+NULL`); the plate is NULL when the car has none. New Job and Job Detail block
+an empty or malformed VIN; `submitJob` refuses a VIN-less payload before
+`create_job` (a queued retry that already has its `jobId` still uploads its
+photos), and 23502 is a permanent error. My Jobs searches plate and VIN.
+
+**Deploy order: 0036 -> web. Rollback: web only; 0036 down is commented.**
 
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.

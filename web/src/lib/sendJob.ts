@@ -1,4 +1,4 @@
-import { submitJob, submitVideo, isPermanentError, type NewJobPayload } from './jobs';
+import { submitJob, submitVideo, isPermanentError, InvalidJobError, type NewJobPayload } from './jobs';
 import { enqueueForRetry, enqueueVideo, errorText, flushQueue } from './offlineQueue';
 
 /**
@@ -32,6 +32,9 @@ export async function sendJob(
   video: Blob | null | undefined,
   deps: SendDeps = defaultDeps,
 ): Promise<SendOutcome> {
+  // Not kept on the phone: a VIN-less job can never be created (0036), so the
+  // form keeps it instead. New Job's own gate makes this unreachable.
+  if (!payload.vin?.trim()) throw new InvalidJobError('Job requires a VIN');
   let jobId: string;
   try {
     jobId = await deps.submitJob(payload);

@@ -22,13 +22,13 @@ export class InvalidJobError extends Error {}
 /**
  * True when retrying `submitJob` with the same payload can never succeed: a
  * 4xx from the Worker, a payload submitJob itself refuses (InvalidJobError),
- * a Postgres RLS rejection (42501) or check violation (23514, e.g. create_job
- * given no service). Anything else is treated as transient so an outage never
+ * a Postgres RLS rejection (42501), check violation (23514, e.g. create_job
+ * given no service) or not-null violation (23502, e.g. a job with no VIN, 0036). Anything else is treated as transient so an outage never
  * drops data. 401 (token mid-refresh), 408 and 429 (rate limit hit while
  * flushing a backlog) clear on their own.
  */
 const RETRYABLE_4XX = [401, 408, 429];
-const PERMANENT_PG_CODES = ['42501', '23514']; // insufficient_privilege, check_violation
+const PERMANENT_PG_CODES = ['42501', '23514', '23502']; // insufficient_privilege, check_violation, not_null_violation
 
 export function isPermanentError(err: unknown): boolean {
   if (err instanceof InvalidJobError) return true;
@@ -47,9 +47,9 @@ export function isRateLimited(err: unknown): boolean {
 export interface NewJobPayload {
   siteId: string;
   workerId: string;
-  /** Optional: `null` (or empty) when the car has no physical plate. At least one of plate/vin must be set. */
+  /** Optional: `null` (or empty) when the car has no physical plate. */
   plate: string | null;
-  /** Optional: `null` (or empty) when the VIN could not be read off the car. */
+  /** Required (0036). Typed `string | null` only because payloads queued before 0036 may lack one; submitJob refuses those unless the row already exists (`jobId`). */
   vin: string | null;
   brand: string | null;
   workerNote: string | null;
@@ -80,12 +80,9 @@ export interface NewJobPayload {
  * a retry never inserts a second job for the same car.
  */
 export async function submitJob(payload: NewJobPayload): Promise<string> {
-  /* An absent plate or VIN is NULL, never '': an empty string would collide in the duplicate check. */
+  /* An absent plate is NULL, never '': an empty string would collide in the duplicate check. */
   const plate = payload.plate?.toUpperCase().trim() || null;
   const vin = payload.vin?.toUpperCase().trim() || null;
-
-  // A job needs a plate or a VIN; guarded here for retry-queue payloads and direct callers.
-  if (!plate && !vin) throw new InvalidJobError('Job requires a plate or a VIN');
 
   let jobId = payload.jobId;
 
@@ -93,6 +90,8 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
     const serviceIds = jobServiceIds(payload);
     // Checked only before the row exists: a queued retry with a jobId just finishes its photos.
     if (serviceIds.length === 0) throw new InvalidJobError('Job requires at least one service');
+    // Same for the VIN (0036): guarded here for retry-queue payloads and direct callers.
+    if (!vin) throw new InvalidJobError('Job requires a VIN');
     // One call so the job and its services land together or not at all (create_job, 0033).
     // No prices are sent: the database snapshots them from the catalog. Nor is
     // duplicate_of_job_id: the database flags a repeat VIN or plate on insert (0029),
