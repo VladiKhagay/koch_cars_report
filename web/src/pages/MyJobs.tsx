@@ -721,7 +721,7 @@ export default function MyJobs() {
                   </Select>
                 </label>
 
-                <label className="min-w-32 flex-1">
+                <label className="min-w-36 flex-1 sm:min-w-40">
                   <span className={filterLabelClass}>{t('jobs.from')}</span>
                   <DateInput
                    
@@ -731,7 +731,7 @@ export default function MyJobs() {
                   />
                 </label>
 
-                <label className="min-w-32 flex-1">
+                <label className="min-w-36 flex-1 sm:min-w-40">
                   <span className={filterLabelClass}>{t('jobs.to')}</span>
                   <DateInput
                    

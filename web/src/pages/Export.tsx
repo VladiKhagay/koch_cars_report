@@ -29,6 +29,7 @@ import type { AppUser, CarassoJob } from '../lib/types';
 import ReportColumns from '../components/ReportColumns';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
+import WorkerPicker from '../components/WorkerPicker';
 import { customerRows, mergeColumnSubset, paymentJobs, type PaymentFetchedJob } from './exportColumns';
 import {
   Button,
@@ -36,7 +37,6 @@ import {
   Field,
   Page,
   PageHeading,
-  SearchField,
   SectionHeading,
   Select,
   DateInput,
@@ -158,7 +158,6 @@ export default function Export() {
      file for the wrong person under a plausible name. */
   const [workers, setWorkers] = useState<Pick<AppUser, 'id' | 'name'>[]>([]);
   const [workerId, setWorkerId] = useState('');
-  const [workerSearch, setWorkerSearch] = useState('');
 
   /* Everyone on staff, every site: the payment sheet is per person across sites
      (0019). Inactive staff are included; they are still owed for earlier jobs. */
@@ -180,18 +179,7 @@ export default function Export() {
     };
   }, [canSeePay]);
 
-  /* The search narrows a native select (a long list can't be typed at) instead of replacing it. */
-  const matchingWorkers = workers.filter((w) =>
-    w.name.toLowerCase().includes(workerSearch.trim().toLowerCase()),
-  );
   const selectedWorker = workers.find((w) => w.id === workerId);
-  /* The person already chosen stays in the list even when the search would
-     exclude them — a select whose value is not among its options renders as
-     something else entirely, which is how you export the wrong worker's pay. */
-  const workerOptions =
-    selectedWorker && !matchingWorkers.some((w) => w.id === workerId)
-      ? [selectedWorker, ...matchingWorkers]
-      : matchingWorkers;
 
   /** Both bounds are inclusive local calendar days, as in the jobs grid. */
   function bounds() {
@@ -504,34 +492,15 @@ export default function Export() {
           <p className="text-sm text-ink-600">{t('export.paymentsHelp')}</p>
 
           <Field htmlFor="export-worker" label={t('export.worker')}>
-            {/* Search first, then the picker it narrows — only once the list is
-                long enough to be worth searching. */}
-            {workers.length > 8 && (
-              <SearchField
-                value={workerSearch}
-                onChange={setWorkerSearch}
-                label={t('export.searchWorkers')}
-                className="mb-2"
-              />
-            )}
-            <Select
+            <WorkerPicker
               id="export-worker"
+              workers={workers}
               value={workerId}
-              onChange={(e) => {
-                setWorkerId(e.target.value);
+              onChange={(id) => {
+                setWorkerId(id);
                 setResult(null);
               }}
-            >
-              <option value="">{t('export.pickWorker')}</option>
-              {workerOptions.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </Select>
-            {workerSearch.trim() && matchingWorkers.length === 0 && (
-              <p className="mt-1.5 text-sm text-ink-600">{t('export.noWorkerMatches')}</p>
-            )}
+            />
           </Field>
 
           {/* What this button is about to produce, named in full: whose jobs, and over which dates. */}

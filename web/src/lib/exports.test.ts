@@ -162,8 +162,8 @@ describe('buildWorkerPaymentReport', () => {
 
   it('keeps the columns that show how the pay was arrived at', () => {
     const rows = build();
-    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
-    expect(rows[1]).toEqual(['01/03/2026', '', 'Dana', 'Polish', '12-345-67', 15.5]);
+    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'VIN', 'Amount']);
+    expect(rows[1]).toEqual(['01/03/2026', '', 'Dana', 'Polish', '12-345-67', 'WVWZZZ1JZXW000001', 15.5]);
   });
 
   it('counts the jobs done for each service', () => {
@@ -174,13 +174,13 @@ describe('buildWorkerPaymentReport', () => {
 
   it('subtotals each service from the jobs actually listed', () => {
     const rows = build();
-    expect(summaryFor(rows, 'Wash')?.[5]).toBe(50);
-    expect(summaryFor(rows, 'Polish')?.[5]).toBe(15.5);
+    expect(summaryFor(rows, 'Wash')?.[6]).toBe(50);
+    expect(summaryFor(rows, 'Polish')?.[6]).toBe(15.5);
   });
 
   it('totals the job count and the amount owed', () => {
     const rows = build();
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 3, 65.5]);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 3, '', 65.5]);
   });
 
   /* The subtotals and the total are three separate sums over the same rows.
@@ -192,8 +192,8 @@ describe('buildWorkerPaymentReport', () => {
       job({ service: wash, worker_price: 0.2 }),
       job({ service: polish, worker_price: 0.1 }),
     ]);
-    expect(summaryFor(rows, 'Wash')?.[5]).toBe(0.3);
-    expect(rows[rows.length - 1][5]).toBe(0.4);
+    expect(summaryFor(rows, 'Wash')?.[6]).toBe(0.3);
+    expect(rows[rows.length - 1][6]).toBe(0.4);
   });
 
   it('counts a job exactly once, in one service bucket', () => {
@@ -204,30 +204,38 @@ describe('buildWorkerPaymentReport', () => {
 
   it('keeps a job with no service rather than dropping its cost', () => {
     const rows = build([job({ service: null, worker_price: 12 })]);
-    expect(summaryFor(rows, '—')).toEqual(['', '—', '', '', 1, 12]);
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 1, 12]);
+    expect(summaryFor(rows, '—')).toEqual(['', '—', '', '', 1, '', 12]);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 1, '', 12]);
   });
 
-  it('survives a job with no VIN — the sheet does not read it at all', () => {
+  it('prints the VIN next to the plate, so each paid job matches its car', () => {
+    const rows = build([job({ plate: '12-345-67', vin: 'WVWZZZ1JZXW000001', worker_price: 20 })]);
+    expect(rows[0][5]).toBe('VIN');
+    expect(rows[1].slice(4)).toEqual(['12-345-67', 'WVWZZZ1JZXW000001', 20]);
+  });
+
+  it('prints a blank VIN cell for a job with no VIN, and the amount stays put', () => {
     const rows = build([job({ vin: null, worker_price: 20 })]);
-    expect(rows[rows.length - 1][5]).toBe(20);
+    expect(rows[1][5]).toBe('');
+    expect(rows[1][6]).toBe(20);
+    expect(rows[rows.length - 1][6]).toBe(20);
     expect(flat(rows)).not.toContain('null');
   });
 
   it('produces a header and an empty summary when the worker did nothing', () => {
     const rows = build([]);
-    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount']);
-    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 0, 0]);
+    expect(rows[0]).toEqual(['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'VIN', 'Amount']);
+    expect(rows[rows.length - 1]).toEqual(['', 'Total', '', '', 0, '', 0]);
   });
 
   it('falls back to the selected worker when the job carries no worker record', () => {
     const rows = build([job({ worker: null, worker_price: 12 })]);
     expect(rows[1][2]).toBe('Dana');
-    expect(rows[rows.length - 1][5]).toBe(12);
+    expect(rows[rows.length - 1][6]).toBe(12);
   });
 
   it('keeps amounts numeric so the sheet can be summed and formatted', () => {
-    expect(typeof build([job({ worker_price: 25 })])[1][5]).toBe('number');
+    expect(typeof build([job({ worker_price: 25 })])[1][6]).toBe('number');
   });
 
   it('names the site each job was done at', () => {
@@ -253,9 +261,10 @@ describe('through SheetJS', () => {
     );
     const sheet = XLSX.utils.aoa_to_sheet(rows);
 
-    // Column F is Amount; row 2 is the first data row.
-    expect(sheet.F2.t).toBe('n');
-    expect(sheet.F2.v).toBe(25);
+    // Column G is Amount (F is VIN); row 2 is the first data row.
+    expect(sheet.G2.t).toBe('n');
+    expect(sheet.G2.v).toBe(25);
+    expect(sheet.F2.v).toBe('WVWZZZ1JZXW000001');
   });
 
   it('round-trips the customer report back to the configured headers', async () => {
@@ -342,11 +351,11 @@ describe('Hebrew exports', () => {
       'he-IL',
       'he',
     );
-    expect(rows[0]).toEqual(['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'סכום']);
+    expect(rows[0]).toEqual(['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'שלדה', 'סכום']);
     expect(rows[1][3]).toBe('שטיפה');
     expect(rows.find((r) => r[0] === 'סיכום')).toBeTruthy();
-    expect(rows.find((r) => r[1] === 'שירות')?.slice(2)).toEqual(['', '', 'עבודות', 'סכום']);
-    expect(rows[rows.length - 1]).toEqual(['', 'סה"כ', '', '', 1, 10]);
+    expect(rows.find((r) => r[1] === 'שירות')?.slice(2)).toEqual(['', '', 'עבודות', '', 'סכום']);
+    expect(rows[rows.length - 1]).toEqual(['', 'סה"כ', '', '', 1, '', 10]);
   });
 
   it('translates the stats sheet', () => {
@@ -456,14 +465,14 @@ describe('a job with several services', () => {
       const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', mode);
       const dataRows = rows.slice(1, rows.indexOf(rows.find((r) => r.length === 0)!));
       const total = rows[rows.length - 1];
-      expect(total).toEqual(['', 'Total', '', '', 3, 70.33]);
-      expect(sum(dataRows.map((r) => r[5]))).toBe(70.33);
-      expect(sum(summaryRows(rows).map((r) => r[5]))).toBe(70.33);
+      expect(total).toEqual(['', 'Total', '', '', 3, '', 70.33]);
+      expect(sum(dataRows.map((r) => r[6]))).toBe(70.33);
+      expect(sum(summaryRows(rows).map((r) => r[6]))).toBe(70.33);
     });
 
     it('grouped: one row per job with its services joined and its whole amount', () => {
       const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', 'grouped');
-      expect(rows.slice(1, 4).map((r) => [r[3], r[5]])).toEqual([
+      expect(rows.slice(1, 4).map((r) => [r[3], r[6]])).toEqual([
         ['', 12],
         ['Wash, Polish', 33.33],
         ['Wash', 25],
@@ -472,7 +481,7 @@ describe('a job with several services', () => {
 
     it('separate: one row per service with that line amount', () => {
       const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', 'separate');
-      expect(rows.slice(1, 5).map((r) => [r[3], r[5]])).toEqual([
+      expect(rows.slice(1, 5).map((r) => [r[3], r[6]])).toEqual([
         ['', 12],
         ['Wash', 19.99],
         ['Polish', 13.34],
@@ -483,9 +492,9 @@ describe('a job with several services', () => {
     /* Counted per service, so the service counts (2 + 1 + 1) exceed the 3 jobs. */
     it.each(['grouped', 'separate'] as const)('%s: the summary is per service from the line amounts', (mode) => {
       const rows = buildWorkerPaymentReport(jobs, 'Avi', 'en-GB', 'en', mode);
-      expect(summaryFor(rows, 'Wash')?.slice(4)).toEqual([2, 44.99]);
-      expect(summaryFor(rows, 'Polish')?.slice(4)).toEqual([1, 13.34]);
-      expect(summaryFor(rows, '—')?.slice(4)).toEqual([1, 12]);
+      expect(summaryFor(rows, 'Wash')?.slice(4)).toEqual([2, '', 44.99]);
+      expect(summaryFor(rows, 'Polish')?.slice(4)).toEqual([1, '', 13.34]);
+      expect(summaryFor(rows, '—')?.slice(4)).toEqual([1, '', 12]);
     });
 
     it('defaults to grouped', () => {
@@ -513,7 +522,7 @@ describe('exportService — Hebrew fallback and rounding (0033 QA)', () => {
       { name_en: 'B', catalog_number: 'B', amount: 0.2 },
     ] });
     const rows = buildWorkerPaymentReport([j], 'Avi', 'en-GB', 'en', 'grouped');
-    expect(rows[1][5]).toBe(0.3);
-    expect(rows[rows.length - 1][5]).toBe(0.3);
+    expect(rows[1][6]).toBe(0.3);
+    expect(rows[rows.length - 1][6]).toBe(0.3);
   });
 });

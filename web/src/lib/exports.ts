@@ -185,12 +185,12 @@ export function buildMyJobsSheet(rows: MyJobsRow[], headers: string[]): Cell[][]
 
 const PAYMENT_LABELS: Record<ExportLang, { headers: string[]; summary: string[]; total: string }> = {
   en: {
-    headers: ['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', 'Amount'],
+    headers: ['Date', 'Site', 'Worker', 'Work performed', 'Vehicle registration number', SHEET_HEADERS_BY_LANG.en.vin, 'Amount'],
     summary: ['Summary', 'Work performed', 'Jobs', 'Amount'],
     total: 'Total',
   },
   he: {
-    headers: ['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'סכום'],
+    headers: ['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', SHEET_HEADERS_BY_LANG.he.vin, 'סכום'],
     summary: ['סיכום', 'שירות', 'עבודות', 'סכום'],
     total: 'סה"כ',
   },
@@ -250,6 +250,8 @@ export function buildWorkerPaymentReport(
       job.worker?.name ?? workerName,
       service,
       job.plate ?? '',
+      // So each paid job can be matched to its car when the plate is missing or ambiguous.
+      job.vin ?? '',
       fromCents(cents),
     ];
 
@@ -265,16 +267,17 @@ export function buildWorkerPaymentReport(
 
   rows.push([]);
   rows.push([summaryLabel]);
-  rows.push(['', serviceLabel, '', '', jobsLabel, amountLabel]);
+  // Counts sit under the plate column, amounts under Amount (VIN left blank).
+  rows.push(['', serviceLabel, '', '', jobsLabel, '', amountLabel]);
 
   // Alphabetical, so the same catalog produces the same sheet order every month
   // regardless of which service happened to be logged first.
   for (const name of [...perService.keys()].sort((a, b) => a.localeCompare(b, locale))) {
     const { count, cents } = perService.get(name)!;
-    rows.push(['', name, '', '', count, fromCents(cents)]);
+    rows.push(['', name, '', '', count, '', fromCents(cents)]);
   }
 
-  rows.push(['', labels.total, '', '', ordered.length, fromCents(totalCents)]);
+  rows.push(['', labels.total, '', '', ordered.length, '', fromCents(totalCents)]);
   return rows;
 }
 

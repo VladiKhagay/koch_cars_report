@@ -415,12 +415,18 @@ export function SearchField({
   onChange,
   label,
   className = '',
+  id,
+  describedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
-  /** Placeholder and accessible name — the field carries no visible label. */
+  /** Placeholder, and the accessible name unless `id` ties the field to a visible label. */
   label: string;
   className?: string;
+  /** For a `<label htmlFor>`; that label then names the field, so aria-label is dropped. */
+  id?: string;
+  /** Id of an element that states the field's current value (aria-describedby). */
+  describedBy?: string;
 }) {
   return (
     <div className={`relative ${className}`}>
@@ -433,8 +439,10 @@ export function SearchField({
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        id={id}
         placeholder={label}
-        aria-label={label}
+        aria-label={id ? undefined : label}
+        aria-describedby={describedBy}
         className={`${fieldClass} ps-11`}
       />
     </div>
@@ -448,8 +456,9 @@ export function SearchField({
  * resolve by stylesheet order). Type stays 1rem at every width: smaller
  * triggers iOS zoom-on-focus.
  */
-const fieldBase =
-  'w-full rounded-lg border border-line-strong bg-surface px-3.5 text-base text-ink-900 transition-colors duration-150 focus:border-ink-900';
+export const fieldSkin =
+  'rounded-lg border border-line-strong bg-surface text-ink-900 transition-colors duration-150 focus:border-ink-900';
+const fieldBase = `w-full ${fieldSkin} px-3.5 text-base`;
 
 export const fieldClass = `h-control ${fieldBase}`;
 
@@ -472,9 +481,11 @@ export function DateInput({ value, className = '', ...rest }: Omit<InputHTMLAttr
     <div className={`relative w-full min-w-0 ${className}`}>
       <div
         aria-hidden
-        className={`${fieldClass} flex items-center justify-between gap-2 tabular-nums ${shown ? '' : 'text-ink-500'}`}
+        className={`${fieldClass} flex items-center justify-between gap-1.5 tabular-nums ${shown ? '' : 'text-ink-500'}`}
       >
-        <span dir="ltr">{shown || 'dd/mm/yyyy'}</span>
+        {/* min-w-0 + truncate: in a squeezed column the text gives way, never the
+            box — otherwise the icon is pushed out over the border. */}
+        <span dir="ltr" className="min-w-0 truncate">{shown || 'dd/mm/yyyy'}</span>
         <Icon name="calendar" size={18} className="shrink-0 text-ink-500" />
       </div>
       <input

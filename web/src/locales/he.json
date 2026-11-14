@@ -489,6 +489,7 @@
     "searchWorkers": "חיפוש עובדים",
     "pickWorker": "בחרו עובד",
     "noWorkerMatches": "אין עובדים בשם הזה.",
+    "clearWorker": "ניקוי הבחירה: {{name}}",
     "configTitle": "עמודות הדוח ללקוח",
     "configSummary_one": "עמודה אחת בדוח ללקוח.",
     "configSummary_two": "שתי עמודות בדוח ללקוח.",

@@ -472,6 +472,7 @@
     "searchWorkers": "Search workers",
     "pickWorker": "Select a worker",
     "noWorkerMatches": "No workers match that name.",
+    "clearWorker": "Clear {{name}}",
     "configTitle": "Customer report columns",
     "configSummary_one": "{{count}} column in the customer report.",
     "configSummary_other": "{{count}} columns in the customer report.",

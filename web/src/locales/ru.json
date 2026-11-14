@@ -490,6 +490,7 @@
     "searchWorkers": "Поиск работников",
     "pickWorker": "Выберите работника",
     "noWorkerMatches": "Нет работников с таким именем.",
+    "clearWorker": "Сбросить выбор: {{name}}",
     "configTitle": "Колонки отчёта для клиента",
     "configSummary_one": "{{count}} колонка в отчёте для клиента.",
     "configSummary_few": "{{count}} колонки в отчёте для клиента.",

@@ -4,6 +4,7 @@ import type { Site, StaffMember } from '../lib/types';
 import { MAX_COWORKERS } from '../lib/jobs';
 import Icon from './Icon';
 import { Button, IconButton, SearchField } from './ui';
+import { enterPick } from './workerPickerOptions';
 
 /**
  * Up to MAX_COWORKERS people who worked the car with the submitter.
@@ -108,10 +109,11 @@ export default function CoworkerPicker({
           className="overflow-hidden rounded-xl border border-line-strong bg-surface"
           onKeyDown={(e) => {
             if (e.key === 'Escape') close();
-            // Enter takes the top match, so a typed name is two actions: type, Enter.
-            if (e.key === 'Enter' && candidates[0]) {
+            // Enter in the search takes the top match, so a typed name is two actions: type, Enter.
+            const top = enterPick(e.key, e.target instanceof HTMLInputElement, candidates);
+            if (top) {
               e.preventDefault();
-              add(candidates[0].id);
+              add(top);
             }
           }}
         >

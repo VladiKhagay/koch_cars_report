@@ -70,7 +70,7 @@ describe('spec 4 end to end', () => {
     const p = await roundTrip(pay, SHEET_NAMES.he.payments, 'he');
     expect(p.back.SheetNames).toEqual(['תשלומים']);
     expect(p.back.Workbook?.Views?.[0]?.RTL).toBe(true);
-    expect(p.rows[0]).toEqual(['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'סכום']);
+    expect(p.rows[0]).toEqual(['תאריך', 'אתר', 'עובד', 'שירות', 'רישוי', 'שלדה', 'סכום']);
     const flatPay = p.rows.flat().map(String);
     for (const w of ['סיכום', 'עבודות', 'סה"כ']) expect(flatPay).toContain(w);
 

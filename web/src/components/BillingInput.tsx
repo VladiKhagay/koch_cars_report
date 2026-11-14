@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
-import { Spinner, fieldClass } from './ui';
+import { Spinner, fieldSkin } from './ui';
 
 /**
  * The reservation number, editable in place (grid and dashboard cards). The
@@ -68,7 +68,13 @@ export default function BillingInput({
             e.currentTarget.blur();
           }
         }}
-        className={`${fieldClass} h-10 px-2 font-mono text-sm ${fill ? 'min-w-0 flex-1' : 'w-32 shrink-0'} ${
+        /* Built on fieldSkin, not fieldClass: that one carries h-control and
+           w-full, which silently beat the height and width set here. In the grid it is a
+           table-cell input — 32px for a mouse, the 44px floor on touch; text
+           stays 16px on touch so iOS doesn't zoom on focus. */
+        className={`${fieldSkin} h-tap px-2 font-mono text-base ${
+          fill ? 'min-w-0 flex-1' : 'w-32 shrink-0 pointer-fine:h-8 pointer-fine:text-sm'
+        } ${
           state === 'error' ? 'border-danger-600 bg-danger-50' : ''
         } ${className}`}
       />

@@ -323,12 +323,12 @@ describe('payment sheet — the real chain, to the cent', () => {
     const jobs = paymentJobs([three], person, name);
     const share = shareFor(three, person);
     const grouped = buildWorkerPaymentReport(jobs, name, 'en-GB', 'en', 'grouped');
-    expect(data(grouped).map((r) => r[5])).toEqual([share]);
+    expect(data(grouped).map((r) => r[6])).toEqual([share]);
     const separate = buildWorkerPaymentReport(jobs, name, 'en-GB', 'en', 'separate');
     expect(data(separate)).toHaveLength(2);
-    expect(cents(data(separate).map((r) => r[5]))).toBe(Math.round(share * 100));
-    expect(separate[separate.length - 1][5]).toBe(share);
-    expect(grouped[grouped.length - 1][5]).toBe(share);
+    expect(cents(data(separate).map((r) => r[6]))).toBe(Math.round(share * 100));
+    expect(separate[separate.length - 1][6]).toBe(share);
+    expect(grouped[grouped.length - 1][6]).toBe(share);
   });
 
   it('Hebrew separate sheet: an untranslated line falls back to English on its own', () => {
@@ -342,7 +342,7 @@ describe('payment sheet — the real chain, to the cent', () => {
   it.each(['grouped', 'separate'] as const)('%s: a zero-service legacy job is one row at the job share', (mode) => {
     const legacy = { ...three, services: [] as never[] };
     const rows = buildWorkerPaymentReport(paymentJobs([legacy], 'co2', 'Avi'), 'Avi', 'en-GB', 'en', mode);
-    expect(data(rows).map((r) => r[5])).toEqual([33.33]);
+    expect(data(rows).map((r) => r[6])).toEqual([33.33]);
   });
 });
 

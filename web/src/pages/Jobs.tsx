@@ -175,7 +175,7 @@ function buildColumns(
           <IconButton
             icon="alertTriangle"
             label={t('jobs.duplicateAction')}
-            className="border-warn-200 bg-warn-50 text-warn-700"
+            className="border-warn-200 bg-warn-50 text-warn-700 pointer-fine:size-8"
             onClick={() => handlers.current.openDuplicate(row.original.id)}
           />
         ) : null,
@@ -595,12 +595,12 @@ export default function Jobs() {
                   </Select>
                 </label>
 
-                <label className="min-w-32 flex-1">
+                <label className="min-w-36 flex-1 sm:min-w-40">
                   <span className={filterLabelClass}>{t('jobs.from')}</span>
                   <DateInput value={from} onChange={(e) => setFrom(e.target.value)} />
                 </label>
 
-                <label className="min-w-32 flex-1">
+                <label className="min-w-36 flex-1 sm:min-w-40">
                   <span className={filterLabelClass}>{t('jobs.to')}</span>
                   <DateInput value={to} onChange={(e) => setTo(e.target.value)} />
                 </label>
