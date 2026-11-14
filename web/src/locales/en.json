@@ -67,7 +67,7 @@
     "worker": "Worker",
     "manager": "Manager",
     "admin": "Admin",
-    "carasso": "Carasso"
+    "carasso": "Viewer"
   },
   "team": {
     "title": "Team",
@@ -476,7 +476,7 @@
     "configTitle": "Customer report columns",
     "configSummary_one": "{{count}} column in the customer report.",
     "configSummary_other": "{{count}} columns in the customer report.",
-    "configHelp": "Tick the columns the customer should see and put them in the order you want them in the file. This is the one layout for every customer report; Carasso can still switch columns off for a single download.",
+    "configHelp": "Tick the columns the customer should see and put them in the order you want them in the file. This is the one layout for every customer report; viewers can still switch columns off for a single download.",
     "configSaved": "Report columns saved",
     "columns": {
       "date": "Date",
@@ -497,7 +497,7 @@
     "allMySites": "All my sites",
     "columnsTitle": "Columns in this file",
     "columnsHelp": "Switch columns on or off for this download. Your changes aren't saved.",
-    "columnsHelpAdmin": "Switch columns for this download, or save this layout as the customer report for everyone (Carasso starts from it).",
+    "columnsHelpAdmin": "Switch columns for this download, or save this layout as the customer report for everyone (viewers start from it).",
     "saveLayout": "Save as the layout",
     "layoutInSettings": "Layout in Settings",
     "serviceRows": "Jobs with several services",
@@ -627,8 +627,8 @@
     "tab": "Settings",
     "title": "Settings",
     "hideTitle": "Worker names",
-    "hideLabel": "Hide worker names from Carasso",
-    "hideHelp": "When on, Carasso users can't see who worked a job: the crew is removed from All jobs and Job details, the worker filter goes, and the Worker column is left out of their exports.",
+    "hideLabel": "Hide worker names from viewers",
+    "hideHelp": "When on, viewers can't see who worked a job: the crew is removed from All jobs and Job details, the worker filter goes, and the Worker column is left out of their exports.",
     "saved": "Saved"
   },
   "forgot": {
