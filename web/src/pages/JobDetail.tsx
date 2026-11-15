@@ -357,8 +357,8 @@ function StaffJobDetail() {
   const editDirty =
     plate !== (job.plate ?? '') ||
     vin !== (job.vin ?? '') ||
-    brand.trim() !== (job.brand ?? '') ||
-    workerNote.trim() !== (job.worker_note ?? '') ||
+    brand.trim() !== (job.brand ?? '').trim() ||
+    workerNote.trim() !== (job.worker_note ?? '').trim() ||
     date !== toLocalInput(job.created_at) ||
     selectedWorkerId !== job.worker_id ||
     siteId !== job.site_id ||

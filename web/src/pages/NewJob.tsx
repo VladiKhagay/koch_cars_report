@@ -349,8 +349,8 @@ export default function NewJob() {
       // An empty plate means "no plate" and is stored as NULL, never ''.
       plate: form.plate || null,
       vin: form.vin,
-      brand: form.brand || null,
-      workerNote: form.note || null,
+      brand: form.brand.trim() || null,
+      workerNote: form.note.trim() || null,
       serviceIds,
       plateBlob: form.platePhoto,
       vinBlob: form.vinPhoto,

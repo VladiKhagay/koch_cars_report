@@ -96,8 +96,10 @@ export function planJobEdit(job: JobFieldsBase, d: JobFieldDraft, now: number) {
     site_id: d.siteId || job.site_id,
     ...(plateChanged ? { plate: vehicle.plate } : {}),
     ...(vinChanged ? { vin: vehicle.vin, vin_valid_checksum: vehicle.vinChecksum } : {}),
-    ...(brand !== trimmedOrNull(job.brand) ? { brand } : {}),
-    ...(workerNote !== trimmedOrNull(job.worker_note) ? { worker_note: workerNote } : {}),
+    // Compared with the STORED text, not its trimmed form: a value saved with stray
+    // spaces ("Kia ") is rewritten clean the next time the job is saved.
+    ...(brand !== (job.brand ?? null) ? { brand } : {}),
+    ...(workerNote !== (job.worker_note ?? null) ? { worker_note: workerNote } : {}),
     ...(dateChanged && !dateError ? { created_at: new Date(d.date).toISOString() } : {}),
   };
   const blocked = vehicle.plateError || vehicle.vinError || vehicle.missingVin || dateError;

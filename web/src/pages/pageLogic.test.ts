@@ -466,6 +466,12 @@ describe('job detail field edit (planJobEdit)', () => {
     expect(r.changes).toMatchObject({ created_at: new Date(past).toISOString() });
   });
 
+  it('a brand stored with stray spaces is rewritten clean on save', () => {
+    const stored = { ...base, brand: 'Kia ', worker_note: ' scratch' };
+    const { changes } = planJobEdit(stored, untouched, now);
+    expect(changes).toMatchObject({ brand: 'Kia', worker_note: 'scratch' });
+  });
+
   it('trims brand and note, empty becomes null, unchanged-after-trim is not sent', () => {
     expect(plan({ brand: '  Kia ', workerNote: ' scratch ' }).changes).not.toHaveProperty('brand');
     expect(plan({ brand: '  Kia ', workerNote: ' scratch ' }).changes).not.toHaveProperty('worker_note');
