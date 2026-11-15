@@ -7,7 +7,7 @@ import { toLocalInput } from '../lib/formatDate';
 import { describePreviousJob } from '../components/previousJob';
 import type { CarassoJob, JobDailyStat, JobDailyTotal } from '../lib/types';
 import { buildCustomerReport, buildWorkerPaymentReport, type Cell } from '../lib/exports';
-import { resolveCustomerColumns } from '../lib/reportConfig';
+import { availableColumns, CUSTOMER_COLUMNS, resolveCustomerColumns } from '../lib/reportConfig';
 import { shareFor } from '../lib/jobs';
 
 const job: CarassoJob = {
@@ -277,6 +277,20 @@ describe('customer report rows — client prices per line', () => {
     const none = customerRows([{ ...job, service_name_en: null, services: [] }], 'separate');
     expect(none).toHaveLength(1);
     expect(none[0].service).toBeNull();
+  });
+
+  it('hidden prices (0038): no price header or value in either mode, even if a row still carried them', () => {
+    const all = resolveCustomerColumns({ columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })) });
+    const cols = availableColumns(all, { role: 'carasso', hideWorkerNames: false, hideClientPrices: true, multiSite: false });
+    for (const mode of ['grouped', 'separate'] as const) {
+      const grid = buildCustomerReport(customerRows([twoLines], mode), cols, 'en-GB', 'en');
+      expect(grid[0].some((h) => /Client/.test(String(h)))).toBe(false);
+      const cells = grid.flat().map(String);
+      for (const v of ['10', '20', '30', '50', '80']) expect(cells).not.toContain(v);
+    }
+    // Control: the same rows with the switch off do print them.
+    const visible = availableColumns(all, { role: 'carasso', hideWorkerNames: false, hideClientPrices: false, multiSite: false });
+    expect(buildCustomerReport(customerRows([twoLines], 'grouped'), visible, 'en-GB', 'en').flat().map(String)).toContain('80');
   });
 
   it('never carries worker pay into the customer rows', () => {

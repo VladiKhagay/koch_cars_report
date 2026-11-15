@@ -95,7 +95,7 @@ export interface ExportJob {
   /** Payment sheet: every service on the job, each with this person's `amount`. */
   services?: ExportServiceLine[] | null;
   /**
-   * Client price (admin and Carasso only). Absent for managers, who cannot read it.
+   * Client price (admin, and Carasso while hide_client_prices is off). Absent for managers, who cannot read it.
    * The builder prints them only when the price columns survive availableColumns().
    */
   client_unit_price?: number | null;

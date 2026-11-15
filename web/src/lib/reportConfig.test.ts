@@ -134,7 +134,7 @@ describe('availableColumns', () => {
     columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })),
   });
   const offered = (role: Parameters<typeof availableColumns>[1]['role'], over = {}) =>
-    availableColumns(all, { role, hideWorkerNames: false, multiSite: true, ...over }).map((c) => c.key);
+    availableColumns(all, { role, hideWorkerNames: false, hideClientPrices: false, multiSite: true, ...over }).map((c) => c.key);
 
   it('never offers client prices to a manager or a worker', () => {
     for (const role of ['manager', 'worker', undefined] as const) {
@@ -147,6 +147,43 @@ describe('availableColumns', () => {
     for (const role of ['admin', 'carasso'] as const) {
       expect(offered(role)).toEqual(expect.arrayContaining(['client_unit_price', 'client_total_price']));
     }
+  });
+
+  it('drops client prices for Carasso while the admin hides them — and only for Carasso', () => {
+    const prices = ['client_unit_price', 'client_total_price'];
+    for (const key of prices) {
+      expect(offered('carasso', { hideClientPrices: true })).not.toContain(key);
+      expect(offered('carasso', { hideClientPrices: false })).toContain(key);
+      expect(offered('admin', { hideClientPrices: true })).toContain(key);
+      expect(offered('manager', { hideClientPrices: false })).not.toContain(key);
+      expect(offered('manager', { hideClientPrices: true })).not.toContain(key);
+    }
+    // The other switch stays independent.
+    expect(offered('carasso', { hideClientPrices: true })).toContain('worker');
+  });
+
+  it('never offers client prices to a manager, worker or unknown role, whatever the switch', () => {
+    for (const role of ['manager', 'worker', undefined] as const) {
+      for (const hideClientPrices of [true, false]) {
+        expect(offered(role, { hideClientPrices })).not.toContain('client_unit_price');
+        expect(offered(role, { hideClientPrices })).not.toContain('client_total_price');
+      }
+    }
+  });
+
+  it('hiding prices leaves every other Carasso column as it was', () => {
+    const prices = ['client_unit_price', 'client_total_price'];
+    expect(offered('carasso', { hideClientPrices: true })).toEqual(
+      offered('carasso').filter((k) => !prices.includes(k)),
+    );
+    expect(offered('carasso', { hideClientPrices: true, multiSite: false })).not.toContain('site');
+  });
+
+  it('both switches on: Carasso loses Worker and both prices, admin keeps all', () => {
+    const both = { hideWorkerNames: true, hideClientPrices: true };
+    const c = offered('carasso', both);
+    for (const key of ['worker', 'client_unit_price', 'client_total_price']) expect(c).not.toContain(key);
+    expect(offered('admin', both)).toEqual(offered('admin'));
   });
 
   it('drops the Worker column for Carasso while names are hidden — and only for Carasso', () => {

@@ -41,7 +41,7 @@ async function roundTrip(rows: ReturnType<typeof buildCustomerReport>, sheet: st
 }
 
 describe('spec 4 end to end', () => {
-  const ctx = { role: 'admin' as const, hideWorkerNames: false, multiSite: true };
+  const ctx = { role: 'admin' as const, hideWorkerNames: false, hideClientPrices: false, multiSite: true };
 
   it('Hebrew customer report: exact headers, sheet, RTL view, service fallback', async () => {
     const grid = buildCustomerReport([j()], availableColumns(all, ctx), exportLocale('he'), 'he');
@@ -90,7 +90,7 @@ describe('spec 4 end to end', () => {
 
   it('column gating by role', () => {
     const keys = (role: UserRole, hide = false, multiSite = false) =>
-      availableColumns(all, { role, hideWorkerNames: hide, multiSite }).map((c) => c.key);
+      availableColumns(all, { role, hideWorkerNames: hide, hideClientPrices: false, multiSite }).map((c) => c.key);
     expect(keys('manager', false, true)).not.toContain('client_unit_price');
     expect(keys('manager', false, true)).not.toContain('client_total_price');
     expect(keys('admin')).toContain('client_total_price');
@@ -105,7 +105,7 @@ describe('spec 4 end to end', () => {
   it('a hand-built manager file never contains the client or pay numbers', () => {
     const grid = buildCustomerReport(
       [j({ worker_price: 777 })],
-      availableColumns(all, { role: 'manager', hideWorkerNames: false, multiSite: true }),
+      availableColumns(all, { role: 'manager', hideWorkerNames: false, hideClientPrices: false, multiSite: true }),
       'en-GB',
       'he',
     );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CARASSO_JOBS_VIEW, CARASSO_JOB_COLUMNS } from '../lib/carasso';
+import { CARASSO_JOBS_VIEW, CARASSO_JOB_COLUMNS, fetchAppSettings } from '../lib/carasso';
 import { serviceName } from '../lib/serviceName';
 import type { CarassoJob } from '../lib/types';
 import Icon from '../components/Icon';
@@ -14,7 +14,9 @@ import { Button, Card, DetailRow, EmptyState, Page, SectionHeading, Skeleton } f
  * Carasso's read-only job. Everything comes from `jobs_carasso` (no pay, no
  * manager note, no duplicate flag, no deleted jobs), so there is nothing here
  * to hide in the markup: what the database withholds simply is not present.
- * The crew is null while the admin hides worker names.
+ * The crew is null while the admin hides worker names, and the prices are
+ * null while the admin hides client prices (0038); the price card then goes
+ * too, rather than showing empty prices.
  */
 export default function CarassoJobDetail() {
   const { t, i18n } = useTranslation();
@@ -22,6 +24,18 @@ export default function CarassoJobDetail() {
   const navigate = useNavigate();
   const [job, setJob] = useState<CarassoJob | null>(null);
   const [loading, setLoading] = useState(true);
+  /* Hidden until the settings say otherwise, so the card never flashes in. */
+  const [hidePrices, setHidePrices] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    void fetchAppSettings().then((s) => {
+      if (live) setHidePrices(s.hideClientPrices);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -112,13 +126,15 @@ export default function CarassoJobDetail() {
             </dl>
           </Card>
 
-          <Card>
-            <SectionHeading icon="tag">{t('jobDetail.clientPrices')}</SectionHeading>
-            <dl className="space-y-3">
-              <DetailRow label={t('prices.unit')} value={formatMoney(job.client_unit_price, i18n.language)} />
-              <DetailRow label={t('prices.total')} value={formatMoney(job.client_total_price, i18n.language)} />
-            </dl>
-          </Card>
+          {!hidePrices && (
+            <Card>
+              <SectionHeading icon="tag">{t('jobDetail.clientPrices')}</SectionHeading>
+              <dl className="space-y-3">
+                <DetailRow label={t('prices.unit')} value={formatMoney(job.client_unit_price, i18n.language)} />
+                <DetailRow label={t('prices.total')} value={formatMoney(job.client_total_price, i18n.language)} />
+              </dl>
+            </Card>
+          )}
         </div>
       </div>
     </Page>

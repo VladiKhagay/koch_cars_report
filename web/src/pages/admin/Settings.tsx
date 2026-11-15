@@ -1,22 +1,82 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { fetchAppSettings, saveCustomerReportLayout, saveHideWorkerNames } from '../../lib/carasso';
+import { fetchAppSettings, saveCustomerReportLayout, saveHideClientPrices, saveHideWorkerNames } from '../../lib/carasso';
 import type { ColumnConfig } from '../../lib/reportConfig';
 import AdminTabs from '../../components/AdminTabs';
+import type { IconName } from '../../components/Icon';
 import ReportColumns from '../../components/ReportColumns';
 import StatusBanner from '../../components/StatusBanner';
 import { Button, Card, LoadingRegion, Page, PageHeading, SectionHeading } from '../../components/ui';
 
 type Outcome = 'saved' | 'error' | null;
 
-/** App-wide admin settings: whether Carasso sees worker names, and the one customer-report layout. */
+/** One admin on/off switch: saves on change and reports the outcome in place. */
+function SettingSwitch({
+  icon,
+  title,
+  label,
+  help,
+  initial,
+  save,
+}: {
+  icon: IconName;
+  title: string;
+  label: string;
+  help: string;
+  initial: boolean;
+  save: (next: boolean) => PromiseLike<{ error: unknown }>;
+}) {
+  const { t } = useTranslation();
+  const [on, setOn] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Outcome>(null);
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    setResult(null);
+    const { error } = await save(next);
+    setBusy(false);
+    if (error) return setResult('error');
+    setOn(next);
+    setResult('saved');
+  }
+
+  return (
+    <Card className="space-y-3">
+      <SectionHeading icon={icon}>{title}</SectionHeading>
+      <label className="flex min-h-tap items-start gap-3">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => void toggle(e.target.checked)}
+          className="mt-0.5 size-5 shrink-0 accent-ink-900"
+        />
+        <span className="text-sm font-medium text-ink-900">{label}</span>
+      </label>
+      <p className="text-sm text-ink-600">{help}</p>
+      {result === 'saved' && (
+        <StatusBanner tone="success" live>
+          {t('settings.saved')}
+        </StatusBanner>
+      )}
+      {result === 'error' && (
+        <StatusBanner tone="error" live>
+          {t('common.error')}
+        </StatusBanner>
+      )}
+    </Card>
+  );
+}
+
+/** App-wide admin settings: what Carasso sees (worker names, client prices), and the one customer-report layout. */
 export default function AdminSettings() {
   const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
-  const [hide, setHide] = useState(false);
+  const [hideNames, setHideNames] = useState(false);
+  const [hidePrices, setHidePrices] = useState(false);
   const [columns, setColumns] = useState<ColumnConfig[]>([]);
-  const [hideBusy, setHideBusy] = useState(false);
-  const [hideResult, setHideResult] = useState<Outcome>(null);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutResult, setLayoutResult] = useState<Outcome>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -24,21 +84,12 @@ export default function AdminSettings() {
   useEffect(() => {
     void fetchAppSettings().then((s) => {
       setLoadFailed(!s.ok);
-      setHide(s.hideWorkerNames);
+      setHideNames(s.hideWorkerNames);
+      setHidePrices(s.hideClientPrices);
       setColumns(s.customerReportColumns);
       setLoaded(true);
     });
   }, []);
-
-  async function toggleHide(next: boolean) {
-    setHideBusy(true);
-    setHideResult(null);
-    const { error } = await saveHideWorkerNames(next);
-    setHideBusy(false);
-    if (error) return setHideResult('error');
-    setHide(next);
-    setHideResult('saved');
-  }
 
   async function saveLayout() {
     setLayoutBusy(true);
@@ -60,31 +111,22 @@ export default function AdminSettings() {
 
       {loaded && !loadFailed && (
         <>
-          <Card className="space-y-3">
-            <SectionHeading icon="lock">{t('settings.hideTitle')}</SectionHeading>
-            <label className="flex min-h-tap items-start gap-3">
-              <input
-                type="checkbox"
-                role="switch"
-                checked={hide}
-                disabled={hideBusy}
-                onChange={(e) => void toggleHide(e.target.checked)}
-                className="mt-0.5 size-5 shrink-0 accent-ink-900"
-              />
-              <span className="text-sm font-medium text-ink-900">{t('settings.hideLabel')}</span>
-            </label>
-            <p className="text-sm text-ink-600">{t('settings.hideHelp')}</p>
-            {hideResult === 'saved' && (
-              <StatusBanner tone="success" live>
-                {t('settings.saved')}
-              </StatusBanner>
-            )}
-            {hideResult === 'error' && (
-              <StatusBanner tone="error" live>
-                {t('common.error')}
-              </StatusBanner>
-            )}
-          </Card>
+          <SettingSwitch
+            icon="lock"
+            title={t('settings.hideTitle')}
+            label={t('settings.hideLabel')}
+            help={t('settings.hideHelp')}
+            initial={hideNames}
+            save={saveHideWorkerNames}
+          />
+          <SettingSwitch
+            icon="tag"
+            title={t('settings.pricesTitle')}
+            label={t('settings.pricesLabel')}
+            help={t('settings.pricesHelp')}
+            initial={hidePrices}
+            save={saveHideClientPrices}
+          />
 
           <Card className="space-y-3">
             <SectionHeading icon="clipboard">{t('export.configTitle')}</SectionHeading>

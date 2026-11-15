@@ -154,6 +154,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
 | `0035_worker_media_edit.sql` | `photos_update` worker branch (own job, 15-minute window, not deleted; never removes plate/VIN), `photos_insert` refuses removed rows, `can_write_photo` worker branches all need a live job |
 | `0036_vin_required_plate_optional.sql` | `jobs.vin` NOT NULL (refuses to run while any job, soft-deleted included, has a NULL or blank VIN), `jobs_plate_or_vin_chk` dropped, `jobs.plate` stays nullable |
+| `0038_hide_client_prices.sql` | `app_settings` key `hide_client_prices` (default false), admin-only `set_hide_client_prices()`, both Carasso price policies and `jobs_carasso` withhold client prices while it is on |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -185,6 +186,7 @@ jobs(id, site_id, worker_id, created_at, plate, vin, brand,
 job_services(job_id, service_id, worker_price, created_at)   -- PK (job, service), >= 1 per job
 job_service_client_prices(job_id, service_id, unit_price, total_price)  -- admin/Carasso
 job_client_prices(job_id, unit_price, total_price)  -- per-job sum, NULL if any line unpriced
+app_settings(key, value)  -- admin switches: hide_worker_names, hide_client_prices (0038); customer_report_config
 photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at,
        removed_at)            -- tombstone (0034): slot removed by a manager/admin
 audit_log(id, job_id, user_id, action, changes_jsonb, at)   -- trigger-written (0034)
@@ -300,6 +302,17 @@ an empty or malformed VIN; `submitJob` refuses a VIN-less payload before
 photos), and 23502 is a permanent error. My Jobs searches plate and VIN.
 
 **Deploy order: 0036 -> web. Rollback: web only; 0036 down is commented.**
+
+**Hide client prices from viewers (0038).** A second admin switch on Settings,
+next to worker names: while on, Carasso gets no client prices from either
+price table (RLS) or from `jobs_carasso` (NULLs; admin unaffected), the Job
+details price card goes, and the price columns leave its exports. Default off
+(today's behaviour); a missing key row also reads as off, a failed settings
+read as on.
+
+**Deploy order: 0038 -> web -> then turn the switch on. Rollback: web -> 0038
+down** (commented at the end of the migration). Run `supabase/verify_0038.sql`;
+behaviour in `supabase/scenarios_0038.sql` (branch DB only).
 
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.

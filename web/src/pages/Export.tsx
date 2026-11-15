@@ -126,6 +126,7 @@ export default function Export() {
   /* The one saved layout, plus this download's own toggles on top of it (never saved by a non-admin). */
   const [columns, setColumns] = useState<ColumnConfig[] | null>(null);
   const [hideNames, setHideNames] = useState(true);
+  const [hidePrices, setHidePrices] = useState(true);
   const [settingsFailed, setSettingsFailed] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutResult, setLayoutResult] = useState<'saved' | 'error' | null>(null);
@@ -136,6 +137,7 @@ export default function Export() {
       if (!live) return;
       setSettingsFailed(!s.ok);
       setHideNames(s.hideWorkerNames);
+      setHidePrices(s.hideClientPrices);
       setColumns(s.customerReportColumns);
     });
     return () => {
@@ -145,7 +147,7 @@ export default function Export() {
 
   /** Admin or Carasso with no site picked = every site they may see: one file, with a Site column. */
   const multiSite = canSwitch && siteId === null && sites.length > 1;
-  const shown = columns ? availableColumns(columns, { role, hideWorkerNames: hideNames, multiSite }) : [];
+  const shown = columns ? availableColumns(columns, { role, hideWorkerNames: hideNames, hideClientPrices: hidePrices, multiSite }) : [];
   const visibleCount = shown.filter((c) => c.visible).length;
   /** Managers are pinned to a site (set by the scope hook); the others read every site they may. */
   const scopeReady = canSwitch ? sites.length > 0 : Boolean(siteId);

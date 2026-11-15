@@ -112,7 +112,7 @@ export function moveColumn(columns: ColumnConfig[], index: number, direction: -1
   return next;
 }
 
-/** Columns that carry what the importer is billed. Only admin and Carasso may be offered them. */
+/** Columns that carry what the importer is billed. Only admin, and Carasso while the admin allows it, may be offered them. */
 export const CLIENT_PRICE_COLUMNS: readonly CustomerColumnKey[] = ['client_unit_price', 'client_total_price'];
 
 /** Who is exporting, and the app state that narrows what they may include. */
@@ -120,18 +120,21 @@ export interface ExportContext {
   role: UserRole | undefined;
   /** The admin switch (app_settings.hide_worker_names). Only restricts Carasso. */
   hideWorkerNames: boolean;
+  /** The admin switch (app_settings.hide_client_prices). Only restricts Carasso. */
+  hideClientPrices: boolean;
   /** More than one site in the file: the Site column is only offered then. */
   multiSite: boolean;
 }
 
 /**
  * The columns a person may be offered, and so may export. Everything is
- * default-deny: client prices need admin or Carasso (a manager never reads
- * them, so the cells would be blank anyway), the Worker column goes while the
- * admin hides worker names from Carasso, and Site needs a multi-site file.
+ * default-deny: client prices need admin, or Carasso while the admin has not
+ * hidden them (a manager never reads them, so the cells would be blank
+ * anyway), the Worker column goes while the admin hides worker names from
+ * Carasso, and Site needs a multi-site file.
  */
 export function availableColumns(columns: ColumnConfig[], ctx: ExportContext): ColumnConfig[] {
-  const seesPrices = ctx.role === 'admin' || ctx.role === 'carasso';
+  const seesPrices = ctx.role === 'admin' || (ctx.role === 'carasso' && !ctx.hideClientPrices);
   const namesHidden = ctx.role === 'carasso' && ctx.hideWorkerNames;
   return columns.filter((c) => {
     if (CLIENT_PRICE_COLUMNS.includes(c.key)) return seesPrices;

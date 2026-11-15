@@ -37,27 +37,44 @@ export async function fetchCarassoCrew(): Promise<Pick<StaffMember, 'id' | 'name
 
 export interface AppSettings {
   hideWorkerNames: boolean;
+  /** Client prices withheld from Carasso (0038). The database enforces it too. */
+  hideClientPrices: boolean;
   /** The one customer-report layout, already through the allowlist. */
   customerReportColumns: ColumnConfig[];
 }
 
 /**
- * The admin settings, readable by admin, manager and Carasso (0027). Fails
- * safe: if the read fails, names stay hidden and the layout is empty.
+ * The app_settings rows as settings. Fails safe: if the read failed, names
+ * and prices stay hidden and the layout is empty. A missing key row is "off"
+ * (the default), so a build ahead of its migration changes nothing.
  */
-export async function fetchAppSettings(): Promise<AppSettings & { ok: boolean }> {
-  const { data, error } = await supabase.from('app_settings').select('key, value');
-  const byKey = new Map((data ?? []).map((r) => [r.key as string, r.value as unknown]));
+export function settingsFrom(
+  rows: { key: string; value: unknown }[] | null,
+  error: unknown,
+): AppSettings & { ok: boolean } {
+  const byKey = new Map((rows ?? []).map((r) => [r.key, r.value]));
   return {
     ok: !error,
     hideWorkerNames: error ? true : byKey.get('hide_worker_names') === true,
+    hideClientPrices: error ? true : byKey.get('hide_client_prices') === true,
     customerReportColumns: resolveCustomerColumns(byKey.get('customer_report_config')),
   };
+}
+
+/** The admin settings, readable by admin, manager and Carasso (0027). */
+export async function fetchAppSettings(): Promise<AppSettings & { ok: boolean }> {
+  const { data, error } = await supabase.from('app_settings').select('key, value');
+  return settingsFrom(data as { key: string; value: unknown }[] | null, error);
 }
 
 /** Admin only. */
 export function saveHideWorkerNames(hide: boolean) {
   return supabase.rpc('set_hide_worker_names', { p_hide: hide });
+}
+
+/** Admin only. */
+export function saveHideClientPrices(hide: boolean) {
+  return supabase.rpc('set_hide_client_prices', { p_hide: hide });
 }
 
 /** Admin only: saves the single global layout (server allowlist applies). */

@@ -295,7 +295,7 @@ describe('Hebrew exports', () => {
     client_unit_price: 12.5,
     client_total_price: 50,
   });
-  const ctx = { role: 'carasso' as const, hideWorkerNames: false, multiSite: true };
+  const ctx = { role: 'carasso' as const, hideWorkerNames: false, hideClientPrices: false, multiSite: true };
   const he = (jobs: ExportJob[], c = allColumns) =>
     buildCustomerReport(jobs, availableColumns(c, ctx), exportLocale('he'), 'he');
 
@@ -373,8 +373,13 @@ describe('Hebrew exports', () => {
 describe('who may export what', () => {
   const all = resolveCustomerColumns({ columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: true })) });
   const priced = job({ client_unit_price: 12.5, client_total_price: 50 });
-  const sheet = (role: 'manager' | 'admin' | 'carasso', hide = false) =>
-    buildCustomerReport([priced], availableColumns(all, { role, hideWorkerNames: hide, multiSite: false }), 'en-GB', 'en');
+  const sheet = (role: 'manager' | 'admin' | 'carasso', hide = false, hidePrices = false) =>
+    buildCustomerReport(
+      [priced],
+      availableColumns(all, { role, hideWorkerNames: hide, hideClientPrices: hidePrices, multiSite: false }),
+      'en-GB',
+      'en',
+    );
 
   it('a manager file carries no client price column or value, even if the job row did', () => {
     const rows = sheet('manager');
@@ -385,6 +390,26 @@ describe('who may export what', () => {
 
   it('an admin file carries them', () => {
     expect(sheet('admin')[0]).toEqual(expect.arrayContaining(['Client unit price (₪)', 'Client total price (₪)']));
+  });
+
+  it('a Carasso file has no client price column or value while prices are hidden; an admin file still does', () => {
+    const rows = sheet('carasso', false, true);
+    expect(rows[0].some((h) => /Client/.test(String(h)))).toBe(false);
+    expect(flat(rows)).not.toContain('12.5');
+    expect(flat(rows)).not.toContain('50');
+    expect(sheet('carasso')[0]).toContain('Client total price (₪)');
+    expect(sheet('admin', false, true)[0]).toContain('Client total price (₪)');
+  });
+
+  it('a layout of only price columns leaves a hidden Carasso nothing to export, without crashing', () => {
+    const onlyPrices = resolveCustomerColumns({
+      columns: CUSTOMER_COLUMNS.map((key) => ({ key, visible: key === 'client_unit_price' || key === 'client_total_price' })),
+    });
+    const cols = availableColumns(onlyPrices, { role: 'carasso', hideWorkerNames: false, hideClientPrices: true, multiSite: false });
+    // Export.tsx disables the button on zero visible columns.
+    expect(cols.filter((c) => c.visible)).toHaveLength(0);
+    const rows = buildCustomerReport([priced], cols, 'en-GB', 'en');
+    expect(rows).toEqual([[], []]);
   });
 
   it('a Carasso file has no Worker column while names are hidden', () => {

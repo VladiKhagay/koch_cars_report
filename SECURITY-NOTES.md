@@ -262,6 +262,22 @@ line carrying its own pay snapshot; client prices per line in
 Workers and managers have no access. `jobs_carasso.services` carries names and
 client prices, never worker pay.
 
+**Hidden client prices (0038).** While the admin switch
+`app_settings.hide_client_prices` is on, Carasso's select on both
+`job_client_prices` and `job_service_client_prices` matches no row (the policy
+adds `not <switch>`; a missing key row counts as off), and `jobs_carasso`
+returns `client_unit_price`, `client_total_price` and each `services[]`
+element's price keys as NULL for a Carasso caller (admin still sees them).
+Both layers are required: the policies cover a direct table read, but
+`jobs_carasso` is owner-rights and reads the price tables past RLS, so it has
+to blank them itself. Only `set_hide_client_prices` (security definer, admin
+only, anon revoked) writes the switch. The web hides the Job details price
+card and the export price columns too, failing closed (hidden) when the
+settings cannot be read; that is UX, not the control. The two policies read the
+switch with the caller's own rights, so they rely on `app_settings_select`
+admitting Carasso: narrowing that policy later would make them read "off" and
+show prices again (the view is unaffected). Keep them in step.
+
 Price snapshot (trigger `job_services_guard`, security definer): on insert,
 every signed-in caller gets the catalog `services.worker_price`, whatever the
 client sent; only the trusted context (no app user: SQL editor, service role)

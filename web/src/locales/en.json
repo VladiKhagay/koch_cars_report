@@ -630,6 +630,9 @@
     "hideTitle": "Worker names",
     "hideLabel": "Hide worker names from viewers",
     "hideHelp": "When on, viewers can't see who worked a job: the crew is removed from All jobs and Job details, the worker filter goes, and the Worker column is left out of their exports.",
+    "pricesTitle": "Client prices",
+    "pricesLabel": "Hide client prices from viewers",
+    "pricesHelp": "When on, viewers can't see client prices: the Client prices section is removed from Job details and the price columns are left out of their exports.",
     "saved": "Saved"
   },
   "forgot": {
