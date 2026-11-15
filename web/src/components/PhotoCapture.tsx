@@ -19,9 +19,13 @@ interface Props {
   onCapture: (blob: Blob, original: Blob) => void;
   /** Says so on the empty tile, so a skippable photo doesn't read as a demand. */
   optional?: boolean;
+  /** Says so on the empty tile, mirroring Field's `required` marker. */
+  required?: boolean;
+  /** Set once submit was tried without this required photo; shown under the empty tile. */
+  missing?: string | null;
   /** "Type it in" pressed — parent should focus the manual input. */
   onTypeItIn?: () => void;
-  /** Offered only where a photo is optional, so a required slot can't be emptied. */
+  /** Removing a required photo is allowed: submit then lists it as missing again. */
   onRemove?: () => void;
 }
 
@@ -31,6 +35,8 @@ export default function PhotoCapture({
   busy,
   error,
   optional,
+  required,
+  missing,
   onCapture,
   onTypeItIn,
   onRemove,
@@ -122,7 +128,11 @@ export default function PhotoCapture({
       {state === 'empty' && (
                 /* Two ways in, not one big button: nesting controls inside a tappable tile
                    would put controls inside a control. The camera keeps the visual weight. */
-        <div className={`${shell.replace('min-h-44', 'min-h-36')} relative border-dashed border-line-strong bg-surface p-1 text-ink-900`}>
+        <div
+          className={`${shell.replace('min-h-44', 'min-h-36')} relative border-dashed ${
+            missing ? 'border-danger-600 bg-danger-50' : 'border-line-strong bg-surface'
+          } p-1 text-ink-900`}
+        >
           {/* The tile itself is the camera button: one big target, no second
               "Take photo" button to aim for. Content starts at the top, not the
               middle, so two tiles side by side line up even when one label
@@ -136,6 +146,7 @@ export default function PhotoCapture({
             <span className="text-balance text-center text-sm font-semibold">
               {label}
               {optional && <span className="block text-xs font-medium text-ink-500">{t('common.optional')}</span>}
+              {required && <span className="block text-xs font-medium text-ink-500">{t('common.required')}</span>}
             </span>
           </button>
           {/* Gallery is the rare path, so it is a corner icon rather than a
@@ -205,6 +216,14 @@ export default function PhotoCapture({
             )}
           </div>
         </div>
+      )}
+
+      {/* Same look as Field's error line. */}
+      {state === 'empty' && missing && (
+        <p className="mt-1.5 flex items-start gap-1.5 text-sm font-medium text-danger-700">
+          <Icon name="alertCircle" size={16} className="mt-0.5 shrink-0" />
+          <span>{missing}</span>
+        </p>
       )}
 
       {/* Sits outside the state blocks because a rejected file leaves the tile

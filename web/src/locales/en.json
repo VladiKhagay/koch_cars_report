@@ -162,6 +162,7 @@
     "plateInvalid": "Doesn't look like a valid plate — check and edit if needed",
     "vinInvalid": "VIN must be 17 characters (no I, O, or Q)",
     "vinRequired": "Enter the VIN",
+    "vinPhotoRequired": "Take a photo of the VIN",
     "vinChecksumWarning": "VIN checksum doesn't match — common for imported vehicles, double check the photo",
     "serviceRequired": "Pick at least one service",
     "queuedOffline": "No connection — saved on this phone and it will submit automatically once you're back online",

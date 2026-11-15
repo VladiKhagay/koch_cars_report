@@ -98,7 +98,8 @@ the same query under three different identities.
   matching VIN or plate, at any site, any time (0029; soft, never blocks).
 - The VIN is **required** (0036, `jobs.vin NOT NULL`): New Job will not submit
   without a well-formed one, and there is no placeholder to type around it.
-  Photos stay optional.
+  The VIN photo is required too (New Job blocks without it); the plate
+  photo and the extra photos stay optional.
 - The plate is **optional**: a car with no physical plate stores `NULL` —
   never `''` or a placeholder — and duplicate detection, search and both
   reports treat that as "not known" rather than as a value. A plate that is

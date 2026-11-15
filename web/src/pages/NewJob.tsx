@@ -57,7 +57,7 @@ const emptyForm = {
 /** How long the "job submitted" confirmation stays up before it self-clears. */
 const SUCCESS_TTL_MS = 8000;
 
-type ProblemId = 'plate' | 'vin' | 'service';
+type ProblemId = 'vinPhoto' | 'plate' | 'vin' | 'service';
 
 function formIsEmpty(f: typeof emptyForm) {
   return (
@@ -276,6 +276,16 @@ export default function NewJob() {
 
     /** Everything blocking submission, in on-screen order, so Submit never silently does nothing. */
   const problems: { id: ProblemId; label: string; focus: () => void }[] = [];
+  // Required (user decision): the VIN photo is the record of what was read. Plate photo stays optional.
+  if (!form.vinPhoto)
+    problems.push({
+      id: 'vinPhoto',
+      label: t('newJob.vinPhotoRequired'),
+      focus: () => {
+        scrollTo(vinPhotoRef.current);
+        vinPhotoRef.current?.querySelector('button')?.focus();
+      },
+    });
   if (form.plate && !plateFormatValid)
     problems.push({
       id: 'plate',
@@ -332,7 +342,7 @@ export default function NewJob() {
     if (!appUser || !siteId || submitting) return;
     setConfirming(null);
     /* Re-checked here: the form stays editable while the duplicate notice is
-       up, so "Submit anyway" may come after the VIN was cleared or broken. */
+       up, so "Submit anyway" may come after the VIN or its photo was cleared. */
     if (problems.length > 0) {
       setAttempted(true);
       problems[0].focus();
@@ -433,7 +443,8 @@ export default function NewJob() {
                 label={t('newJob.vinPhoto')}
                 photo={form.vinPhoto}
                 busy={ocrBusy.vin}
-                optional
+                required
+                missing={attempted && !form.vinPhoto ? t('newJob.vinPhotoRequired') : null}
                 error={ocrIssue.vin ? t(`newJob.ocrReasons.${ocrIssue.vin}`) : null}
                 onCapture={(b, original) => void handleVinCapture(b, original)}
                 onTypeItIn={() => vinInputRef.current?.focus()}
