@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { searchTerm } from './search';
+import { LOOKUP_MIN, lookupQuery, searchTerm } from './search';
 
 describe('searchTerm', () => {
   it('keeps ordinary plate and VIN queries intact', () => {
@@ -39,5 +39,24 @@ describe('searchTerm', () => {
 
   it('caps length so a pasted essay never reaches the URL', () => {
     expect(searchTerm('a'.repeat(200))).toHaveLength(40);
+  });
+});
+
+describe('lookupQuery', () => {
+  it('upper-cases and keeps only A-Z and 0-9, as lookup_vehicle (0037)', () => {
+    expect(lookupQuery(' wvw-zzz 1j ')).toBe('WVWZZZ1J');
+    expect(lookupQuery('123-45-678')).toBe('12345678');
+  });
+
+  it('drops LIKE metacharacters, quotes and SQL-looking input', () => {
+    expect(lookupQuery('%_\\%')).toBe('');
+    expect(lookupQuery("' or '1'='1")).toBe('OR11');
+    expect(lookupQuery("'; drop table jobs;--")).toBe('DROPTABLEJOBS');
+  });
+
+  it('counts only kept characters toward the minimum', () => {
+    expect(lookupQuery('12-3').length).toBeLessThan(LOOKUP_MIN);
+    expect(lookupQuery('1234').length).toBe(LOOKUP_MIN);
+    expect(lookupQuery('אבגד').length).toBe(0);
   });
 });

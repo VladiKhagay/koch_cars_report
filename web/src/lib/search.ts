@@ -16,3 +16,15 @@ export function searchTerm(raw: string): string {
   // left alone — a billing code's hyphens are part of the value.
   return /^[\d -]+$/.test(clean) ? clean.replace(/[ -]/g, '') : clean;
 }
+
+/** Car lookup (0037) searches "contains" from this many normalised characters. */
+export const LOOKUP_MIN = 4;
+
+/**
+ * The Car lookup query as `lookup_vehicle` normalises it (0037): upper case,
+ * only A-Z and 0-9 kept (spaces, hyphens, quotes, % and _ dropped). The server
+ * re-applies the same rule, so this only drives the button and the hint.
+ */
+export function lookupQuery(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}

@@ -468,3 +468,40 @@ Accepted (low):
 - [ ] Rollback: **web -> 0035 down** (the commented block in the migration
       header): restores the 0034 `photos_update`, the 0031 `photos_insert` and
       the 0031 `can_write_photo`.
+
+## 8. Partial plate / VIN lookup (migration 0037)
+
+`lookup_vehicle` now matches "contains" instead of exact. 0018 refused that
+because it lets a caller page through every job one fragment at a time; the
+product owner accepted that trade-off (workers often see only part of a dirty
+plate or VIN). What bounds it:
+
+- Staff only: `current_app_user()` role must be worker, manager or admin (as
+  0033). The read-only role and unknown users get `forbidden`; anon has no
+  EXECUTE.
+- At least 4 characters after normalisation, at most 17; raw input over 64
+  characters returns nothing before any regex runs.
+- At most 100 rows per call, newest first. 100 is unchanged from 0018/0033: a
+  lower cap does not slow an enumerator (more fragments do the same work) and
+  only hides real matches from the worker.
+- Same columns as before: date, site, plate, VIN, brand, service names. Never
+  the worker, notes, billing code or price.
+
+Injection: no dynamic SQL. The query is static plpgsql with the pattern bound
+as a value. Input is reduced to `[A-Z0-9]` first, and `\`, `%`, `_` are still
+escaped in the LIKE pattern (`escape '\'`) so a wider allowlist later cannot
+turn them into wildcards. `supabase/scenarios_0037.sql` covers `%`, `_`,
+quotes and SQL-looking strings.
+
+Accepted (lead decision): enumeration of plate/VIN/brand/site/service history
+by any active staff account, bounded as above. Not rate-limited server-side.
+
+- [ ] Deploy order: **0037 -> web**. 0037 alone keeps the old web working (an
+      exact plate or VIN still matches).
+- [ ] Precondition: `select extnamespace::regnamespace from pg_extension where
+      extname = 'pg_trgm';` returns nothing or `extensions`.
+- [ ] Run `supabase/verify_0037.sql` (read-only): every row `ok`.
+- [ ] Optional, local/branch database only: `supabase/scenarios_0037.sql`
+      (impersonates users, ends in ROLLBACK).
+- [ ] Rollback: **web -> 0037 down** (commented block in the migration
+      header): drops the two trigram indexes and restores the 0033 body.

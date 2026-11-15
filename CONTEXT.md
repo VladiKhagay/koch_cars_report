@@ -154,6 +154,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
 | `0035_worker_media_edit.sql` | `photos_update` worker branch (own job, 15-minute window, not deleted; never removes plate/VIN), `photos_insert` refuses removed rows, `can_write_photo` worker branches all need a live job |
 | `0036_vin_required_plate_optional.sql` | `jobs.vin` NOT NULL (refuses to run while any job, soft-deleted included, has a NULL or blank VIN), `jobs_plate_or_vin_chk` dropped, `jobs.plate` stays nullable |
+| `0037_partial_vehicle_lookup.sql` | `pg_trgm` (schema `extensions`), trigram GIN indexes on `jobs.vin` / `jobs.plate` (live jobs), `lookup_vehicle()` matches "contains" from 4 normalised characters |
 | `0038_hide_client_prices.sql` | `app_settings` key `hide_client_prices` (default false), admin-only `set_hide_client_prices()`, both Carasso price policies and `jobs_carasso` withhold client prices while it is on |
 
 ### Infrastructure
@@ -302,6 +303,19 @@ an empty or malformed VIN; `submitJob` refuses a VIN-less payload before
 photos), and 23502 is a permanent error. My Jobs searches plate and VIN.
 
 **Deploy order: 0036 -> web. Rollback: web only; 0036 down is commented.**
+
+**Partial plate/VIN lookup (0037).** Car lookup finds any job whose VIN, or
+plate, contains the query. `lookup_vehicle` normalises server-side (upper
+case, `[A-Z0-9]` only, 4..17 characters, raw input over 64 returns nothing);
+digits match plate or VIN, anything with a letter matches the VIN only. Plain
+parameterised plpgsql, LIKE metacharacters escaped anyway; trigram GIN
+indexes keep it an index scan. The web mirrors the rule (`lookupQuery` in
+`lib/search.ts`): Search stays disabled under 4 characters, one RPC per press.
+This reverses 0018's exact-match-only stance (see SECURITY-NOTES §8 for the
+accepted enumeration trade-off and its bounds).
+
+**Deploy order: 0037 -> web. Rollback: web -> 0037 down** (commented in the
+migration header; keeps `pg_trgm`). Run `supabase/verify_0037.sql`.
 
 **Hide client prices from viewers (0038).** A second admin switch on Settings,
 next to worker names: while on, Carasso gets no client prices from either
@@ -558,7 +572,7 @@ car-prep-tracker/
 ### Routes
 
 `/login` · `/welcome` (set password from invite) · `/profile`
-**worker:** `/new` `/mine` `/stats` `/lookup` (plate/VIN lookup via `lookup_vehicle`, 0018 — no submitter shown) — **manager+admin:** `/dashboard`
+**worker:** `/new` `/mine` `/stats` `/lookup` (partial plate/VIN lookup, 4+ characters, via `lookup_vehicle`, 0018/0037 — no submitter shown) — **manager+admin:** `/dashboard`
 `/jobs/:id` `/export` `/analytics` `/services` — **manager:** `/team` —
 **admin:** `/admin/users` `/admin/sites`
 

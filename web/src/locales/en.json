@@ -591,11 +591,12 @@
   },
   "lookup": {
     "title": "Car lookup",
-    "lead": "Check whether a car is already registered and which services were done.",
-    "label": "Plate or VIN",
+    "lead": "Check whether a car is already registered and which services were done. Search by part of the VIN or plate, at least 4 characters.",
+    "label": "Part of the VIN or plate",
+    "hint": "Enter at least {{min}} letters or digits.",
     "search": "Search",
     "notFound": "No record of this car.",
-    "notFoundBody": "Check the plate or VIN and try again — the full number is required.",
+    "notFoundBody": "Check the characters and try again. Any part of the VIN or plate works, at least 4 characters.",
     "error": "Search failed. Try again.",
     "results": "Records found"
   },

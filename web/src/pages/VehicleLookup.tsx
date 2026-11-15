@@ -4,8 +4,9 @@ import { supabase } from '../lib/supabase';
 import { serviceName } from '../lib/serviceName';
 import { Button, Card, EmptyState, Page, PageHeading, SearchField, SectionHeading, SkeletonList } from '../components/ui';
 import { formatDate } from '../lib/formatDate';
+import { LOOKUP_MIN, lookupQuery } from '../lib/search';
 
-/** One row of `lookup_vehicle` (0018). Deliberately carries no worker. */
+/** One row of `lookup_vehicle` (0018; partial match from 0037). Deliberately carries no worker. */
 interface LookupRow {
   created_at: string;
   site_name: string;
@@ -24,13 +25,18 @@ export default function VehicleLookup() {
   const [rows, setRows] = useState<LookupRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const normalized = lookupQuery(query);
+  const tooShort = normalized.length < LOOKUP_MIN;
+  // Only once something is typed: the lead already states the minimum.
+  const showHint = tooShort && query.trim() !== '';
 
+  // One RPC per Search press, never per keystroke. The server re-normalises and returns nothing under LOOKUP_MIN.
   async function search(e: FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (tooShort) return;
     setLoading(true);
     setError(false);
-    const { data, error: rpcError } = await supabase.rpc('lookup_vehicle', { p_query: query });
+    const { data, error: rpcError } = await supabase.rpc('lookup_vehicle', { p_query: normalized });
     setLoading(false);
     if (rpcError) {
       setError(true);
@@ -45,11 +51,22 @@ export default function VehicleLookup() {
       <PageHeading lead={t('lookup.lead')}>{t('lookup.title')}</PageHeading>
 
       <form onSubmit={search} className="flex gap-2">
-        <SearchField value={query} onChange={setQuery} label={t('lookup.label')} className="flex-1" />
-        <Button type="submit" busy={loading} disabled={!query.trim()}>
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          label={t('lookup.label')}
+          className="flex-1"
+          describedBy={showHint ? 'lookup-hint' : undefined}
+        />
+        <Button type="submit" busy={loading} disabled={tooShort}>
           {t('lookup.search')}
         </Button>
       </form>
+      {showHint && (
+        <p id="lookup-hint" className="text-sm text-ink-600">
+          {t('lookup.hint', { min: LOOKUP_MIN })}
+        </p>
+      )}
 
       {error && <p role="alert" className="text-sm text-danger-600">{t('lookup.error')}</p>}
 
