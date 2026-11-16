@@ -246,6 +246,23 @@ describe('handleUpload', () => {
     expect(JSON.parse(init.body as string)).toEqual({ p_job_id: JOB, p_kind: 'plate' });
   });
 
+  /* 0039 widened the allowlist to extra_5; anything past it must stop before Postgres and R2. */
+  it.each(['extra_4', 'extra_5'])('accepts the %s slot', async (kind) => {
+    const { run, stored } = upload(kind, bytesOf(1000, JPEG));
+    const res = await run();
+    expect(res.status).toBe(200);
+    expect(stored).toEqual([{ key: `${JOB}/${kind}.jpg`, bytes: 1000, contentType: 'image/jpeg' }]);
+  });
+
+  it.each(['extra_6', 'extra_0', 'extra_'])('refuses kind=%s with 400, before Postgres or R2', async (kind) => {
+    const fetchSpy = vi.fn(async () => Response.json(true));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { run, stored } = upload(kind, bytesOf(1000, JPEG));
+    expect((await run()).status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(stored).toEqual([]);
+  });
+
   it('refuses the write when Postgres says no', async () => {
     vi.stubGlobal('fetch', async () => Response.json(false));
     const { run, stored } = upload('video', bytesOf(1000, MP4));

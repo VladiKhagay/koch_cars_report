@@ -130,7 +130,7 @@ export interface JobWithRelations extends Job {
   photos?: Photo[];
 }
 
-export type PhotoKind = 'plate' | 'vin' | 'extra_1' | 'extra_2' | 'extra_3' | 'video';
+export type PhotoKind = 'plate' | 'vin' | 'extra_1' | 'extra_2' | 'extra_3' | 'extra_4' | 'extra_5' | 'video';
 
 export interface Photo {
   id: string;

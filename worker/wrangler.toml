@@ -39,8 +39,11 @@ namespace_id = "1001"
 
 # Sized for the offline queue rather than for steady use. A phone that has been
 # out of signal can flush a large backlog at once, and each queued job uploads
-# up to 5 photos and a condition video in parallel — so a 20-job backlog is a
-# legitimate ~120-request burst. Anything above this is not a yard catching up.
+# up to 7 photos and a condition video in parallel. Video goes through this
+# limiter too (/video/start, ~8 MiB /video/part pieces, /video/complete: ~12
+# requests for a ~75 MB clip), so a job with all media is ~19 requests and a
+# 20-job backlog ~380, well over this limit. A 429 is retryable, so the queue
+# just flushes slower; nothing is lost.
 [[ratelimits]]
 name = "UPLOAD_LIMITER"
 namespace_id = "1002"

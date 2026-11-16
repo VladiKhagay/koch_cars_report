@@ -3,10 +3,10 @@ import type { Env } from './index';
 import { rateLimited } from './rateLimit';
 
 /**
- * The photo slots a job can have; mirrors `photos_kind_check` (migration 0020).
+ * The photo slots a job can have; mirrors `photos_kind_check` (migration 0039).
  * An allowlist, not a format check: `kind` is interpolated into the R2 key.
  */
-export const PHOTO_KINDS = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3', 'video'] as const;
+export const PHOTO_KINDS = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3', 'extra_4', 'extra_5', 'video'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
 
 export function isPhotoKind(value: unknown): value is PhotoKind {

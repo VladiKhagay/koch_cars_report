@@ -44,7 +44,7 @@ const emptyForm = {
   serviceIds: [] as string[],
   platePhoto: null as Blob | null,
   vinPhoto: null as Blob | null,
-  /** Optional, up to MAX_EXTRA_PHOTOS. Order here is the extra_1..3 order. */
+  /** Optional, up to MAX_EXTRA_PHOTOS. Order here is the extra_1..5 order. */
   extraPhotos: [] as Blob[],
   /** Optional walkaround of the finished car — see VideoRecorder. */
   video: null as Blob | null,
@@ -216,7 +216,7 @@ export default function NewJob() {
   }
 
   /* Removing closes the gap rather than leaving a hole: the slots are numbered
-     extra_1..3 by position, so a kept photo must never sit in slot 3 with 1 and
+     extra_1..5 by position, so a kept photo must never sit in slot 3 with 1 and
      2 empty. */
   function removeExtraPhoto(index: number) {
     beginNextCar();

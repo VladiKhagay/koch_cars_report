@@ -518,30 +518,32 @@ describe('submitJob — photo slots', () => {
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['plate', 'extra_1', 'extra_2']);
   });
 
-  it('maps extras onto extra_1..3 by position', async () => {
-    await submitJob(payload([blob(), blob(), blob()]));
+  it('maps extras onto extra_1..5 by position', async () => {
+    await submitJob(payload([blob(), blob(), blob(), blob(), blob()]));
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual([
       'plate',
       'vin',
       'extra_1',
       'extra_2',
       'extra_3',
+      'extra_4',
+      'extra_5',
     ]);
   });
 
   /* A worker who removes the first of two extras must leave the survivor in
      slot 1 — a gap would put a photo in extra_2 with extra_1 empty. NewJob
      closes the gap in the array; this pins the half that turns it into slots. */
-  it('never leaves a hole when fewer than three are supplied', async () => {
+  it('never leaves a hole when fewer than five are supplied', async () => {
     await submitJob(payload([blob()]));
     expect(insertedPhotos.map((p) => (p as { kind: string }).kind)).toEqual(['plate', 'vin', 'extra_1']);
   });
 
-  it('ignores anything past the third extra rather than inventing a slot', async () => {
-    await submitJob(payload([blob(), blob(), blob(), blob(), blob()]));
+  it('ignores anything past the fifth extra rather than inventing a slot', async () => {
+    await submitJob(payload([blob(), blob(), blob(), blob(), blob(), blob(), blob()]));
     const kinds = insertedPhotos.map((p) => (p as { kind: string }).kind);
-    expect(kinds).toHaveLength(5);
-    expect(kinds).not.toContain('extra_4');
+    expect(kinds).toHaveLength(7);
+    expect(kinds).not.toContain('extra_6');
   });
 
   it('records the r2 key the Worker returned for each slot', async () => {
@@ -907,6 +909,20 @@ describe('slotExists', () => {
   it('a removed slot is empty, plate included', () => {
     expect(slotExists([{ kind: 'plate', removed_at: gone }], 'plate')).toBe(false);
     expect(slotExists([{ kind: 'extra_2', removed_at: gone }], 'extra_2')).toBe(false);
+  });
+  /* 0039: extra_4/5 behave like extra_1..3 — need a live row, removable only when live. */
+  it('extra_4 and extra_5 follow the extra rules', () => {
+    const rows = [
+      { kind: 'extra_4' as const, removed_at: null },
+      { kind: 'extra_5' as const, removed_at: gone },
+    ];
+    expect(slotExists([], 'extra_4')).toBe(false);
+    expect(slotExists([], 'extra_5')).toBe(false);
+    expect(slotExists(rows, 'extra_4')).toBe(true);
+    expect(slotExists(rows, 'extra_5')).toBe(false);
+    expect(slotRemovable(rows, 'extra_4', ['plate', 'vin'])).toBe(true);
+    expect(slotRemovable(rows, 'extra_5', ['plate', 'vin'])).toBe(false);
+    expect(slotRemovable([{ kind: 'extra_5', removed_at: null }], 'extra_5')).toBe(true);
   });
 });
 

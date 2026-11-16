@@ -32,7 +32,7 @@ Excel.
 |---|---|---|
 | Sites | 3 (6–8, 10, and 2 workers) | Multi-tenant-ish, but tiny. Site scoping matters; sharding does not. |
 | Volume | ~1,300 cars/month actual (2026), planned for ~3,000 | Trivially small. Never optimize for throughput here. |
-| Photos | 2/car (plate + VIN), 60-day retention | ~6 GB rolling window. Drove the storage choice. |
+| Photos | plate + VIN + up to 5 optional extras per car, ≤1920px JPEG q0.82 (~300–500 KB each), 60-day retention | Small next to video: estimated ≤~20 GB rolling even if every car had all 7 at 500 KB at 3,000 cars/month; typically far less. Drove the storage choice. |
 | Video | optional ≤2.5 min walkaround/car, in-app 1080p @ 4 Mbps (≤~75 MB, cap 90 MB), 60-day retention | ~80–160 GB rolling window (~$1–3/mo at 1,300 cars, ~$5/mo at 3,000). Recorded in-app because only MediaRecorder lets us cap the bitrate (migration 0020). |
 | Budget | **$0/month** | The single hardest constraint. Every component must fit a free tier. |
 | Maintainer | One technical owner | No component may require babysitting, patching, or on-call. |
@@ -156,6 +156,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0036_vin_required_plate_optional.sql` | `jobs.vin` NOT NULL (refuses to run while any job, soft-deleted included, has a NULL or blank VIN), `jobs_plate_or_vin_chk` dropped, `jobs.plate` stays nullable |
 | `0037_partial_vehicle_lookup.sql` | `pg_trgm` (schema `extensions`), trigram GIN indexes on `jobs.vin` / `jobs.plate` (live jobs), `lookup_vehicle()` matches "contains" from 4 normalised characters |
 | `0038_hide_client_prices.sql` | `app_settings` key `hide_client_prices` (default false), admin-only `set_hide_client_prices()`, both Carasso price policies and `jobs_carasso` withhold client prices while it is on |
+| `0039_extra_photos_5.sql` | `photos_kind_check` widened to `extra_1..extra_5` (plate, vin, video unchanged). Apply before the web/Worker that send `extra_4`/`extra_5`; run `supabase/verify_0039.sql` |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -188,7 +189,7 @@ job_services(job_id, service_id, worker_price, created_at)   -- PK (job, service
 job_service_client_prices(job_id, service_id, unit_price, total_price)  -- admin/Carasso
 job_client_prices(job_id, unit_price, total_price)  -- per-job sum, NULL if any line unpriced
 app_settings(key, value)  -- admin switches: hide_worker_names, hide_client_prices (0038); customer_report_config
-photos(id, job_id, kind[plate|vin|extra_1..3|video], r2_key, expires_at,
+photos(id, job_id, kind[plate|vin|extra_1..5|video], r2_key, expires_at,
        removed_at)            -- tombstone (0034): slot removed by a manager/admin
 audit_log(id, job_id, user_id, action, changes_jsonb, at)   -- trigger-written (0034)
 ```
@@ -273,7 +274,7 @@ while the triggers log). A Worker before 0034 403s every photo view. Run
 **Worker media edit (0035).** In My Jobs, the worker's own job (submitter,
 never a co-worker) shows its photos and video in the edit panel; while the
 15-minute window is open the worker adds, replaces and removes extra photos
-1-3 and the video, and replaces (never removes) plate and VIN. Same
+1-5 and the video, and replaces (never removes) plate and VIN. Same
 `JobMedia` component and `setMedia`/`removeMedia` calls as managers, with
 `alwaysManage` (no toggle) and `keepSlots={['plate','vin']}`; changes save at
 once, apart from Save/Cancel. Workers are no longer insert-only on `photos`:

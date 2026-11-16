@@ -199,7 +199,7 @@ Both `ALLOWED_ORIGINS` and `APP_URL` point at `*.workers.dev`. Cloudflare's WAF,
 >
 > **Checked before the Supabase lookup and before the request body is read**, so a flood costs neither a round-trip per request nor 8MB of ingest.
 >
-> **Limits sized from real use, not round numbers.** One job's capture flow costs 4 model runs (plate and VIN, each a detect then a read), so a busy worker stays well under 20/min even while retaking — 60 leaves ~3x headroom while cutting a runaway loop from thousands to a bounded trickle. The upload limit is sized for the *offline queue* rather than steady use: a phone flushing a 20-job backlog legitimately bursts ~100 requests, since each job uploads up to 5 photos in parallel.
+> **Limits sized from real use, not round numbers.** One job's capture flow costs 4 model runs (plate and VIN, each a detect then a read), so a busy worker stays well under 20/min even while retaking — 60 leaves ~3x headroom while cutting a runaway loop from thousands to a bounded trickle. The upload limit is sized for the *offline queue* rather than steady use: a phone flushing a 20-job backlog legitimately bursts well past the limit (since 0039 up to 7 photos plus a video of ~12 requests, ~19 requests per job, ~380 for 20 jobs); the 429 is retryable, so the queue just flushes slower.
 >
 > **Neither limit can lose data when it fires.** A 429 on OCR resolves to "type it in" (OCR is an accelerator by design); a 429 on upload leaves the job queued for retry.
 >
@@ -317,8 +317,8 @@ There is exactly one upload path: `PhotoCapture.tsx` → `downscaleImage()` → 
 | Accepted types | **Anything.** Client hints `accept="image/*"`; server accepts any bytes. |
 | Validation basis | **Neither MIME nor extension nor content.** Server reads a raw `ArrayBuffer` and checks only length. The client-side `createImageBitmap` + canvas re-encode is a *de facto* content validation — but it is bypassable (M-1). |
 | Max file size | **20 MB** server-side (`upload.ts:61`). **No client-side cap at all.** |
-| Max files per entity | **5**, structurally: the `PHOTO_KINDS` allowlist plus the R2 key `${jobId}/${kind}.jpg` mean a 6th upload is impossible and a repeat overwrites. Mirrored by `photos_kind_check` (0005). Genuinely good design. |
-| Enforced both sides | Size: server only. Count: server only (client caps extras at 3 via `MAX_EXTRA_PHOTOS`). |
+| Max files per entity | **8** (plate, VIN, 5 extras, video), structurally: the `PHOTO_KINDS` allowlist plus the R2 keys `${jobId}/${kind}.jpg` / `video/${jobId}` mean a 9th upload is impossible and a repeat overwrites. Mirrored by `photos_kind_check` (0039). Genuinely good design. |
+| Enforced both sides | Size: server only. Count: server only (client caps extras at 5 via `MAX_EXTRA_PHOTOS`). |
 | Bypassable? | **Yes** — M-1. |
 | Storage | Private R2 `car-prep-photos`, no public bucket access, 60-day lifecycle. Reachable only via the Worker binding. |
 | Executable / unsafely served? | Low risk. Content type is **pinned** to `image/jpeg` on write (`upload.ts:69`) with an explicit comment about why — correct, and it defeats the classic stored-HTML attack. Missing `nosniff`/`Content-Disposition` (M-2) leaves a thin residue. |

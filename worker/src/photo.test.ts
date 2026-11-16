@@ -56,12 +56,18 @@ describe('handleGetPhoto', () => {
     },
   );
 
-  it('answers 404 for a kind outside the allowlist', async () => {
+  it.each(['../x', 'extra_6'])('answers 404 for a kind outside the allowlist (%s)', async (kind) => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    const res = (await handleGetPhoto(ctx('../x'))) as unknown as { status: number };
+    const res = (await handleGetPhoto(ctx(kind))) as unknown as { status: number };
     expect(res.status).toBe(404);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('serves the extra_5 slot (0039)', async () => {
+    vi.stubGlobal('fetch', async () => Response.json(true));
+    const res = (await handleGetPhoto(ctx('extra_5'))) as unknown as Response;
+    expect(res.status).toBe(200);
   });
 
   describe('edges (test-engineer)', () => {

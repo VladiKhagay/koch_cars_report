@@ -12,8 +12,8 @@ import { searchTerm } from './search';
 import { vinChecksumValid } from './vin';
 import type { Job, JobServiceLine, PhotoKind, PreviousJob, Service } from './types';
 
-/** The optional slots, in the order they are filled. Matches migration 0005. */
-export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3'];
+/** The optional slots, in the order they are filled. Matches migration 0039. */
+export const EXTRA_KINDS: PhotoKind[] = ['extra_1', 'extra_2', 'extra_3', 'extra_4', 'extra_5'];
 export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
 
 /** A payload submitJob refuses before calling anything: resending it can never succeed. */

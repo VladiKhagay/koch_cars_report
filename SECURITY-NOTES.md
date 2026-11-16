@@ -405,7 +405,7 @@ What the database enforces:
 
 ## 7. Worker media edit inside the 15-minute window (migration 0035)
 
-A worker can add, replace and remove extra photos 1-3 and the video, and replace
+A worker can add, replace and remove extra photos 1-5 (4 and 5 since 0039) and the video, and replace
 (never remove) the plate and VIN photos, on **their own** job (`jobs.worker_id`,
 never `coworker_ids`) while `jobs.locked_at > now()` and the job is not
 soft-deleted. Worker changes are not audited (`photos_audit` skips worker

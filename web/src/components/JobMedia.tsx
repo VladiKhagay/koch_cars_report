@@ -12,7 +12,7 @@ import StatusBanner from './StatusBanner';
 import Icon from './Icon';
 import { Button, ConfirmAction, Skeleton, Spinner } from './ui';
 
-const PHOTO_SLOTS: PhotoKind[] = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3'];
+const PHOTO_SLOTS: PhotoKind[] = ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3', 'extra_4', 'extra_5'];
 const NO_SLOTS: PhotoKind[] = [];
 
 type MediaProblem = 'error' | 'windowClosed' | 'photoTooLarge' | 'photoUnsupported' | 'videoTooLarge';
@@ -20,7 +20,7 @@ type MediaProblem = 'error' | 'windowClosed' | 'photoTooLarge' | 'photoUnsupport
 /**
  * A job's photos and video. Read-only: only the slots that hold something.
  * `editable` (managers/admins) adds a "Manage photos & video" toggle; while it
- * is open, all six slots show, each with Add, or Replace and Remove. Those take
+ * is open, all seven photo slots plus the video show, each with Add, or Replace and Remove. Those take
  * effect at once, separate from the job's Save button.
  * Reads `photos` (RLS covers Carasso for jobs on its sites).
  *

@@ -174,8 +174,8 @@ describe('parseDetectObjects', () => {
 /* -------------------------------------------------------------- photo kinds */
 
 describe('isPhotoKind', () => {
-  it('accepts exactly the slots migration 0005 allows', () => {
-    for (const kind of ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3']) {
+  it('accepts exactly the slots migration 0039 allows', () => {
+    for (const kind of ['plate', 'vin', 'extra_1', 'extra_2', 'extra_3', 'extra_4', 'extra_5', 'video']) {
       expect(isPhotoKind(kind)).toBe(true);
     }
   });
@@ -188,7 +188,7 @@ describe('isPhotoKind', () => {
   it('rejects out-of-range slots, traversal and non-strings', () => {
     for (const bad of [
       'extra_0',
-      'extra_4',
+      'extra_6',
       'extra_10',
       '../plate',
       'plate/../../secret',
