@@ -64,6 +64,58 @@ describe('buildMyJobsSheet', () => {
 });
 
 describe('buildCustomerReport', () => {
+  describe('total row', () => {
+    const priced = resolveCustomerColumns({
+      columns: [
+        { key: 'date', visible: true },
+        { key: 'client_unit_price', visible: true },
+        { key: 'client_total_price', visible: true },
+      ],
+    });
+
+    it('sums the total price under its column, labelled in the first column', () => {
+      const rows = buildCustomerReport(
+        [job({ client_total_price: 100 }), job({ client_total_price: 50.5 })],
+        priced,
+        'en-GB',
+        'en',
+      );
+      expect(rows).toHaveLength(4);
+      expect(rows[3]).toEqual(['Total', '', 150.5]);
+    });
+
+    it('labels in Hebrew', () => {
+      const rows = buildCustomerReport([job({ client_total_price: 10 })], priced, 'he-IL', 'he');
+      expect(rows[2]).toEqual(['סה"כ', '', 10]);
+    });
+
+    it('adds in whole cents and counts an unpriced job as 0', () => {
+      const rows = buildCustomerReport(
+        [job({ client_total_price: 0.1 }), job({ client_total_price: 0.2 }), job({ client_total_price: null }), job()],
+        priced,
+        'en-GB',
+        'en',
+      );
+      expect(rows[rows.length - 1][2]).toBe(0.3);
+    });
+
+    it('does not sum the unit price', () => {
+      const rows = buildCustomerReport([job({ client_unit_price: 7, client_total_price: 7 })], priced, 'en-GB', 'en');
+      expect(rows[2][1]).toBe('');
+    });
+
+    it('has no total row when the price column is not in the file', () => {
+      const noPrice = resolveCustomerColumns({ columns: [{ key: 'date', visible: true }] });
+      expect(buildCustomerReport([job({ client_total_price: 5 })], noPrice, 'en-GB', 'en')).toHaveLength(2);
+    });
+
+    it('puts the sum in the only column when the total price is first', () => {
+      const only = resolveCustomerColumns({ columns: [{ key: 'client_total_price', visible: true }] });
+      const rows = buildCustomerReport([job({ client_total_price: 9 })], only, 'en-GB', 'en');
+      expect(rows[2]).toEqual([9]);
+    });
+  });
+
   it('emits only the visible columns, in configured order', () => {
     const columns = resolveCustomerColumns({
       columns: [

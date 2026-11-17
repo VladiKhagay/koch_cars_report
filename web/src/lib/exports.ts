@@ -152,10 +152,23 @@ export function buildCustomerReport(
 ): Cell[][] {
   const shown = columns.filter((c) => c.visible);
   const headers = SHEET_HEADERS_BY_LANG[lang];
-  return [
+  const rows = [
     shown.map((c) => headers[c.key]),
     ...jobs.map((job) => shown.map((c) => customerValue(job, c.key, locale, lang))),
   ];
+
+  // A total under the price column, only while that column is in the file (it is
+  // dropped for roles that may not see prices). Summed in whole cents; a job with
+  // no price counts as 0. The unit price is not summed: it has no meaning as a total.
+  const totalAt = shown.findIndex((c) => c.key === 'client_total_price');
+  if (totalAt >= 0) {
+    const cents = jobs.reduce((sum, job) => sum + toCents(job.client_total_price), 0);
+    const total: Cell[] = shown.map(() => '');
+    if (totalAt !== 0) total[0] = PAYMENT_LABELS[lang].total;
+    total[totalAt] = fromCents(cents);
+    rows.push(total);
+  }
+  return rows;
 }
 
 /* ------------------------------------------------------------ my jobs sheet */
