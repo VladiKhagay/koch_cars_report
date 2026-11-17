@@ -356,7 +356,7 @@ export default function MyJobs() {
         .order(sort.key, { ascending: sort.asc })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
       // Submitted OR co-worked — a shared car is in both people's lists.
-      { workerId: appUser.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'] },
+      { workerId: appUser.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'], excludeDeleted: true },
     );
 
     setJobs(data ?? NO_ROWS);
@@ -451,7 +451,7 @@ export default function MyJobs() {
           .select('*')
           .order(sort.key, { ascending: sort.asc })
           .range(start, start + EXPORT_CHUNK - 1),
-        { workerId: appUser!.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'] },
+        { workerId: appUser!.id, from, to, serviceIds, search, searchColumns: ['plate', 'vin'], excludeDeleted: true },
       );
       if (error) return null;
       all.push(...((data ?? []) as Job[]));

@@ -491,6 +491,8 @@ export interface JobFilters {
    * query on an unknown column, so the caller names its own.
    */
   searchColumns?: string[];
+  /** Drops soft-deleted jobs. For views that expose `deleted_at` but do not filter it (jobs_worker_view). */
+  excludeDeleted?: boolean;
 }
 
 /** workerId goes into a PostgREST `or` string, so only a real UUID may. */
@@ -505,12 +507,14 @@ interface JobQuery<Q> {
   gte(column: string, value: string): Q;
   lte(column: string, value: string): Q;
   or(filter: string): Q;
+  is(column: string, value: null): Q;
 }
 
 /** Applies the grid's filters to a jobs query, server-side so paging sees the right set. */
 export function applyJobFilters<Q extends JobQuery<Q>>(query: Q, filters: JobFilters): Q {
   let q = query;
   if (filters.siteId) q = q.eq('site_id', filters.siteId);
+  if (filters.excludeDeleted) q = q.is('deleted_at', null);
   // PostgREST ANDs separate `or` params, so this composes with the search below.
   if (filters.workerId && UUID.test(filters.workerId))
     q = q.or(`worker_id.eq.${filters.workerId},coworker_ids.cs.{${filters.workerId}}`);

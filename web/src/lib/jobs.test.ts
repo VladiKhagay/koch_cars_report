@@ -671,6 +671,7 @@ function recorder() {
     gte: (c: string, v: string) => (calls.push(['gte', c, v]), q),
     lte: (c: string, v: string) => (calls.push(['lte', c, v]), q),
     or: (f: string) => (calls.push(['or', f]), q),
+    is: (c: string, v: null) => (calls.push(['is', c, String(v)]), q),
   };
   return q;
 }
@@ -729,6 +730,14 @@ describe('applyJobFilters', () => {
 
   it('ignores a worker id that is not a UUID rather than putting it in the filter string', () => {
     expect(applyJobFilters(recorder(), { workerId: 'x),deleted_at.is.null' }).calls).toEqual([]);
+  });
+
+  /* jobs_worker_view returns soft-deleted rows (it exposes deleted_at but does
+     not filter it), so a worker's own list must ask for them to be dropped or
+     a job the manager deleted stays on their screen and in their export. */
+  it('drops soft-deleted jobs only when asked', () => {
+    expect(applyJobFilters(recorder(), { excludeDeleted: true }).calls).toEqual([['is', 'deleted_at', 'null']]);
+    expect(applyJobFilters(recorder(), { excludeDeleted: false }).calls).toEqual([]);
   });
 
   it('adds nothing at all when no filter is set', () => {
