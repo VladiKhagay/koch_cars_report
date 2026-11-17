@@ -194,6 +194,11 @@ function unwrap<T>(result: unknown): T {
   return (r?.result ?? r) as T;
 }
 
+/** Workers logs print only the stack for an Error, dropping the message that names the cause. */
+function errMessage(err: unknown): string {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
 export async function handleOcr(c: Context<{ Bindings: Env }>) {
   // The only route that reads nothing from Postgres, so it inherits no RLS
   // check: without this, a deactivated user's still-valid JWT could run the model.
@@ -239,7 +244,7 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
       return c.json({ box });
     } catch (err) {
       // Detection is only an optimisation — the client re-reads the full frame.
-      console.error('Workers AI detect error', err);
+      console.error('Workers AI detect error', errMessage(err));
       return c.json({ box: null });
     }
   }
@@ -259,7 +264,7 @@ export async function handleOcr(c: Context<{ Bindings: Env }>) {
   } catch (err) {
     // OCR is an accelerator, not a dependency: fail cleanly so the client
     // falls back to manual entry.
-    console.error('Workers AI OCR error', err);
+    console.error('Workers AI OCR error', errMessage(err));
     return c.json({ error: 'ocr_unavailable' }, 502);
   }
 
