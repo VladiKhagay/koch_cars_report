@@ -149,6 +149,12 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+    /* The canvas. On an iPhone home-screen app the layout viewport can end above
+       the bottom edge (WebKit reports it short, more so on newer iOS); whatever
+       lies below the app shell shows this colour. Matching the tab bar's own
+       surface makes that strip read as part of the bar instead of a grey gap.
+       <body> keeps --color-sunken for the shell itself. */
+    background-color: var(--color-surface);
   }
 
   body {
