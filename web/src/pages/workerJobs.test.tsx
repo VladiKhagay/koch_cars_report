@@ -29,7 +29,8 @@ vi.mock('../lib/jobs', () => ({
   },
 }));
 
-const { editableServices, mediaEditState, migrateDraft, nextBusyJob, saveWorkerEdit, toggleId } = await import('./workerJobs');
+const { cleanWorkerLabel, crewOthers, editableServices, isStaffSubmitter, jobOwnership, jobSiteId, mediaEditState, migrateDraft, nextBusyJob, pickableWorkers, saveWorkerEdit, toggleId, workerNamed } =
+  await import('./workerJobs');
 const { default: ServiceChips } = await import('../components/ServiceChips');
 
 const svc = (id: string): Service => ({
@@ -205,5 +206,154 @@ describe('nextBusyJob — the My Jobs hold is keyed by job', () => {
   it("another job's late settle leaves the current hold alone", () => {
     expect(nextBusyJob('b', 'a', false)).toBe('b');
     expect(nextBusyJob(null, 'a', false)).toBeNull();
+  });
+});
+
+describe('New Job on behalf of a worker (0040)', () => {
+  const worker = { id: 'w1', role: 'worker' as const, site_id: 's1' };
+  const manager = { id: 'm1', role: 'manager' as const, site_id: 's1' };
+  const admin = { id: 'a1', role: 'admin' as const, site_id: null };
+
+  it('gives a picked worker the job, with no label', () => {
+    expect(jobOwnership(manager, { workerId: 'w2', workerLabel: 'stale' })).toEqual({
+      workerId: 'w2',
+      workerLabel: null,
+      submittedBy: 'm1',
+    });
+  });
+
+  it('keeps a typed-name job with the submitter, trimmed', () => {
+    expect(jobOwnership(admin, { workerId: '', workerLabel: '  Moshe ' })).toEqual({
+      workerId: 'a1',
+      workerLabel: 'Moshe',
+      submittedBy: 'a1',
+    });
+  });
+
+  /* A draft on a shared phone may carry a manager's pick: a worker never inherits it. */
+  it('ignores any pick or name for a worker', () => {
+    expect(jobOwnership(worker, { workerId: 'w2', workerLabel: 'Moshe' })).toEqual({
+      workerId: 'w1',
+      workerLabel: null,
+      submittedBy: 'w1',
+    });
+  });
+
+  /* A blank name is no name: never a whitespace label (the DB would store NULL anyway). New Job blocks this case as "worker required". */
+  it('reads a blank typed name as none', () => {
+    expect(jobOwnership(manager, { workerId: '', workerLabel: '   ' })).toEqual({
+      workerId: 'm1',
+      workerLabel: null,
+      submittedBy: 'm1',
+    });
+  });
+
+  it('pins a manager to their own site, even over a restored pick', () => {
+    expect(jobSiteId(manager, 's2', 's3')).toBe('s1');
+  });
+
+  it("falls back for an admin from the pick to home to the scope's site", () => {
+    expect(jobSiteId(admin, 's2', 's3')).toBe('s2');
+    expect(jobSiteId(admin, null, 's3')).toBe('s3');
+    expect(jobSiteId({ ...admin, site_id: 's9' }, null, 's3')).toBe('s9');
+    expect(jobSiteId(admin, null, null)).toBeNull();
+  });
+
+  /* The car was done where the worker works, not at the admin's home site. */
+  it("defaults an admin's site to the picked worker's, below an explicit pick", () => {
+    expect(jobSiteId({ ...admin, site_id: 's9' }, null, 's3', 's4')).toBe('s4');
+    expect(jobSiteId(admin, 's2', 's3', 's4')).toBe('s2');
+    expect(jobSiteId(manager, null, null, 's4')).toBe('s1');
+  });
+
+  it('lets a worker log at another yard', () => {
+    expect(jobSiteId(worker, 's2', null)).toBe('s2');
+    expect(jobSiteId(worker, null, null)).toBe('s1');
+  });
+
+  it('offers active workers only; a manager only their own site', () => {
+    const staff = [
+      { id: 'w1', name: 'A', site_id: 's1', active: true, role: 'worker' as const },
+      { id: 'w2', name: 'B', site_id: 's2', active: true, role: 'worker' as const },
+      { id: 'w3', name: 'C', site_id: 's1', active: false, role: 'worker' as const },
+      { id: 'm2', name: 'D', site_id: 's1', active: true, role: 'manager' as const },
+    ];
+    expect(pickableWorkers(staff, manager).map((s) => s.id)).toEqual(['w1']);
+    expect(pickableWorkers(staff, admin).map((s) => s.id)).toEqual(['w1', 'w2']);
+  });
+
+  it('offers a manager with no site nobody, not the site-less workers', () => {
+    const staff = [{ id: 'w9', name: 'X', site_id: null, active: true, role: 'worker' as const }];
+    expect(pickableWorkers(staff, { role: 'manager', site_id: null })).toEqual([]);
+  });
+
+  it('spots a typed name that is really a worker with an account', () => {
+    const staff = [{ id: 'w1', name: 'Moshe Levi', site_id: 's1', active: true, role: 'worker' as const }];
+    expect(workerNamed(staff, '  moshe levi ')?.id).toBe('w1');
+    expect(workerNamed(staff, 'Moshe')).toBeUndefined();
+    expect(workerNamed(staff, '  ')).toBeUndefined();
+  });
+
+  /* A co-worker on a typed-name job sees the typed name, not the manager who logged it. */
+  it("names a typed-name job's submitter by the typed name in a co-worker's list", () => {
+    const staff = [
+      { id: 'm1', name: 'Manager', site_id: 's1', active: true, role: 'manager' as const },
+      { id: 'w1', name: 'Dana', site_id: 's1', active: true, role: 'worker' as const },
+      { id: 'w2', name: 'Avi', site_id: 's1', active: true, role: 'worker' as const },
+    ];
+    const job = { worker_id: 'm1', coworker_ids: ['w1', 'w2'], worker_label: 'Moshe' };
+    expect(crewOthers(job, 'w1', staff)).toEqual(['Moshe', 'Avi']);
+    expect(crewOthers({ ...job, worker_label: null }, 'w1', staff)).toEqual(['Manager', 'Avi']);
+    expect(crewOthers({ worker_id: 'w1', coworker_ids: [] }, 'w1', staff)).toEqual([]);
+  });
+
+  /* AC-2: the Worker field is for managers and admins only. */
+  it('shows the Worker field to managers and admins only', () => {
+    expect(isStaffSubmitter('manager')).toBe(true);
+    expect(isStaffSubmitter('admin')).toBe(true);
+    expect(isStaffSubmitter('worker')).toBe(false);
+    expect(isStaffSubmitter('carasso')).toBe(false);
+    expect(isStaffSubmitter(undefined)).toBe(false);
+  });
+
+  it('gives an admin\'s picked worker the job, wherever that worker is', () => {
+    expect(jobOwnership(admin, { workerId: 'w9', workerLabel: '' })).toEqual({
+      workerId: 'w9',
+      workerLabel: null,
+      submittedBy: 'a1',
+    });
+  });
+
+  /* Defensive only: any non-staff role is read as a worker (own id, no label). Carasso's real block is ROUTE_ROLES + RLS. */
+  it('reads a non-staff role as a worker: own id, no pick, no label', () => {
+    const viewer = { id: 'c1', role: 'carasso' as const };
+    expect(jobOwnership(viewer, { workerId: 'w1', workerLabel: 'Moshe' })).toEqual({
+      workerId: 'c1',
+      workerLabel: null,
+      submittedBy: 'c1',
+    });
+  });
+});
+
+describe('cleanWorkerLabel (0040 CHECK)', () => {
+  it('strips every character the database refuses, and nothing else', () => {
+    const refused =
+      '\u0001\u001F\u007F\u009F\u00AD\u061C\u200B\u200F\u2028\u202E\u2060\u2069\uFEFF';
+    expect(cleanWorkerLabel(`\u200FMo${refused}she`)).toBe('Moshe');
+    // Neighbours of the refused ranges survive: ordinary spaces, Hebrew, accents, emoji.
+    expect(cleanWorkerLabel('משה כהן \u00A0é \u2030 😀')).toBe('משה כהן \u00A0é \u2030 😀');
+  });
+
+  it('trims and caps at 60 for storage; keeps outer spaces while typing', () => {
+    expect(cleanWorkerLabel('  Moshe  ')).toBe('Moshe');
+    expect(cleanWorkerLabel('Moshe ', { typing: true })).toBe('Moshe ');
+    expect(cleanWorkerLabel('x'.repeat(70))).toHaveLength(60);
+    expect(cleanWorkerLabel('x'.repeat(70), { typing: true })).toHaveLength(60);
+  });
+
+  it('sends the cleaned name, and none when only invisible marks were typed', () => {
+    const admin = { id: 'a1', role: 'admin' as const };
+    expect(jobOwnership(admin, { workerId: '', workerLabel: '\u200F Moshe\u200B ' }).workerLabel).toBe('Moshe');
+    expect(jobOwnership(admin, { workerId: '', workerLabel: '\u200F\u200B' }).workerLabel).toBeNull();
   });
 });

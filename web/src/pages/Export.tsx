@@ -30,7 +30,8 @@ import ReportColumns from '../components/ReportColumns';
 import StatusBanner from '../components/StatusBanner';
 import Icon from '../components/Icon';
 import WorkerPicker from '../components/WorkerPicker';
-import { customerRows, mergeColumnSubset, paymentJobs, type PaymentFetchedJob } from './exportColumns';
+import { customerRows, mergeColumnSubset, paymentJobs, paymentJobsFilter, type PaymentFetchedJob } from './exportColumns';
+import { submitterName } from '../lib/jobs';
 import {
   Button,
   Card,
@@ -58,7 +59,7 @@ const PAYMENT_FIELDS =
 
 /** A manager's customer report: no pay and (not being readable to them) no client prices. */
 const MANAGER_REPORT_FIELDS =
-  'created_at, plate, vin, brand, billing_code, worker_id, coworker_ids,' +
+  'created_at, plate, vin, brand, billing_code, worker_id, coworker_ids, worker_label,' +
   ' worker:users!jobs_worker_id_fkey(name), site:sites(name), services';
 
 type FetchedJob = PaymentFetchedJob;
@@ -228,7 +229,9 @@ export default function Export() {
             // Names only: the view's lines carry pay, which never goes in this file.
             service: exportService(j.services),
             // Everyone who worked the car, submitter first: "Dana, Avi".
-            worker: { name: [j.worker?.name ?? '', ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', ') },
+            worker: {
+              name: [submitterName(j, j.worker?.name ?? ''), ...staffNames(staff, j.coworker_ids)].filter(Boolean).join(', '),
+            },
           })),
         );
       if (page.length < CHUNK) return all;
@@ -248,7 +251,7 @@ export default function Export() {
       .gte('created_at', fromIso)
       .lte('created_at', toIso)
       .order('created_at', { ascending: true })
-      .or(`worker_id.eq.${forWorkerId},coworker_ids.cs.{${forWorkerId}}`);
+      .or(paymentJobsFilter(forWorkerId));
     if (error) return null;
     return (data ?? []) as unknown as FetchedJob[];
   }

@@ -5,7 +5,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { setJobServices } from '../lib/jobs';
-import type { Job, JobServiceLine, Service } from '../lib/types';
+import type { AppUser, Job, JobServiceLine, Service, StaffMember } from '../lib/types';
 
 /** Adds the id if absent, removes it if present. */
 export function toggleId(ids: string[], id: string): string[] {
@@ -108,4 +108,101 @@ export function mediaEditState(
  */
 export function nextBusyJob(cur: string | null, jobId: string, busy: boolean): string | null {
   return busy ? jobId : cur === jobId ? null : cur;
+}
+
+/** jobs.worker_label's length CHECK (0040). */
+export const MAX_WORKER_LABEL = 60;
+
+/* Exactly the characters jobs.worker_label's CHECK refuses (0040): control
+   characters, soft hyphen, and the invisible direction/zero-width marks a
+   pasted Hebrew name often carries. Left in, the job fails at the database
+   (23514) after the form said it was fine. */
+// oxlint-disable-next-line no-control-regex
+const LABEL_REFUSED = /[\u0001-\u001F\u007F-\u009F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/g;
+
+/**
+ * A typed worker name the database will take: refused characters stripped,
+ * at most MAX_WORKER_LABEL. `typing` keeps outer spaces (a space typed between
+ * two words is trailing until the next letter); the stored form is trimmed.
+ */
+export function cleanWorkerLabel(raw: string, { typing = false } = {}): string {
+  const s = raw.replace(LABEL_REFUSED, '');
+  return typing ? s.slice(0, MAX_WORKER_LABEL) : s.trim().slice(0, MAX_WORKER_LABEL);
+}
+
+/** New Job's Worker field (0040): who a manager/admin may log a car for. */
+export function isStaffSubmitter(role: AppUser['role'] | undefined): boolean {
+  return role === 'manager' || role === 'admin';
+}
+
+/**
+ * Who owns a New Job submission. A worker always owns their own car with no
+ * label, whatever a draft on this (shared) phone says. A manager/admin either
+ * picked a worker (that worker owns it) or typed a name (they own it, the name
+ * rides as `worker_label`). The database enforces the same rules (0040).
+ */
+export function jobOwnership(
+  appUser: Pick<AppUser, 'id' | 'role'>,
+  form: { workerId: string; workerLabel: string },
+): { workerId: string; workerLabel: string | null; submittedBy: string } {
+  if (!isStaffSubmitter(appUser.role)) return { workerId: appUser.id, workerLabel: null, submittedBy: appUser.id };
+  return {
+    workerId: form.workerId || appUser.id,
+    workerLabel: form.workerId ? null : cleanWorkerLabel(form.workerLabel) || null,
+    submittedBy: appUser.id,
+  };
+}
+
+/**
+ * The site a New Job is logged at. A manager only ever at their own (the
+ * database refuses anything else). An admin: their pick, else the picked
+ * worker's site (that is where the car was done), else their home site, else
+ * the site they are looking at elsewhere in the app. A worker: pick or home.
+ */
+export function jobSiteId(
+  appUser: Pick<AppUser, 'role' | 'site_id'>,
+  picked: string | null,
+  scopeSiteId: string | null,
+  workerSiteId: string | null = null,
+): string | null {
+  if (appUser.role === 'manager') return appUser.site_id;
+  if (appUser.role === 'admin') return picked ?? workerSiteId ?? appUser.site_id ?? scopeSiteId;
+  return picked ?? appUser.site_id;
+}
+
+/**
+ * The workers a manager/admin may log a car for: active workers; a manager's
+ * own site only (a manager with no site gets nobody, never the site-less workers).
+ */
+export function pickableWorkers(staff: StaffMember[], appUser: Pick<AppUser, 'role' | 'site_id'>): StaffMember[] {
+  return staff.filter(
+    (s) =>
+      s.active &&
+      s.role === 'worker' &&
+      (appUser.role === 'admin' || (appUser.site_id != null && s.site_id === appUser.site_id)),
+  );
+}
+
+/** The pickable worker whose name is exactly what was typed (case and outer spaces ignored), if any. */
+export function workerNamed(workers: StaffMember[], typed: string): StaffMember | undefined {
+  const name = cleanWorkerLabel(typed).toLowerCase();
+  return name ? workers.find((w) => w.name.trim().toLowerCase() === name) : undefined;
+}
+
+/**
+ * My Jobs' "with …" names: everyone on the job but the reader. The submitter of
+ * a typed-name job (0040) is shown by that name, not as the manager who logged it.
+ */
+export function crewOthers(
+  job: Pick<Job, 'worker_id' | 'coworker_ids' | 'worker_label'>,
+  readerId: string | undefined,
+  staff: StaffMember[],
+): string[] {
+  return [job.worker_id, ...(job.coworker_ids ?? [])]
+    .filter((id) => id !== readerId)
+    .flatMap((id) => {
+      if (id === job.worker_id && job.worker_label) return [job.worker_label];
+      const name = staff.find((s) => s.id === id)?.name;
+      return name ? [name] : [];
+    });
 }

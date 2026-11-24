@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { carassoRow, gridColumnPlan, gridRows, managerRow } from './jobsGrid';
-import { customerRows, mergeColumnSubset, paymentJobs } from './exportColumns';
-import { countRows } from './statsSource';
+import { customerRows, mergeColumnSubset, paymentJobs, paymentJobsFilter } from './exportColumns';
+import { countRows, workerKey } from './statsSource';
 import { lineWrites, missingServices, planJobEdit, type JobFieldDraft, type JobFieldsBase } from './jobDetailLines';
 import { toLocalInput } from '../lib/formatDate';
 import { describePreviousJob } from '../components/previousJob';
 import type { CarassoJob, JobDailyStat, JobDailyTotal } from '../lib/types';
 import { buildCustomerReport, buildWorkerPaymentReport, type Cell } from '../lib/exports';
 import { availableColumns, CUSTOMER_COLUMNS, resolveCustomerColumns } from '../lib/reportConfig';
-import { shareFor } from '../lib/jobs';
+import { shareFor, submitterName } from '../lib/jobs';
 
 const job: CarassoJob = {
   id: 'j1',
@@ -171,6 +171,27 @@ describe('analytics count source', () => {
   it('counts per service with one picked, and narrows by worker', () => {
     expect(cars(countRows(totals, stats, '', 'b'))).toBe(1);
     expect(countRows(totals, stats, 'w2', '')).toEqual([]);
+  });
+
+  /* 0040: a typed-name job's row has no worker_id. It counts for the site, never
+     for the submitter, and gets its own bar under the typed name. */
+  it('keeps a labelled job out of every person and in the site total', () => {
+    const labelled: JobDailyTotal[] = [
+      ...totals,
+      { site_id: 's', worker_id: null, worker_label: 'Moshe', day: '2026-03-02', job_count: 1, car_count: 1, worker_cost: 50 },
+    ];
+    expect(cars(countRows(labelled, stats, '', ''))).toBe(2);
+    expect(countRows(labelled, stats, 'w1', '').map((r) => r.worker_label ?? null)).toEqual([null]);
+    expect(labelled.map(workerKey)).toEqual(['w1', 'label:Moshe']);
+  });
+
+  it('gives each typed name its own bar, apart from every person', () => {
+    const keys = [
+      { worker_id: null, worker_label: 'Moshe' },
+      { worker_id: null, worker_label: 'Avi' },
+      { worker_id: 'Moshe', worker_label: null },
+    ].map(workerKey);
+    expect(new Set(keys).size).toBe(3);
   });
 });
 
@@ -400,6 +421,21 @@ describe('jobs grid — separate rows edge cases', () => {
     ]);
     expect(r.coworker_ids).toEqual([]);
   });
+
+  /* 0040: the grid names a typed-name job by that name; Carasso's comes inside `crew`. */
+  it('carries a typed worker name on a manager row only', () => {
+    const base = {
+      id: 'j9', site_id: 's1', created_at: job.created_at, plate: 'P', vin: null, brand: null, billing_code: null,
+      duplicate_of_job_id: null, coworker_ids: [], worker: { id: 'm1', name: 'Manager' },
+    };
+    const labelled = managerRow({ ...base, worker_label: 'Moshe' });
+    expect(labelled.worker_label).toBe('Moshe');
+    expect(submitterName(labelled, labelled.worker!.name)).toBe('Moshe');
+    expect(submitterName(managerRow(base), 'Manager')).toBe('Manager');
+    expect(carassoRow(job).worker_label).toBeNull();
+    expect(submitterName({ worker_label: '' }, 'Manager')).toBe('Manager');
+    expect(submitterName({ worker_label: null }, 'Manager')).toBe('Manager');
+  });
 });
 
 describe('previous job text — several services (0033)', () => {
@@ -537,5 +573,12 @@ describe('job detail field edit (planJobEdit)', () => {
     const r = planJobEdit(legacy, { ...untouched, vin: VALID_VIN }, now);
     expect(r.blocked).toBe(false);
     expect(r.changes).toMatchObject({ vin: VALID_VIN, vin_valid_checksum: true });
+  });
+});
+
+describe('payment sheet filter (0040)', () => {
+  /* A typed-name job is owned by the manager who logged it, but its pay is nobody's. */
+  it("takes the person's own jobs only without a typed name, and every job they co-worked", () => {
+    expect(paymentJobsFilter('u1')).toBe('and(worker_id.eq.u1,worker_label.is.null),coworker_ids.cs.{u1}');
   });
 });

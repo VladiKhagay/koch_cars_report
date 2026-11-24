@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./supabase', () => ({ supabase: {} }));
 
-import { settingsFrom } from './carasso';
+import { CARASSO_JOB_COLUMNS, settingsFrom } from './carasso';
 
 describe('settingsFrom', () => {
   it('a failed read hides names and prices', () => {
@@ -59,5 +59,13 @@ describe('settingsFrom', () => {
     for (const value of ['true', 1, 'yes', null, {}, [true]]) {
       expect(settingsFrom([{ key: 'hide_client_prices', value }], null).hideClientPrices).toBe(false);
     }
+  });
+});
+
+/* 0040: jobs_carasso folds a typed name into `crew` (blank when names are hidden); it has no worker_label column to select. */
+describe('Carasso columns (0040)', () => {
+  it('never select the typed worker name', () => {
+    expect(CARASSO_JOB_COLUMNS).not.toContain('worker_label');
+    expect(CARASSO_JOB_COLUMNS).toContain('crew');
   });
 });

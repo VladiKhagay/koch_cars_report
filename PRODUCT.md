@@ -130,6 +130,21 @@ the same query under three different identities.
 - Analytics for managers (own site) and admins (site picker), with date range,
   worker and service filters, and XLSX stats export. Per-service charts count
   each service; job and car counts count each job once.
+- Managers and admins can submit a job too (0040), through the same New Job
+  flow as workers (photos, OCR, services, co-workers, offline queue, duplicate
+  warning). Entry points: "New job" in the sidebar / More menu and a button at
+  the top of Jobs; their landing page and the phone tab bar do not change. A
+  required Worker field has two modes:
+  - **Pick a worker**: the job is that worker's — their pay, My Stats and
+    15-minute edit window; the submitter gets nothing. A manager picks from
+    active workers of their own site (the job is at their site); an admin from
+    any active worker, at any site.
+  - **Type a name** for someone without an account: the job is kept under the
+    submitter, with the name shown wherever the worker's name would be (Jobs,
+    Job Detail, exports, customer report; hidden from the viewer role while
+    worker names are hidden). It counts in site stats, car counts and billing,
+    but not in the submitter's pay, My Stats or payroll share. The last 5 names
+    typed on this device appear as chips (stored per device, not shared).
 - Worker self-service stats: own job counts by month.
 - Service catalog: unique catalog number, English name, optional Russian name,
   active/inactive, manual sort order, soft delete (history keeps its references).

@@ -221,7 +221,16 @@
     "paySplit_one": "Делится на {{count}} человека",
     "paySplit_few": "Делится на {{count}} человека",
     "paySplit_many": "Делится на {{count}} человек",
-    "paySplit_other": "Делится на {{count}} человека"
+    "paySplit_other": "Делится на {{count}} человека",
+    "worker": "Сотрудник",
+    "workerPickHint": "Выберите сотрудника или впишите имя, если у него нет учётной записи.",
+    "workerTypeName": "Или впишите имя",
+    "workerRequired": "Выберите сотрудника или впишите имя",
+    "openJob": "Открыть работу",
+    "siteRequired": "Выберите площадку",
+    "useTypedName": "Вписать имя «{{term}}»",
+    "submittedPlateFor": "{{plate}} — внесено за сотрудника {{name}}.",
+    "workerHasAccount": "У сотрудника {{name}} есть учётная запись — выбрать его"
   },
   "myJobs": {
     "title": "Мои работы",
@@ -340,7 +349,8 @@
     "leadReadOnly": "Все работы на ваших площадках, сначала новые.",
     "serviceRows": "Работы с несколькими услугами",
     "grouped": "Одна строка на работу",
-    "separate": "Одна строка на услугу"
+    "separate": "Одна строка на услугу",
+    "newJob": "Новая работа"
   },
   "jobDetail": {
     "title": "Работа",
@@ -414,6 +424,7 @@
         "soft_delete": "Удалено",
         "restore": "Восстановлено",
         "media_add": "Медиа добавлено",
+        "create_on_behalf": "Создано для сотрудника",
         "media_replace": "Медиа заменено",
         "media_remove": "Медиа удалено",
         "client_price_update": "Изменена цена клиенту"
@@ -440,7 +451,8 @@
         "worker_price": "Оплата работнику",
         "unit_price": "Цена клиенту за единицу",
         "total_price": "Цена клиенту итого",
-        "duplicate_of_job_id": "Возможный дубликат"
+        "duplicate_of_job_id": "Возможный дубликат",
+        "worker_label": "Имя сотрудника (вписано)"
       },
       "slots": {
         "plate": "Фото номера",
@@ -456,7 +468,8 @@
     "editDetails": "Изменить данные работы",
     "billingSection": "Биллинг и цены",
     "moreActions": "Другие действия",
-    "unsaved": "Есть несохранённые изменения"
+    "unsaved": "Есть несохранённые изменения",
+    "loggedBy": "{{name}} · внесено: {{submitter}}"
   },
   "photo": {
     "download": "Скачать фото",

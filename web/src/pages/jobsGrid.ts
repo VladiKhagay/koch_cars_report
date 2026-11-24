@@ -19,6 +19,8 @@ export interface JobRow {
   duplicate_of_job_id: string | null;
   coworker_ids: string[];
   worker: { id: string; name: string } | null;
+  /** A typed name standing in for the worker (0040); managers/admins only. */
+  worker_label: string | null;
   /** Carasso only: everyone on the job, already joined. */
   crew: string | null;
   /** The job's services, names only (the views' lines also carry pay or client prices). */
@@ -31,7 +33,9 @@ export function gridServices(lines: ServiceNames[] | null | undefined): ServiceN
 }
 
 /** A `jobs_manager` row in the grid's shape: names-only services, crew resolved later from ids. */
-export function managerRow(r: Omit<JobRow, 'crew' | 'services'> & { services?: ServiceNames[] | null }): JobRow {
+export function managerRow(
+  r: Omit<JobRow, 'crew' | 'services' | 'worker_label'> & { services?: ServiceNames[] | null; worker_label?: string | null },
+): JobRow {
   return {
     id: r.id,
     site_id: r.site_id,
@@ -43,6 +47,7 @@ export function managerRow(r: Omit<JobRow, 'crew' | 'services'> & { services?: S
     duplicate_of_job_id: r.duplicate_of_job_id,
     coworker_ids: r.coworker_ids ?? [],
     worker: r.worker,
+    worker_label: r.worker_label ?? null,
     crew: null,
     services: gridServices(r.services),
   };
@@ -69,6 +74,8 @@ export function carassoRow(r: CarassoJob): JobRow {
     duplicate_of_job_id: null,
     coworker_ids: [],
     worker: null,
+    // jobs_carasso folds a typed name into `crew` (and hides it with the rest).
+    worker_label: null,
     crew: r.crew,
     // A row without `services` (older view) falls back to the joined names, as one entry.
     services: r.services

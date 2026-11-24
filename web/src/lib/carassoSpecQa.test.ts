@@ -127,7 +127,8 @@ describe('route guards', () => {
   });
 
   it('other roles unchanged', () => {
-    expect(ROUTE_ROLES.newJob).toEqual(['worker']);
+    // Managers/admins log cars on a worker's behalf since 0040; Carasso still can't (above).
+    expect(ROUTE_ROLES.newJob).toEqual(['worker', 'manager', 'admin']);
     expect(ROUTE_ROLES.workerScreens).toEqual(['worker']);
     expect(ROUTE_ROLES.admin).toEqual(['admin']);
     expect(ROUTE_ROLES.team).toEqual(['manager']);

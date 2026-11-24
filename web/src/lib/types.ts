@@ -80,6 +80,12 @@ export interface Job {
   /** Up to two people who worked the car with the submitter (migration 0019). */
   coworker_ids: string[];
   /**
+   * A name typed by a manager/admin for someone without an account (0040). Set
+   * only when the submitter owns the job (`worker_id` is the manager/admin);
+   * shown where the worker's name is, never paid to the submitter.
+   */
+  worker_label?: string | null;
+  /**
    * Each person's cut of worker_price, computed by Postgres (generated columns)
    * so the rounding lives in one place. The submitter's share carries the
    * leftover cent, so the shares always add up to worker_price.
@@ -145,7 +151,8 @@ export interface Photo {
 
 export interface JobMonthlyStat {
   site_id: string;
-  worker_id: string;
+  /** NULL on a labelled job's row (0040). */
+  worker_id: string | null;
   month: string; // date, first of month
   job_count: number;
 }
@@ -158,7 +165,10 @@ export interface JobMonthlyStat {
  */
 export interface JobDailyStat {
   site_id: string;
-  worker_id: string;
+  /** NULL on a labelled job's row (0040): it counts for the site, not for the submitter. */
+  worker_id: string | null;
+  /** The typed name of a labelled job (0040), on its first crew row only. */
+  worker_label?: string | null;
   service_id: string;
   day: string; // date
   /** Jobs this person worked on — a shared car counts once for each of them. */
@@ -172,7 +182,9 @@ export interface JobDailyStat {
 /** `job_daily_totals` (0033): JobDailyStat at job grain, no service. Sum this for job, car and pay totals. */
 export interface JobDailyTotal {
   site_id: string;
-  worker_id: string;
+  /** NULL on a labelled job's row (0040), as in JobDailyStat. */
+  worker_id: string | null;
+  worker_label?: string | null;
   day: string; // date
   job_count: number;
   car_count: number;

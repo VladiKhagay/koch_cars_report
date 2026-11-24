@@ -209,7 +209,16 @@
     "servicesSelected_other": "{{count}} services picked",
     "payTotal": "Pay for this car: {{amount}}",
     "paySplit_one": "Split between {{count}} person",
-    "paySplit_other": "Split between {{count}} people"
+    "paySplit_other": "Split between {{count}} people",
+    "worker": "Worker",
+    "workerPickHint": "Pick the worker, or type a name if they have no account.",
+    "workerTypeName": "Or type a name",
+    "workerRequired": "Pick a worker or type a name",
+    "openJob": "Open job",
+    "siteRequired": "Choose a site",
+    "useTypedName": "Use “{{term}}” as the name",
+    "submittedPlateFor": "{{plate}} is logged for {{name}}.",
+    "workerHasAccount": "{{name}} has an account — pick them"
   },
   "myJobs": {
     "title": "My Jobs",
@@ -322,7 +331,8 @@
     "leadReadOnly": "Every job on your sites, newest first.",
     "serviceRows": "Jobs with several services",
     "grouped": "One row per job",
-    "separate": "One row per service"
+    "separate": "One row per service",
+    "newJob": "New Job"
   },
   "jobDetail": {
     "title": "Job",
@@ -396,6 +406,7 @@
         "soft_delete": "Deleted",
         "restore": "Restored",
         "media_add": "Media added",
+        "create_on_behalf": "Created for a worker",
         "media_replace": "Media replaced",
         "media_remove": "Media removed",
         "client_price_update": "Client price changed"
@@ -422,7 +433,8 @@
         "worker_price": "Worker pay",
         "unit_price": "Client unit price",
         "total_price": "Client total price",
-        "duplicate_of_job_id": "Possible duplicate"
+        "duplicate_of_job_id": "Possible duplicate",
+        "worker_label": "Worker name (typed)"
       },
       "slots": {
         "plate": "License plate photo",
@@ -438,7 +450,8 @@
     "editDetails": "Edit job details",
     "billingSection": "Billing & pricing",
     "moreActions": "More actions",
-    "unsaved": "Unsaved changes"
+    "unsaved": "Unsaved changes",
+    "loggedBy": "{{name}} · logged by {{submitter}}"
   },
   "photo": {
     "download": "Download photo",

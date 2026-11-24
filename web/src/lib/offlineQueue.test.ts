@@ -451,6 +451,61 @@ describe('retry and discard', () => {
   });
 });
 
+describe('queue owner is the submitter (0040)', () => {
+  it('lists and sends a job a manager logged for a worker', async () => {
+    q.setQueueOwner('m1');
+    await q.flushQueue();
+    const job = base({ workerId: 'w1', submittedBy: 'm1' });
+    seed(job);
+    expect((await q.listQueued()).map((e) => e.queuedId)).toEqual([job.queuedId]);
+    await q.flushQueue();
+    expect(mocks.submitJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides it from the worker it was logged for, on the same phone', async () => {
+    seed(base({ workerId: 'w1', submittedBy: 'm1' }));
+    expect(await q.listQueued()).toEqual([]);
+  });
+
+  /* The worker it was logged for, signed in on that phone, must not send it either (their RLS would refuse a labelled one). */
+  it('is never sent by the worker it was logged for', async () => {
+    seed(base({ workerId: 'w1', submittedBy: 'm1' }), videoEntry({ workerId: 'w1', submittedBy: 'm1' }));
+    await q.flushQueue();
+    expect(mocks.submitJob).not.toHaveBeenCalled();
+    expect(mocks.submitVideo).not.toHaveBeenCalled();
+    expect(stored()).toHaveLength(2);
+  });
+
+  it('sends the typed name and submitter through to submitJob unchanged', async () => {
+    seed(base({ workerId: 'm1', workerLabel: 'Moshe', submittedBy: 'm1' }));
+    q.setQueueOwner('m1'); // starts its own run
+    await vi.waitFor(() =>
+      expect(mocks.submitJob).toHaveBeenCalledWith(expect.objectContaining({ workerId: 'm1', workerLabel: 'Moshe' })),
+    );
+  });
+
+  /* The job's video entry must stay the manager's, or it is stranded on the worker's list. */
+  it('keeps the submitter on the video entry a landed job hands over', async () => {
+    let shown: QueuedJob[] = [];
+    mocks.submitVideo.mockImplementation(async () => {
+      shown = await q.listQueued();
+    });
+    seed(base({ workerId: 'w1', submittedBy: 'm1', videoBlob: video }));
+    q.setQueueOwner('m1'); // starts its own run
+    await vi.waitFor(() => expect(mocks.submitVideo).toHaveBeenCalled());
+    await vi.waitFor(() => expect(stored()).toEqual([]));
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ stage: 'video', submittedBy: 'm1', workerId: 'w1' });
+  });
+
+  /* Queued before 0040: no submittedBy, the submitter was the worker. */
+  it('still matches a legacy entry on its worker', async () => {
+    const job = base({ workerId: 'w1' });
+    seed(job);
+    expect((await q.listQueued()).map((e) => e.queuedId)).toEqual([job.queuedId]);
+  });
+});
+
 describe('queue mechanics', () => {
   it("neither lists nor sends another person's entries", async () => {
     seed(base({ workerId: 'w2' }), videoEntry({ workerId: 'w2' }));

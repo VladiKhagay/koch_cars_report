@@ -81,7 +81,8 @@ export default function Dashboard() {
       .lte('created_at', `${isoDay}T23:59:59.999`)
       .order('created_at', { ascending: false });
 
-    setJobs((data ?? []).map((j: any) => ({ ...j, worker_name: j.worker?.name })));
+    // A typed name (0040) stands in for the worker; the account behind it is only the submitter's.
+    setJobs((data ?? []).map((j: any) => ({ ...j, worker_name: j.worker_label || j.worker?.name })));
     setLoading(false);
   }
 

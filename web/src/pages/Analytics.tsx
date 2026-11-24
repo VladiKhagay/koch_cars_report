@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { serviceName, type ServiceNames } from '../lib/serviceName';
 import { useSiteScope } from '../lib/useSiteScope';
 import type { JobDailyStat, JobDailyTotal } from '../lib/types';
-import { countRows } from './statsSource';
+import { countRows, workerKey } from './statsSource';
 import { SHEET_NAMES, buildStatsSheet } from '../lib/exports';
 import { downloadWorkbook } from '../lib/excelFile';
 import { useExportLang } from '../components/useExportLang';
@@ -99,7 +99,8 @@ export default function Analytics() {
 
     // Chart labels only: rows can reference a soft-deleted service or a user
     // from another site, neither of which belongs in the filter dropdowns.
-    const unknownWorkers = [...new Set(stats.map((r) => r.worker_id))];
+    // A labelled job's row (0040) has no worker_id: nothing to look up for it.
+    const unknownWorkers = [...new Set(stats.map((r) => r.worker_id).filter((id): id is string => Boolean(id)))];
     const unknownServices = [...new Set(stats.map((r) => r.service_id))];
     const [{ data: users }, { data: svc }] = await Promise.all([
       unknownWorkers.length > 0
@@ -161,8 +162,16 @@ export default function Analytics() {
 
   const byWorker = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of counted) map.set(r.worker_id, (map.get(r.worker_id) ?? 0) + r.job_count);
-    return [...map.entries()].map(([id, v]) => ({ label: labelFor(id), value: v })).sort((a, b) => b.value - a.value);
+    const labels = new Map<string, string>();
+    for (const r of counted) {
+      const key = workerKey(r);
+      map.set(key, (map.get(key) ?? 0) + r.job_count);
+      // A typed name (0040) is its own label; a person is looked up.
+      if (!r.worker_id) labels.set(key, r.worker_label || '—');
+    }
+    return [...map.entries()]
+      .map(([id, v]) => ({ label: labels.get(id) ?? labelFor(id), value: v }))
+      .sort((a, b) => b.value - a.value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counted, extraLabels, workerOptions]);
 
@@ -184,7 +193,7 @@ export default function Analytics() {
       );
 
       // Names for anything the current maps don't cover (other sites).
-      const workerIds = [...new Set(stats.map((r) => r.worker_id))];
+      const workerIds = [...new Set(stats.map((r) => r.worker_id).filter((id): id is string => Boolean(id)))];
       const serviceIds = [...new Set(stats.map((r) => r.service_id))];
       const [{ data: users }, { data: svcs }] = await Promise.all([
         workerIds.length > 0 ? supabase.from('users').select('id, name').in('id', workerIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -202,7 +211,7 @@ export default function Analytics() {
       const exportRows = stats.map((r) => ({
         day: r.day,
         site: siteMap[r.site_id] ?? r.site_id,
-        worker: workerMap[r.worker_id] ?? '',
+        worker: (r.worker_id ? workerMap[r.worker_id] : r.worker_label) ?? '',
         catalog_number: svcMap[r.service_id]?.code ?? '',
         service: svcMap[r.service_id] ? { name_en: svcMap[r.service_id].name, name_he: svcMap[r.service_id].name_he } : null,
         job_count: r.job_count,
