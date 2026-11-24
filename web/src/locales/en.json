@@ -219,7 +219,9 @@
     "siteDisabled": "This site is disabled and takes no new jobs.",
     "useTypedName": "Use “{{term}}” as the name",
     "submittedPlateFor": "{{plate}} is logged for {{name}}.",
-    "workerHasAccount": "{{name}} has an account — pick them"
+    "workerHasAccount": "{{name}} has an account — pick them",
+    "plateRequired": "Enter the plate number — this site requires it",
+    "plateOrVinRequired": "Enter the plate number or the VIN"
   },
   "myJobs": {
     "title": "My Jobs",
@@ -268,7 +270,12 @@
     "pay": "Pay",
     "yourShare": "Your share: {{amount}}",
     "jobTotal": "Job total: {{amount}}",
-    "servicesSaveFailed": "Services not saved. Check your connection and try again; after 15 minutes only a manager can change them."
+    "servicesSaveFailed": "Services not saved. Check your connection and try again; after 15 minutes only a manager can change them.",
+    "refused": {
+      "site-disabled": "Not submitted: this site was disabled and takes no new jobs. Ask your manager.",
+      "site-needs-vin": "Not submitted: this site now requires a VIN and this car has none. Log it again with the VIN.",
+      "site-needs-plate": "Not submitted: this site now requires a plate number and this car has none. Log it again with the plate."
+    }
   },
   "dashboard": {
     "viewYesterday": "View yesterday",
@@ -452,7 +459,8 @@
     "billingSection": "Billing & pricing",
     "moreActions": "More actions",
     "unsaved": "Unsaved changes",
-    "loggedBy": "{{name}} · logged by {{submitter}}"
+    "loggedBy": "{{name}} · logged by {{submitter}}",
+    "plateOrVinRequired": "Enter a plate number or a VIN"
   },
   "photo": {
     "download": "Download photo",
@@ -565,7 +573,17 @@
     "sitesDelete": "Delete",
     "sitesDeleteQuestion": "Delete {{name}} for good? This only works for a site with no jobs and no users.",
     "sitesDeleted": "Site deleted",
-    "sitesInUse": "This site has jobs or users, so it cannot be deleted. Disable it instead."
+    "sitesInUse": "This site has jobs or users, so it cannot be deleted. Disable it instead.",
+    "sitesRules": "VIN and plate rules",
+    "sitesRulesHint": "What a new job at this site must have. Existing jobs are not affected. Every job needs at least a plate or a VIN.",
+    "sitesRuleVin": "VIN",
+    "sitesRulePlate": "Plate number",
+    "sitesRule": {
+      "required": "Required",
+      "optional": "Optional"
+    },
+    "sitesRulesSummary": "VIN: {{vin}} · Plate: {{plate}}",
+    "sitesRulesSaved": "Rules saved"
   },
   "common": {
     "cancel": "Cancel",

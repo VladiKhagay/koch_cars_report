@@ -15,6 +15,7 @@ import {
   Tr,
   TrExpanded,
   CellTitle,
+  CellMuted,
 } from '../../components/DataTable';
 import {
   Badge,
@@ -27,6 +28,7 @@ import {
   Page,
   PageHeading,
   SearchField,
+  Select,
   fieldClass,
   fieldErrorClass,
 } from '../../components/ui';
@@ -34,7 +36,8 @@ import {
 /** Name, status, actions. */
 const COLUMNS = 3;
 
-type Expanded = { id: string; mode: 'rename' | 'disable' | 'delete' } | null;
+type Expanded = { id: string; mode: 'rename' | 'rules' | 'disable' | 'delete' } | null;
+type Rule = Site['vin_rule'];
 type Status =
   | 'idle'
   | 'added'
@@ -42,6 +45,7 @@ type Status =
   | 'duplicate'
   | 'error'
   | 'renamed'
+  | 'rulesSaved'
   | 'disabled'
   | 'enabled'
   | 'deleted'
@@ -60,6 +64,11 @@ export default function AdminSites() {
   const [expanded, setExpanded] = useState<Expanded>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [renameError, setRenameError] = useState<RenameError>('');
+  const [rulesDraft, setRulesDraft] = useState<{ vin_rule: Rule; plate_rule: Rule }>({
+    vin_rule: 'required',
+    plate_rule: 'optional',
+  });
+  const [rulesError, setRulesError] = useState(false);
 
   useEffect(() => {
     void load();
@@ -67,7 +76,7 @@ export default function AdminSites() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('sites').select('id, name, active').order('name');
+    const { data } = await supabase.from('sites').select('id, name, active, vin_rule, plate_rule').order('name');
     setSites(data ?? []);
     setLoading(false);
   }
@@ -94,6 +103,8 @@ export default function AdminSites() {
     setExpanded({ id: site.id, mode });
     setRenameDraft(site.name);
     setRenameError('');
+    setRulesDraft({ vin_rule: site.vin_rule, plate_rule: site.plate_rule });
+    setRulesError(false);
     setStatus('idle');
   }
 
@@ -113,6 +124,23 @@ export default function AdminSites() {
     }
     setExpanded(null);
     setStatus('renamed');
+    void load();
+  }
+
+  /* Which of VIN / plate a NEW job at this site must have (0042). Admin-only in
+     the database (sites_write); existing jobs and their edits are unaffected. */
+  async function handleRules(site: Site) {
+    if (saving) return;
+    setSaving(true);
+    // .select(): RLS turns a refused update into zero rows, not an error.
+    const { data, error } = await supabase.from('sites').update(rulesDraft).eq('id', site.id).select('id');
+    setSaving(false);
+    if (error || !data?.length) {
+      setRulesError(true);
+      return;
+    }
+    setExpanded(null);
+    setStatus('rulesSaved');
     void load();
   }
 
@@ -167,6 +195,7 @@ export default function AdminSites() {
       {status === 'inUse' && <StatusBanner tone="error" live>{t('admin.sitesInUse')}</StatusBanner>}
       {status === 'added' && <StatusBanner tone="success" live>{t('admin.sitesAdded')}</StatusBanner>}
       {status === 'renamed' && <StatusBanner tone="success" live>{t('admin.sitesRenamed')}</StatusBanner>}
+      {status === 'rulesSaved' && <StatusBanner tone="success" live>{t('admin.sitesRulesSaved')}</StatusBanner>}
       {status === 'disabled' && <StatusBanner tone="success" live>{t('admin.sitesDisabledDone')}</StatusBanner>}
       {status === 'enabled' && <StatusBanner tone="success" live>{t('admin.sitesEnabledDone')}</StatusBanner>}
       {status === 'deleted' && <StatusBanner tone="success" live>{t('admin.sitesDeleted')}</StatusBanner>}
@@ -222,6 +251,14 @@ export default function AdminSites() {
                     <Tr active={Boolean(mode)}>
                       <Td>
                         <CellTitle>{s.name}</CellTitle>
+                        <span className="block text-xs">
+                          <CellMuted>
+                            {t('admin.sitesRulesSummary', {
+                              vin: t(`admin.sitesRule.${s.vin_rule}`),
+                              plate: t(`admin.sitesRule.${s.plate_rule}`),
+                            })}
+                          </CellMuted>
+                        </span>
                       </Td>
                       <Td>
                         {s.active ? (
@@ -236,6 +273,7 @@ export default function AdminSites() {
                       </Td>
                       <TdActions>
                         <IconButton icon="pencil" label={t('admin.sitesRename')} onClick={() => open(s, 'rename')} />
+                        <IconButton icon="settings" label={t('admin.sitesRules')} onClick={() => open(s, 'rules')} />
                         {s.active ? (
                           <IconButton icon="lock" label={t('admin.sitesDisable')} onClick={() => open(s, 'disable')} />
                         ) : (
@@ -281,6 +319,53 @@ export default function AdminSites() {
                               icon="check"
                               busy={saving}
                               onClick={() => void handleRename(s)}
+                            >
+                              {t('admin.save')}
+                            </Button>
+                            <Button
+                              className="min-w-32 flex-1 sm:flex-none"
+                              variant="secondary"
+                              onClick={() => setExpanded(null)}
+                            >
+                              {t('common.cancel')}
+                            </Button>
+                          </div>
+                        </div>
+                      </TrExpanded>
+                    )}
+
+                    {mode === 'rules' && (
+                      <TrExpanded colSpan={COLUMNS}>
+                        <div className="space-y-4">
+                          <p className="text-sm text-ink-600">{t('admin.sitesRulesHint')}</p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {(['vin_rule', 'plate_rule'] as const).map((key) => (
+                              <Field
+                                key={key}
+                                htmlFor={`${key}-${s.id}`}
+                                label={t(key === 'vin_rule' ? 'admin.sitesRuleVin' : 'admin.sitesRulePlate')}
+                              >
+                                <Select
+                                  id={`${key}-${s.id}`}
+                                  value={rulesDraft[key]}
+                                  onChange={(e) => {
+                                    setRulesDraft((d) => ({ ...d, [key]: e.target.value as Rule }));
+                                    setRulesError(false);
+                                  }}
+                                >
+                                  <option value="required">{t('admin.sitesRule.required')}</option>
+                                  <option value="optional">{t('admin.sitesRule.optional')}</option>
+                                </Select>
+                              </Field>
+                            ))}
+                          </div>
+                          {rulesError && <StatusBanner tone="error" live>{t('common.error')}</StatusBanner>}
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              className="min-w-32 flex-1 sm:flex-none"
+                              icon="check"
+                              busy={saving}
+                              onClick={() => void handleRules(s)}
                             >
                               {t('admin.save')}
                             </Button>

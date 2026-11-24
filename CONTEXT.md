@@ -170,6 +170,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0038_hide_client_prices.sql` | `app_settings` key `hide_client_prices` (default false), admin-only `set_hide_client_prices()`, both Carasso price policies and `jobs_carasso` withhold client prices while it is on |
 | `0039_extra_photos_5.sql` | `photos_kind_check` widened to `extra_1..extra_5` (plate, vin, video unchanged). Apply before the web/Worker that send `extra_4`/`extra_5`; run `supabase/verify_0039.sql` |
 | `0040_staff_submit_for_worker.sql` | Managers/admins submit jobs: `jobs.worker_label` (1..60 chars, no control/zero-width/bidi chars), `jobs_insert` widened for on-behalf submits, `jobs_guard_worker_label` trigger, 10-arg `create_job(..., p_worker_label)`, stats views put a labelled job's submitter row under `worker_id` NULL, `worker_label` on `jobs_manager` / `jobs_worker_view` / daily stats, label in `jobs_carasso.crew`, `create_on_behalf` audit row, `jobs_audit` logs the label, `list_staff` regression fix. Run `supabase/verify_0040.sql`; behaviour in `supabase/scenarios_0040.sql` |
+| `0042_site_vehicle_id_rules.sql` | Per-site rules: `sites.vin_rule` (default `required`) and `sites.plate_rule` (default `optional`), each `required`/`optional`; `jobs.vin` nullable again; `jobs_plate_or_vin_chk` restored; `jobs_insert` = 0041 AND the site's rules (blank counts as missing) AND a plate or a VIN. Run `supabase/verify_0042.sql`; behaviour in `supabase/scenarios_0042.sql` |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -187,7 +188,8 @@ Plain SQL, applied in order via the Supabase SQL editor.
 ## 4. Data model
 
 ```
-sites(id, name, active)   -- active false = disabled (0041)
+sites(id, name, active,   -- active false = disabled (0041)
+      vin_rule, plate_rule) -- required|optional for new jobs (0042)
 users(id, auth_id, name, role[worker|manager|admin], site_id, active)
 services(id, catalog_number (not unique, 0017), name_en, name_ru, worker_price,
          active, sort_order, deleted_at)
@@ -220,7 +222,8 @@ access. An unused site (no jobs, users or viewer links) can be deleted.
 Limitations: moving an existing job INTO a disabled site is blocked only in the
 UI (its edit pickers offer enabled sites plus the job's own), not by the
 database; and an offline job queued before the site was disabled fails with
-42501 when it syncs (it stays in the queue as needing attention).
+42501 when it syncs (it stays in the queue as needing attention, with a
+translated reason since 0042).
 
 **Several services per job (0033).** 0005 collapsed jobs to one service; the
 yard then logged cars that got a wash *and* a polish, so 0033 brought
@@ -332,6 +335,26 @@ an empty or malformed VIN; `submitJob` refuses a VIN-less payload before
 photos), and 23502 is a permanent error. My Jobs searches plate and VIN.
 
 **Deploy order: 0036 -> web. Rollback: web only; 0036 down is commented.**
+
+**Per-site VIN / plate rules (0042, supersedes 0036's "VIN always").** Each
+site has `vin_rule` and `plate_rule` (`required` | `optional`; defaults VIN
+required, plate optional, so nothing changed until an admin edits a site).
+`jobs_insert` checks them (blank or whitespace counts as missing) and also
+requires a plate or a VIN; `jobs_plate_or_vin_chk` keeps every row, edits
+included, with one of them. New Job reads the rules of the site the job goes
+to (`siteRules` in `workerJobs.ts`; unknown site = the defaults, VIN required
+and plate optional) for required markers and problems (`vehicleProblems`); the
+VIN photo is required iff the VIN is. The database is authoritative: a job it
+refuses (e.g. plate-required at a site the form did not know) becomes a
+translated, permanent queue entry. Rules bind new jobs only: Job Detail checks formats and "plate or
+VIN" (`normalizeVehicle().missingVehicle`), not the site's current rules. When
+`create_job` fails with 42501, `submitJob` reads the site once and, if it
+explains the refusal, throws `InvalidJobError('site-disabled' |
+'site-needs-vin' | 'site-needs-plate')`; that code becomes the queue entry's
+`lastError` and `QueuedJobs` shows it translated. Permanent either way.
+
+**Deploy order: 0042 -> web. Rollback: web -> 0042 down** (refuses while any
+job has a NULL or blank VIN).
 
 **Partial plate/VIN lookup (0037).** Car lookup finds any job whose VIN, or
 plate, contains the query. `lookup_vehicle` normalises server-side (upper

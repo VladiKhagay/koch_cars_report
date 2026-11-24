@@ -33,6 +33,12 @@ let selectRows: unknown[] = [{ id: 'p1' }];
 let selectError: { message: string } | null = null;
 /* Every photos update (removeMedia), with its filters. */
 const updates: { fields: Record<string, unknown>; eqs: [string, unknown][] }[] = [];
+/* What create_job errors with (e.g. RLS 42501); null = success. */
+let createJobError: { message: string; code?: string } | null = null;
+/* The site row submitJob reads after a 42501 (0042); siteLookupError = that read failing. */
+let siteRow: Record<string, unknown> | null = null;
+let siteLookupError: { message: string } | null = null;
+const siteLookups: unknown[] = [];
 
 vi.mock('./supabase', () => {
   return {
@@ -64,8 +70,12 @@ vi.mock('./supabase', () => {
           };
           return chain;
         },
-        select: () => ({
+        select: (cols?: string) => ({
           eq: (c1: string, v1: unknown) => ({
+            maybeSingle: () => {
+              siteLookups.push({ table, cols, [c1]: v1 });
+              return Promise.resolve({ data: siteLookupError ? null : siteRow, error: siteLookupError });
+            },
             eq: (c2: string, v2: unknown) => {
               selectEqs.push([c1, v1], [c2, v2]);
               return Promise.resolve({ data: existingVideoRows, error: null });
@@ -79,6 +89,7 @@ vi.mock('./supabase', () => {
         rpcCalls.push({ fn, ...args });
         // create_job (0033) is the job insert: it returns the new id as a scalar.
         if (fn === 'create_job') {
+          if (createJobError) return Promise.resolve({ data: null, error: createJobError });
           insertedJobs.push(args);
           return Promise.resolve({ data: `job-${++jobIdSeq}`, error: null });
         }
@@ -164,6 +175,10 @@ beforeEach(() => {
   selectError = null;
   updates.length = 0;
   setServicesError = null;
+  createJobError = null;
+  siteRow = null;
+  siteLookupError = null;
+  siteLookups.length = 0;
   w.calls.length = 0;
   w.photoTimeouts.length = 0;
   w.start.mockReset().mockImplementation(async (_jobId: string, b: Blob) => {
@@ -566,15 +581,23 @@ describe('submitJob — photo slots', () => {
 });
 
 /*
- * The VIN is required (0036). A queued or direct payload without one is refused
- * before create_job, as a permanent error (InvalidJobError): resending it can
- * never succeed, and the database would refuse it anyway (NOT NULL, 23502).
+ * A job needs a plate or a VIN (0042); which one is the site's rule, checked
+ * by the database. A queued or direct payload with neither is refused before
+ * create_job, as a permanent error (InvalidJobError): resending it can never
+ * succeed, and the database would refuse it anyway.
  */
 describe('submitJob — a car with no VIN', () => {
   const row = () => insertedJobs[0] as Record<string, unknown>;
 
-  it.each([null, '', '   '])('refuses vin %j before asking the database', async (vin) => {
-    const err = await submitJob({ ...payload(), vin }).catch((e: unknown) => e);
+  it.each([null, '', '   ', '\t\n', '\u00a0\u3000'])('sends vin %j as NULL when there is a plate (site allows it, 0042)', async (vin) => {
+    await submitJob({ ...payload(), vin, vinBlob: null });
+    expect(row().p_vin).toBeNull();
+    expect(row().p_vin_valid_checksum).toBeNull();
+    expect(row().p_plate).toBe('12-345-67');
+  });
+
+  it.each([null, '', '   ', '\t\n', '\u00a0\u3000'])('refuses vin %j with no plate either, before asking the database', async (vin) => {
+    const err = await submitJob({ ...payload(), plate: '  ', vin }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(InvalidJobError);
     expect(isPermanentError(err)).toBe(true);
     expect(rpcCalls).toEqual([]);
@@ -582,10 +605,10 @@ describe('submitJob — a car with no VIN', () => {
     expect(uploads).toEqual([]);
   });
 
-  /* A job row created before 0036 (or a payload queued with its jobId already
-     set) only has photos left to send: the VIN check guards creation only. */
+  /* A payload queued with its jobId already set only has photos left to send:
+     the plate-or-VIN check guards creation only. */
   it('still finishes the photos of a job that already exists', async () => {
-    await submitJob({ ...payload(), vin: null, jobId: 'job-7' });
+    await submitJob({ ...payload(), plate: null, vin: null, jobId: 'job-7' });
     expect(rpcCalls).toEqual([]);
     expect(uploads).toEqual(['plate', 'vin']);
   });
@@ -606,8 +629,8 @@ describe('submitJob — a car with no VIN', () => {
 });
 
 /*
- * Some cars arrive with no physical plate at all. The plate is optional; the
- * VIN still identifies the car (0036).
+ * Some cars arrive with no physical plate at all. Where the site makes the
+ * plate optional (the default), the VIN identifies the car (0042).
  */
 describe('submitJob — a car with no plate', () => {
   const row = () => insertedJobs[0] as Record<string, unknown>;
@@ -992,5 +1015,90 @@ describe('worker media edit (0035) — refusals and kept slots', () => {
     expect(slotRemovable(rows, 'extra_3', keep)).toBe(false);
     // Managers keep nothing back.
     expect(slotRemovable(rows, 'plate')).toBe(true);
+  });
+});
+
+/*
+ * jobs_insert refuses (42501) a job its site does not take: disabled (0041) or
+ * missing what the site requires (0042), e.g. a job queued offline before an
+ * admin changed the rule. submitJob reads the site once and names the reason,
+ * so the queue card can say it in the worker's language. Always permanent.
+ */
+describe('submitJob — refused by the site', () => {
+  const rls = { message: 'new row violates row-level security policy for table "jobs"', code: '42501' };
+  const site = (over: Record<string, unknown> = {}) => ({ active: true, vin_rule: 'required', plate_rule: 'optional', ...over });
+
+  it.each([
+    ['site-disabled', site({ active: false }), {}],
+    ['site-needs-vin', site({ vin_rule: 'required' }), { vin: null }],
+    ['site-needs-plate', site({ vin_rule: 'optional', plate_rule: 'required' }), { plate: null }],
+  ])('names %s from one site lookup', async (reason, row, over) => {
+    createJobError = rls;
+    siteRow = row;
+    const err = await submitJob({ ...payload(), ...over }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidJobError);
+    expect((err as Error).message).toBe(reason);
+    expect(isPermanentError(err)).toBe(true);
+    expect(siteLookups).toEqual([{ table: 'sites', cols: 'active, vin_rule, plate_rule', id: 'site-1' }]);
+    expect(uploads).toEqual([]);
+  });
+
+  it('says disabled before naming a rule', async () => {
+    createJobError = rls;
+    siteRow = site({ active: false, plate_rule: 'required' });
+    const err = await submitJob({ ...payload(), plate: null }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('site-disabled');
+  });
+
+  it('rethrows the original 42501 when the site does not explain it', async () => {
+    createJobError = rls;
+    siteRow = site();
+    const err = await submitJob(payload()).catch((e: unknown) => e);
+    expect(err).toBe(rls);
+    expect(isPermanentError(err)).toBe(true);
+  });
+
+  it.each([
+    ['the lookup fails', () => (siteLookupError = { message: 'offline' })],
+    ['the site is not visible', () => (siteRow = null)],
+  ])('rethrows the original 42501 when %s', async (_name, arrange) => {
+    createJobError = rls;
+    arrange();
+    const err = await submitJob({ ...payload(), vin: null }).catch((e: unknown) => e);
+    expect(err).toBe(rls);
+    expect(isPermanentError(err)).toBe(true);
+  });
+
+  it('does not look the site up for any other error', async () => {
+    createJobError = { message: 'boom', code: '23514' };
+    await submitJob(payload()).catch(() => {});
+    expect(siteLookups).toEqual([]);
+  });
+});
+
+/* Edge cases of the 42501 diagnosis (0042): blanks count as missing, as in jobs_insert. */
+describe('submitJob — refused by the site, blanks and rule order', () => {
+  const rls = { message: 'new row violates row-level security policy for table "jobs"', code: '42501' };
+
+  it('names site-needs-plate for a whitespace-only plate', async () => {
+    createJobError = rls;
+    siteRow = { active: true, vin_rule: 'optional', plate_rule: 'required' };
+    const err = await submitJob({ ...payload(), plate: '   ' }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('site-needs-plate');
+    expect(rpcCalls[0]).toMatchObject({ fn: 'create_job', p_plate: null });
+  });
+
+  it('names site-needs-vin for a whitespace-only VIN where both are required', async () => {
+    createJobError = rls;
+    siteRow = { active: true, vin_rule: 'required', plate_rule: 'required' };
+    const err = await submitJob({ ...payload(), vin: '   ' }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe('site-needs-vin');
+    expect(isPermanentError(err)).toBe(true);
+  });
+
+  it('does not diagnose a job that already exists (only its photos are left)', async () => {
+    siteRow = { active: false, vin_rule: 'required', plate_rule: 'required' };
+    await submitJob({ ...payload(), vin: null, jobId: 'job-7' });
+    expect(siteLookups).toEqual([]);
   });
 });

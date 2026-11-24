@@ -592,3 +592,35 @@ Accepted (lead decision):
 - [ ] Optional, local/branch database only: `supabase/scenarios_0041.sql`
       (impersonates users, ends in ROLLBACK).
 - [ ] Rollback: **web -> 0041 down** (commented at the end of the migration).
+
+## 11. Per-site VIN / plate rules (migration 0042)
+
+- **Admin only.** The rules are columns on `sites` (`vin_rule`,
+  `plate_rule`, CHECK `required`/`optional`, NOT NULL). `sites_write` is still
+  the only write policy on `sites` and is admin-only; managers and workers
+  changing a rule update 0 rows.
+- **Enforced on insert, in the database.** `jobs_insert` is the 0041 policy
+  with its sites clause extended: the site must be active, a required VIN /
+  plate must be non-blank (a regex requiring a character outside POSIX
+  whitespace and the Unicode spaces JS `trim()` strips, NBSP included, so the
+  database and the web agree; tabs and newlines count as blank), and the job must
+  have a non-blank plate or VIN. `create_job` is security invoker, so it and a
+  direct insert are refused alike (42501). The users clause is unchanged.
+- **Edits are not bound by the site's rules** (decision): `jobs_update` is
+  unchanged, so a manager/admin (Job Detail) can clear a VIN at a
+  VIN-required site as long as a plate remains. A worker's own job in its
+  15-minute window is writable the same way through the API (0021 does not
+  guard plate/VIN), though the web offers no such field. `jobs_plate_or_vin_chk`
+  (NULL check) keeps every row with one of them.
+- **Blank values on edit.** The CHECK tests NULL only; a `''` or whitespace
+  VIN written outside the web on an edit is not refused (as since 0036). The
+  web sends NULL for an empty field.
+- **Client reason lookup.** After a 42501 the web reads its own site row
+  (readable to all staff) only to word the error; it grants nothing.
+
+- [ ] Deploy order: **0042 -> web** (the new web selects the rule columns).
+- [ ] Run `supabase/verify_0042.sql` (read-only): every row `ok`.
+- [ ] Optional, local/branch database only: `supabase/scenarios_0042.sql`
+      (impersonates users, ends in ROLLBACK).
+- [ ] Rollback: **web -> 0042 down** (commented; refuses while any job has a
+      NULL or blank VIN).

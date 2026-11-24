@@ -9,6 +9,9 @@ export interface Site {
   name: string;
   /** false = disabled by an admin (0041): no new jobs, hidden from pickers, history kept. */
   active: boolean;
+  /** Whether a new job here needs a VIN / a plate (0042, admin-only). Edits are not bound by them. */
+  vin_rule: 'required' | 'optional';
+  plate_rule: 'required' | 'optional';
 }
 
 export interface Service {
@@ -52,8 +55,8 @@ export interface Job {
    */
   plate: string | null;
   /**
-   * Required since 0036 (NOT NULL); never a placeholder. Kept nullable in the
-   * type for the views and exports that still declare it so.
+   * NULL where the site lets a new job skip it (0042); a job always has a plate
+   * or a VIN. Never a placeholder.
    */
   vin: string | null;
   /** NULL when there is no VIN to check, as well as when the check was skipped. */

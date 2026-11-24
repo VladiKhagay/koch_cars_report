@@ -104,6 +104,13 @@ describe('vinProblem (New Job)', () => {
   it('asks for a VIN when it is empty or only spaces', () => {
     expect(vin.vinProblem('')).toBe('required');
     expect(vin.vinProblem('   ')).toBe('required');
+    expect(vin.vinProblem('', true)).toBe('required');
+  });
+  it('lets an empty VIN through where the site makes it optional (0042), still checking a typed one', () => {
+    expect(vin.vinProblem('', false)).toBeNull();
+    expect(vin.vinProblem('   ', false)).toBeNull();
+    expect(vin.vinProblem('1HGCM82633A00435', false)).toBe('invalid');
+    expect(vin.vinProblem('1HGCM82633A004352', false)).toBeNull();
   });
   it('flags a malformed VIN and passes a well-formed one, check digit or not', () => {
     expect(vin.vinProblem('1HGCM82633A00435')).toBe('invalid');
@@ -121,7 +128,7 @@ describe('normalizeVehicle', () => {
       vinChecksum: true,
       plateError: false,
       vinError: false,
-      missingVin: false,
+      missingVehicle: false,
     });
   });
 
@@ -130,24 +137,32 @@ describe('normalizeVehicle', () => {
     expect(r.plate).toBeNull();
     expect(r.vin).toBeNull();
     expect(r.vinChecksum).toBeNull();
-    expect(r.missingVin).toBe(true);
+    expect(r.missingVehicle).toBe(true);
     expect(r.plateError || r.vinError).toBe(false);
   });
 
-  it('requires a VIN but not a plate', () => {
-    expect(vin.normalizeVehicle({ plate: '12345678', vin: null }).missingVin).toBe(true);
+  it('requires a plate or a VIN, either one alone is enough (0042)', () => {
+    expect(vin.normalizeVehicle({ plate: '12345678', vin: null }).missingVehicle).toBe(false);
+    expect(vin.normalizeVehicle({ plate: '', vin: '' }).missingVehicle).toBe(true);
     const noPlate = vin.normalizeVehicle({ plate: '', vin: '1HGCM82633A004352' });
-    expect(noPlate.missingVin).toBe(false);
+    expect(noPlate.missingVehicle).toBe(false);
     expect(noPlate.plate).toBeNull();
     expect(noPlate.plateError).toBe(false);
   });
 
+  it('treats a whitespace-only plate with no VIN as no vehicle id at all (0042)', () => {
+    expect(vin.normalizeVehicle({ plate: '   ', vin: null }).missingVehicle).toBe(true);
+    expect(vin.normalizeVehicle({ plate: '   ', vin: '   ' }).missingVehicle).toBe(true);
+    expect(vin.normalizeVehicle({ plate: null, vin: '1HGCM82633A004352' }).missingVehicle).toBe(false);
+  });
+
   it('treats a whitespace-only VIN as missing, and uppercases a lowercase one', () => {
     const blank = vin.normalizeVehicle({ plate: null, vin: '   ' });
-    expect(blank.missingVin).toBe(true);
+    expect(blank.missingVehicle).toBe(true);
+    expect(blank.vin).toBeNull();
     expect(blank.vinError).toBe(false);
     const lower = vin.normalizeVehicle({ plate: null, vin: ' 1hgcm82633a004352 ' });
-    expect(lower).toMatchObject({ vin: '1HGCM82633A004352', missingVin: false, vinError: false, vinChecksum: true });
+    expect(lower).toMatchObject({ vin: '1HGCM82633A004352', missingVehicle: false, vinError: false, vinChecksum: true });
   });
 
   it('blocks a malformed plate or VIN', () => {

@@ -96,10 +96,17 @@ the same query under three different identities.
   17-character format (no I, O, Q), VIN checksum as a *soft warning* (imported
   vehicles legitimately fail it), and a duplicate flag set by the database on a
   matching VIN or plate, at any site, any time (0029; soft, never blocks).
-- The VIN is **required** (0036, `jobs.vin NOT NULL`): New Job will not submit
-  without a well-formed one, and there is no placeholder to type around it.
-  The VIN photo is required too (New Job blocks without it); the plate
-  photo and the extra photos stay optional.
+- **Per-site VIN and plate rules (0042).** An admin sets, per site (Admin →
+  Sites), whether a new job there needs a VIN (required / optional) and a
+  plate (required / optional). Defaults are VIN required, plate optional (the
+  0036 rule). New Job follows the site the job goes to: a required field must
+  be filled, and the VIN photo is required wherever the VIN is; with both
+  optional, at least one of plate or VIN is still needed. There is no
+  placeholder to type around a required field, and the database refuses a new
+  job missing one. The rules bind new jobs only: editing a job just needs a
+  plate or a VIN. A job queued offline that a rule changed since refuses is
+  kept on the phone with the reason, never resent. The plate photo and the
+  extra photos stay optional everywhere.
 - The plate is **optional**: a car with no physical plate stores `NULL` —
   never `''` or a placeholder — and duplicate detection, search and both
   reports treat that as "not known" rather than as a value. A plate that is
