@@ -29,7 +29,7 @@ vi.mock('../lib/jobs', () => ({
   },
 }));
 
-const { cleanWorkerLabel, crewOthers, editableServices, isStaffSubmitter, jobOwnership, jobSiteId, mediaEditState, migrateDraft, nextBusyJob, pickableWorkers, saveWorkerEdit, siteAcceptsJobs, toggleId, workerNamed } =
+const { cleanWorkerLabel, crewOthers, editableServices, isStaffSubmitter, jobOwnership, jobSiteId, mediaEditState, migrateDraft, nextBusyJob, pickableWorkers, saveWorkerEdit, siteAcceptsJobs, siteRules, toggleId, vehicleProblems, workerNamed } =
   await import('./workerJobs');
 const { default: ServiceChips } = await import('../components/ServiceChips');
 
@@ -389,5 +389,93 @@ describe('siteAcceptsJobs (0041 disabled sites)', () => {
   it('does not block while sites are loading or the site is unknown', () => {
     expect(siteAcceptsJobs([], 'off')).toBe(true);
     expect(siteAcceptsJobs(sites, null)).toBe(true);
+  });
+});
+
+describe('siteRules (0042 per-site VIN / plate rules)', () => {
+  const sites = [
+    { id: 'def', vin_rule: 'required', plate_rule: 'optional' },
+    { id: 'plate', vin_rule: 'optional', plate_rule: 'required' },
+    { id: 'both', vin_rule: 'required', plate_rule: 'required' },
+    { id: 'none', vin_rule: 'optional', plate_rule: 'optional' },
+  ] as const;
+
+  it('reads the selected site', () => {
+    expect(siteRules([...sites], 'def')).toEqual({ vinRequired: true, plateRequired: false });
+    expect(siteRules([...sites], 'plate')).toEqual({ vinRequired: false, plateRequired: true });
+    expect(siteRules([...sites], 'both')).toEqual({ vinRequired: true, plateRequired: true });
+    expect(siteRules([...sites], 'none')).toEqual({ vinRequired: false, plateRequired: false });
+  });
+
+  it('falls back to the defaults (VIN required, plate optional) while loading or unknown', () => {
+    expect(siteRules([], 'plate')).toEqual({ vinRequired: true, plateRequired: false });
+    expect(siteRules([...sites], null)).toEqual({ vinRequired: true, plateRequired: false });
+  });
+});
+
+/* New Job follows the site the job will go to: for an admin that can be the
+   picked worker's site, so picking another worker re-reads the rules. */
+describe('siteRules follows the job site (0042)', () => {
+  const sites = [
+    { id: 's1', active: true, vin_rule: 'required', plate_rule: 'optional' },
+    { id: 's2', active: true, vin_rule: 'optional', plate_rule: 'required' },
+  ] as const;
+  const admin = { role: 'admin', site_id: null } as const;
+
+  it('switches with the picked worker, and with an explicit site pick', () => {
+    const rulesFor = (picked: string | null, workerSite: string | null) =>
+      siteRules([...sites], jobSiteId(admin, picked, null, workerSite, [...sites]));
+    expect(rulesFor(null, 's1')).toEqual({ vinRequired: true, plateRequired: false });
+    expect(rulesFor(null, 's2')).toEqual({ vinRequired: false, plateRequired: true });
+    expect(rulesFor('s1', 's2')).toEqual({ vinRequired: true, plateRequired: false });
+  });
+
+  it('never goes looser than the defaults for a site cached before 0042 (no rule fields)', () => {
+    const stale = [{ id: 's1' }] as unknown as Parameters<typeof siteRules>[0];
+    expect(siteRules(stale, 's1')).toEqual({ vinRequired: true, plateRequired: false });
+  });
+});
+
+/* New Job's identity checks under each of the four rule combinations (0042). */
+describe('vehicleProblems (0042)', () => {
+  const PLATE = '12345678';
+  const VIN = '1HGCM82633A004352';
+  const DEF = { vinRequired: true, plateRequired: false };
+  const PLATE_ONLY = { vinRequired: false, plateRequired: true };
+  const BOTH = { vinRequired: true, plateRequired: true };
+  const NONE = { vinRequired: false, plateRequired: false };
+  const p = (plate: string, vin: string, vinPhoto: boolean, rules: typeof DEF) => vehicleProblems({ plate, vin, vinPhoto }, rules);
+
+  it('defaults (VIN required, plate optional): VIN and its photo needed, plate not', () => {
+    expect(p('', VIN, true, DEF)).toEqual([]);
+    expect(p('', '', false, DEF)).toEqual(['vinPhotoRequired', 'vinRequired']);
+    expect(p(PLATE, '   ', true, DEF)).toEqual(['vinRequired']);
+  });
+
+  it('plate required, VIN optional: plate needed, VIN and VIN photo not', () => {
+    expect(p(PLATE, '', false, PLATE_ONLY)).toEqual([]);
+    expect(p('', VIN, false, PLATE_ONLY)).toEqual(['plateRequired']);
+    expect(p('', '', false, PLATE_ONLY)).toEqual(['plateRequired']);
+  });
+
+  it('both required: all three, in on-screen order', () => {
+    expect(p('', '', false, BOTH)).toEqual(['vinPhotoRequired', 'plateRequired', 'vinRequired']);
+    expect(p(PLATE, VIN, true, BOTH)).toEqual([]);
+  });
+
+  it('both optional: either one is enough, neither (or blanks) is not', () => {
+    expect(p(PLATE, '', false, NONE)).toEqual([]);
+    expect(p('', VIN, false, NONE)).toEqual([]);
+    expect(p('', '', false, NONE)).toEqual(['plateOrVinRequired']);
+    expect(p('  ', '\t ', false, NONE)).toEqual(['plateOrVinRequired']);
+  });
+
+  it('a malformed typed value blocks under every rule; a bad check digit does not', () => {
+    for (const rules of [DEF, PLATE_ONLY, BOTH, NONE]) {
+      expect(p('1234', VIN, true, rules)).toContain('plateInvalid');
+      expect(p(PLATE, '1HGCM82633A00435', true, rules)).toContain('vinInvalid');
+      expect(p(PLATE, '1HGCM82633A0O4352', true, rules)).toContain('vinInvalid');
+      expect(p(PLATE, 'WVWZZZ1JZXW000001', true, rules)).toEqual([]);
+    }
   });
 });

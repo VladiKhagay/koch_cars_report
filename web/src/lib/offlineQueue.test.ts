@@ -229,11 +229,11 @@ describe('job failures', () => {
     expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
   });
 
-  /* Queued before 0036 made the VIN required: kept on the phone, flagged, never auto-resent. */
-  it('flags a queued job with no VIN for the worker at once, keeping its photos', async () => {
+  /* Neither plate nor VIN can never be created (0042): kept on the phone, flagged, never auto-resent. */
+  it('flags a queued job with no plate and no VIN for the worker at once, keeping its photos', async () => {
     const { submitJob } = await vi.importActual<typeof import('./jobs')>('./jobs');
     mocks.submitJob.mockImplementation(submitJob);
-    seed(base({ vin: null }));
+    seed(base({ plate: null, vin: null }));
     await q.flushQueue();
     expect(stored()).toHaveLength(1);
     expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
@@ -246,6 +246,18 @@ describe('job failures', () => {
     mocks.submitJob.mockRejectedValue({ code: '23502', message: 'null value in column "vin"' });
     await q.flushQueue();
     expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true });
+  });
+
+  /* Queued offline, then an admin made the VIN required at its site (0042):
+     flagged with the reason code (shown translated by QueuedJobs), never resent. */
+  it('flags a job the site now refuses with its reason, and does not retry it', async () => {
+    const { InvalidJobError } = await vi.importActual<typeof import('./jobs')>('./jobs');
+    seed(base({ vin: null }));
+    mocks.submitJob.mockRejectedValue(new InvalidJobError('site-needs-vin'));
+    await q.flushQueue();
+    expect(stored()[0]).toMatchObject({ attempts: 1, needsAttention: true, lastError: 'site-needs-vin' });
+    await q.flushQueue();
+    expect(mocks.submitJob).toHaveBeenCalledTimes(1);
   });
 });
 

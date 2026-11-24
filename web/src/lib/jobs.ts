@@ -20,11 +20,40 @@ export const MAX_EXTRA_PHOTOS = EXTRA_KINDS.length;
 export class InvalidJobError extends Error {}
 
 /**
+ * Why the database refused a new job, when the site explains it (0041/0042).
+ * Used as the InvalidJobError message, so the queue's `lastError` holds the
+ * code and the card can say it in the worker's language (QueuedJobs).
+ */
+export const SITE_REFUSALS = ['site-disabled', 'site-needs-vin', 'site-needs-plate'] as const;
+export type SiteRefusal = (typeof SITE_REFUSALS)[number];
+
+/**
+ * After a 42501 on create_job: reads the site once and names the rule the job
+ * breaks, or null (lookup failed, or the site allows it: some other refusal).
+ */
+async function siteRefusal(siteId: string, plate: string | null, vin: string | null): Promise<SiteRefusal | null> {
+  try {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('active, vin_rule, plate_rule')
+      .eq('id', siteId)
+      .maybeSingle();
+    if (error || !data) return null;
+    if (!data.active) return 'site-disabled';
+    if (data.vin_rule === 'required' && !vin) return 'site-needs-vin';
+    if (data.plate_rule === 'required' && !plate) return 'site-needs-plate';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * True when retrying `submitJob` with the same payload can never succeed: a
  * 4xx from the Worker, a payload submitJob itself refuses (InvalidJobError),
  * a Postgres RLS rejection (42501), check violation (23514, e.g. create_job
- * given no service), not-null violation (23502, e.g. a job with no VIN, 0036)
- * or foreign-key violation (23503, e.g. its site was deleted, 0041). Anything else is treated as transient so an outage never
+ * given no service, or a job with neither plate nor VIN, 0042), not-null
+ * violation (23502) or foreign-key violation (23503, e.g. its site was deleted, 0041). Anything else is treated as transient so an outage never
  * drops data. 401 (token mid-refresh), 408 and 429 (rate limit hit while
  * flushing a backlog) clear on their own.
  */
@@ -50,7 +79,7 @@ export interface NewJobPayload {
   workerId: string;
   /** Optional: `null` (or empty) when the car has no physical plate. */
   plate: string | null;
-  /** Required (0036). Typed `string | null` only because payloads queued before 0036 may lack one; submitJob refuses those unless the row already exists (`jobId`). */
+  /** `null` (or empty) when there is none. The site decides whether a new job needs it (0042); a job needs a plate or a VIN. */
   vin: string | null;
   brand: string | null;
   workerNote: string | null;
@@ -102,8 +131,8 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
     const serviceIds = jobServiceIds(payload);
     // Checked only before the row exists: a queued retry with a jobId just finishes its photos.
     if (serviceIds.length === 0) throw new InvalidJobError('Job requires at least one service');
-    // Same for the VIN (0036): guarded here for retry-queue payloads and direct callers.
-    if (!vin) throw new InvalidJobError('Job requires a VIN');
+    // Same for "a plate or a VIN" (0042): guarded here for retry-queue payloads and direct callers.
+    if (!plate && !vin) throw new InvalidJobError('Job requires a plate or a VIN');
     // One call so the job and its services land together or not at all (create_job, 0033).
     // No prices are sent: the database snapshots them from the catalog. Nor is
     // duplicate_of_job_id: the database flags a repeat VIN or plate on insert (0029),
@@ -123,6 +152,13 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
       p_worker_label: payload.workerLabel ?? null,
     });
 
+    if (error?.code === '42501') {
+      // Refused by jobs_insert: if the site explains it (disabled, or a rule
+      // changed since the form was filled in, e.g. offline), say which.
+      // Still permanent either way.
+      const reason = await siteRefusal(payload.siteId, plate, vin);
+      if (reason) throw new InvalidJobError(reason);
+    }
     if (error || !data) throw error ?? new Error('Job creation failed');
 
     jobId = data as string;

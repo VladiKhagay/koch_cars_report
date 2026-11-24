@@ -88,7 +88,8 @@ function StaffJobDetail() {
   const [billingCode, setBillingCode] = useState('');
   const [managerNote, setManagerNote] = useState('');
   /* The car itself and when it was done: managers/admins correct these too.
-     Same plate/VIN rules as New Job (normalizeVehicle); the database re-runs
+     Same plate/VIN formats as New Job (normalizeVehicle), and a plate or a VIN
+     must remain; the site's new-job rules (0042) do not apply. The database re-runs
      the duplicate flag and logs the change. */
   const [plate, setPlate] = useState('');
   const [vin, setVin] = useState('');
@@ -182,7 +183,7 @@ function StaffJobDetail() {
     siteId,
   };
   const edit = job ? planJobEdit(job, draft, Date.now()) : null;
-  const vehicle = edit?.vehicle ?? { plateError: false, vinError: false, missingVin: false, vinChecksum: null };
+  const vehicle = edit?.vehicle ?? { plateError: false, vinError: false, missingVehicle: false, vinChecksum: null };
   const dateError = edit?.dateError ?? false;
   const vinChanged = edit?.vinChanged ?? false;
 
@@ -355,7 +356,7 @@ function StaffJobDetail() {
 
   const savedServiceIds = job.service_ids ?? (job.services ?? []).map((l) => l.service_id);
   const servicesMissing = servicesError || missingServices(savedServiceIds, serviceIds);
-  const fieldsInvalid = vehicle.plateError || vehicle.vinError || vehicle.missingVin || dateError;
+  const fieldsInvalid = vehicle.plateError || vehicle.vinError || vehicle.missingVehicle || dateError;
   const editDirty =
     plate !== (job.plate ?? '') ||
     vin !== (job.vin ?? '') ||
@@ -503,10 +504,10 @@ function StaffJobDetail() {
                 <Field
                   htmlFor="job-vin"
                   label={t('newJob.vin')}
-                  required
+                  optional
                   error={
-                    vehicle.missingVin
-                      ? t('newJob.vinRequired')
+                    vehicle.missingVehicle
+                      ? t('jobDetail.plateOrVinRequired')
                       : vehicle.vinError
                         ? t('newJob.vinInvalid')
                         : undefined
@@ -522,7 +523,7 @@ function StaffJobDetail() {
                     spellCheck={false}
                     onChange={(e) => setVin(e.target.value.toUpperCase())}
                     className={`${fieldClass} font-mono tracking-wider uppercase ${
-                      vehicle.vinError || vehicle.missingVin ? fieldErrorClass : ''
+                      vehicle.vinError || vehicle.missingVehicle ? fieldErrorClass : ''
                     }`}
                   />
                   {/* Advisory only, as on New Job: imports can fail the check digit. */}

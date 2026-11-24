@@ -1,7 +1,8 @@
 /**
  * VIN and plate validation. The ISO 3779 check digit is only mandatory for
  * North American VINs, so a failed checksum is a soft warning; format (17 chars,
- * no I/O/Q) is enforced. The VIN is required (0036); the plate is optional.
+ * no I/O/Q) is enforced. Whether a new job needs a VIN or a plate is the
+ * site's rule (0042); every job needs at least one of them.
  *
  * Nothing here infers meaning from a VIN (no WMI->brand table): a guess in a
  * form field looks like something the worker checked. Do not reintroduce inference.
@@ -47,9 +48,9 @@ export function isValidPlate(plate: string): boolean {
   return PLATE_REGEX.test(stripPlate(plate));
 }
 
-/** New Job's VIN rule: required (0036), 17 valid characters. Blank (spaces only) counts as empty. */
-export function vinProblem(vin: string): 'required' | 'invalid' | null {
-  if (!vin.trim()) return 'required';
+/** New Job's VIN rule: 17 valid characters; empty is a problem only where the site requires a VIN (0042). Blank (spaces only) counts as empty. */
+export function vinProblem(vin: string, required = true): 'required' | 'invalid' | null {
+  if (!vin.trim()) return required ? 'required' : null;
   return isValidVinFormat(vin) ? null : 'invalid';
 }
 
@@ -63,8 +64,8 @@ export interface NormalizedVehicle {
   plateError: boolean;
   /** Blocking: a started VIN that is not 17 valid characters. A bad check digit is only `vinChecksum: false`. */
   vinError: boolean;
-  /** Blocking: a job needs a VIN (0036). */
-  missingVin: boolean;
+  /** Blocking: a job needs a plate or a VIN (jobs_plate_or_vin_chk, 0042). */
+  missingVehicle: boolean;
 }
 
 /** The New Job rules for a plate/VIN pair, for any screen that edits them. */
@@ -77,6 +78,6 @@ export function normalizeVehicle(input: { plate: string | null; vin: string | nu
     vinChecksum: vin ? vinChecksumValid(vin) : null,
     plateError: plate !== null && !isValidPlate(plate),
     vinError: vin !== null && !isValidVinFormat(vin),
-    missingVin: vin === null,
+    missingVehicle: plate === null && vin === null,
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./supabase', () => ({ supabase: {} }));
 
-import { InvalidJobError, isPermanentError, submitJob, type NewJobPayload } from './jobs';
+import { InvalidJobError, isPermanentError, SITE_REFUSALS, submitJob, type NewJobPayload } from './jobs';
 import { HttpError } from './workerApi';
 
 describe('isPermanentError', () => {
@@ -21,9 +21,11 @@ describe('isPermanentError', () => {
 
   it('treats a check violation and a payload submitJob refuses as permanent', async () => {
     expect(isPermanentError({ code: '23514' })).toBe(true);
-    expect(isPermanentError({ code: '23502' })).toBe(true); // not_null_violation, e.g. no VIN (0036)
+    expect(isPermanentError({ code: '23502' })).toBe(true); // not_null_violation
     expect(isPermanentError({ code: '23503' })).toBe(true); // foreign_key_violation, e.g. site deleted (0041)
     expect(isPermanentError(new InvalidJobError('x'))).toBe(true);
+    // The site's reason codes (submitJob after a 42501, 0042) are never retried.
+    for (const reason of SITE_REFUSALS) expect(isPermanentError(new InvalidJobError(reason))).toBe(true);
     expect(isPermanentError(new Error('Job creation failed'))).toBe(false);
     const noService = { plate: '1234567', vin: 'WVWZZZ1JZXW000001', serviceIds: [] } as unknown as NewJobPayload;
     const err = await submitJob(noService).catch((e: unknown) => e);

@@ -5,11 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
-import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid, vinProblem } from '../lib/vin';
+import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { findPreviousJob, InvalidJobError, MAX_EXTRA_PHOTOS, serviceTotal, type NewJobPayload } from '../lib/jobs';
 import { formatMoney } from '../components/money';
-import { cleanWorkerLabel, MAX_WORKER_LABEL, isStaffSubmitter, jobOwnership, jobSiteId, migrateDraft, pickableWorkers, siteAcceptsJobs, toggleId, workerNamed } from './workerJobs';
+import { cleanWorkerLabel, MAX_WORKER_LABEL, isStaffSubmitter, jobOwnership, jobSiteId, migrateDraft, pickableWorkers, siteAcceptsJobs, siteRules, toggleId, vehicleProblems, workerNamed } from './workerJobs';
 import { sendJob as sendJobAndVideo } from '../lib/sendJob';
 import { pickableSites, useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
@@ -310,15 +310,18 @@ export default function NewJob() {
     };
   }, [lookupPlate, lookupVin]);
 
-  /* The plate is optional (a car can arrive with no physical plate), so "no
-     plate" is valid and only a plate that has been STARTED has to be
-     well-formed. */
-  const plateFormatValid = form.plate.length === 0 || isValidPlate(form.plate);
-  /* The VIN is required (0036): empty or malformed both block. A failed check
-     digit only warns (vinChecksumOk). */
-  const vinIssue = vinProblem(form.vin);
-  const vinFormatValid = vinIssue === null;
-  const vinIssueLabel = vinIssue === 'required' ? t('newJob.vinRequired') : t('newJob.vinInvalid');
+  /* What the job's site requires (0042), from the site the job will go to:
+     switching site or worker re-reads it. Defaults: VIN required, plate optional. */
+  const rules = siteRules(sites, siteId);
+  const { vinRequired, plateRequired } = rules;
+  /* The car's identity under those rules (vehicleProblems): a required field
+     left empty or a typed one malformed blocks; a failed check digit only
+     warns (vinChecksumOk). */
+  const vehicle = vehicleProblems({ plate: form.plate, vin: form.vin, vinPhoto: Boolean(form.vinPhoto) }, rules);
+  const plateIssue = vehicle.find((p) => p === 'plateRequired' || p === 'plateInvalid');
+  const vinIssue = vehicle.find((p) => p === 'vinRequired' || p === 'vinInvalid');
+  const neitherId = vehicle.includes('plateOrVinRequired');
+  const vinPhotoMissing = vehicle.includes('vinPhotoRequired');
   const vinChecksumOk = form.vin ? vinChecksumValid(form.vin) : true;
 
     /** Everything blocking submission, in on-screen order, so Submit never silently does nothing. */
@@ -333,8 +336,8 @@ export default function NewJob() {
         workerRef.current?.querySelector('input')?.focus();
       },
     });
-  // Required (user decision): the VIN photo is the record of what was read. Plate photo stays optional.
-  if (!form.vinPhoto)
+  // The VIN photo is the record of what was read: required wherever the VIN is. Plate photo stays optional.
+  if (vinPhotoMissing)
     problems.push({
       id: 'vinPhoto',
       label: t('newJob.vinPhotoRequired'),
@@ -343,24 +346,32 @@ export default function NewJob() {
         vinPhotoRef.current?.querySelector('button')?.focus();
       },
     });
-  if (form.plate && !plateFormatValid)
+  if (plateIssue)
     problems.push({
       id: 'plate',
-      // Only fires on a plate that was typed and came out malformed — the
-      // field itself can be left empty.
-      label: t('newJob.plateInvalid'),
+      label: t(`newJob.${plateIssue}`),
       focus: () => {
         scrollTo(plateInputRef.current);
         plateInputRef.current?.focus();
       },
     });
-  if (!vinFormatValid)
+  if (vinIssue)
     problems.push({
       id: 'vin',
-      label: vinIssueLabel,
+      label: t(`newJob.${vinIssue}`),
       focus: () => {
         scrollTo(vinInputRef.current);
         vinInputRef.current?.focus();
+      },
+    });
+  // Both optional here: still one of them (jobs_plate_or_vin_chk).
+  if (neitherId)
+    problems.push({
+      id: 'vin',
+      label: t('newJob.plateOrVinRequired'),
+      focus: () => {
+        scrollTo(plateInputRef.current);
+        plateInputRef.current?.focus();
       },
     });
   if (serviceIds.length === 0)
@@ -420,8 +431,8 @@ export default function NewJob() {
       return;
     }
     setSubmitting(true);
-    // The plate if there is one, else the VIN (always set: the form requires
-    // it), identifies the car in the confirmation message below.
+    // The plate if there is one, else the VIN (one of them is always set: the
+    // form requires it), identifies the car in the confirmation message below.
     const identifier = form.plate || form.vin;
     const owner = jobOwnership(appUser, { workerId, workerLabel: form.workerLabel });
     const payload: NewJobPayload = {
@@ -430,7 +441,8 @@ export default function NewJob() {
       coworkerIds: form.coworkerIds,
       // An empty plate means "no plate" and is stored as NULL, never ''.
       plate: form.plate || null,
-      vin: form.vin,
+      // Likewise an empty VIN (where the site allows it) is NULL.
+      vin: form.vin.trim() || null,
       brand: form.brand.trim() || null,
       workerNote: form.note.trim() || null,
       serviceIds,
@@ -481,7 +493,7 @@ export default function NewJob() {
             : 'failed',
       );
     } catch (err) {
-      // Refused before anything was sent or queued (no VIN): keep the form and show why.
+      // Refused before anything was sent or queued (no plate and no VIN): keep the form and show why.
       if (!(err instanceof InvalidJobError)) throw err;
       setAttempted(true);
     } finally {
@@ -587,8 +599,9 @@ export default function NewJob() {
                 label={t('newJob.vinPhoto')}
                 photo={form.vinPhoto}
                 busy={ocrBusy.vin}
-                required
-                missing={attempted && !form.vinPhoto ? t('newJob.vinPhotoRequired') : null}
+                required={vinRequired}
+                optional={!vinRequired}
+                missing={attempted && vinPhotoMissing ? t('newJob.vinPhotoRequired') : null}
                 error={ocrIssue.vin ? t(`newJob.ocrReasons.${ocrIssue.vin}`) : null}
                 onCapture={(b, original) => void handleVinCapture(b, original)}
                 onTypeItIn={() => vinInputRef.current?.focus()}
@@ -620,7 +633,8 @@ export default function NewJob() {
           <Field
             htmlFor="job-plate"
             label={t('newJob.plate')}
-            optional
+            required={plateRequired}
+            optional={!plateRequired}
             hint={
               autoFilled.plate && (
                 <span className="inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ok-700">
@@ -629,7 +643,15 @@ export default function NewJob() {
                 </span>
               )
             }
-            error={attempted && !plateFormatValid && form.plate ? t('newJob.plateInvalid') : undefined}
+            error={
+              !attempted
+                ? undefined
+                : plateIssue
+                  ? t(`newJob.${plateIssue}`)
+                  : neitherId
+                    ? t('newJob.plateOrVinRequired')
+                    : undefined
+            }
           >
             <input
               id="job-plate"
@@ -648,7 +670,7 @@ export default function NewJob() {
                 setAutoFilled((a) => ({ ...a, plate: false }));
               }}
               className={`${fieldClass} font-mono tracking-wider uppercase ${
-                attempted && !plateFormatValid ? fieldErrorClass : ''
+                attempted && (plateIssue || neitherId) ? fieldErrorClass : ''
               }`}
             />
           </Field>
@@ -656,7 +678,8 @@ export default function NewJob() {
           <Field
             htmlFor="job-vin"
             label={t('newJob.vin')}
-            required
+            required={vinRequired}
+            optional={!vinRequired}
             hint={
               autoFilled.vin && (
                 <span className="inline-flex items-center gap-1 font-medium normal-case tracking-normal text-ok-700">
@@ -665,7 +688,7 @@ export default function NewJob() {
                 </span>
               )
             }
-            error={attempted && !vinFormatValid ? vinIssueLabel : undefined}
+            error={attempted && vinIssue ? t(`newJob.${vinIssue}`) : undefined}
           >
             <input
               id="job-vin"
@@ -682,12 +705,12 @@ export default function NewJob() {
                 setAutoFilled((a) => ({ ...a, vin: false }));
               }}
               className={`${fieldClass} font-mono tracking-wider uppercase ${
-                attempted && !vinFormatValid ? fieldErrorClass : ''
+                attempted && vinIssue ? fieldErrorClass : ''
               }`}
             />
             {/* Advisory only. An imported vehicle can legitimately fail the
                 checksum, so this warns and never blocks. */}
-            {vinFormatValid && !vinChecksumOk && <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>}
+            {!vinIssue && !vinChecksumOk && <FieldNotice>{t('newJob.vinChecksumWarning')}</FieldNotice>}
           </Field>
 
           {/* Same plate or VIN seen before, at any site: a heads-up with the date,

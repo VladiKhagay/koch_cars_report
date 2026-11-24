@@ -5,6 +5,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { setJobServices } from '../lib/jobs';
+import { isValidPlate, vinProblem } from '../lib/vin';
 import type { AppUser, Job, JobServiceLine, Service, Site, StaffMember } from '../lib/types';
 
 /** Adds the id if absent, removes it if present. */
@@ -184,6 +185,43 @@ export function jobSiteId(
  */
 export function siteAcceptsJobs(sites: Pick<Site, 'id' | 'active'>[], siteId: string | null): boolean {
   return sites.find((s) => s.id === siteId)?.active !== false;
+}
+
+/**
+ * The site's VIN / plate rules for a new job (0042). Unknown site (still
+ * loading, offline) falls back to the defaults, VIN required and plate
+ * optional. The database (jobs_insert) is authoritative: a job it refuses,
+ * e.g. at a plate-required site the form did not know about, ends up as a
+ * permanent queue entry with a translated reason (QueuedJobs).
+ */
+export function siteRules(sites: Pick<Site, 'id' | 'vin_rule' | 'plate_rule'>[], siteId: string | null) {
+  const s = sites.find((x) => x.id === siteId);
+  return { vinRequired: (s?.vin_rule ?? 'required') === 'required', plateRequired: s?.plate_rule === 'required' };
+}
+
+/** A New Job vehicle-ID problem; each is also its `newJob.*` translation key. */
+export type VehicleProblem = 'vinPhotoRequired' | 'plateRequired' | 'plateInvalid' | 'vinRequired' | 'vinInvalid' | 'plateOrVinRequired';
+
+/**
+ * What blocks New Job on the car's identity, in on-screen order, under the
+ * site's rules (siteRules): the VIN photo wherever the VIN is required; a
+ * required plate left empty; a typed plate or VIN that is malformed (always);
+ * a required VIN left empty; and, with both optional, neither given.
+ * Blank (whitespace) counts as empty. A failed VIN check digit never blocks.
+ */
+export function vehicleProblems(
+  f: { plate: string; vin: string; vinPhoto: boolean },
+  rules: { vinRequired: boolean; plateRequired: boolean },
+): VehicleProblem[] {
+  const out: VehicleProblem[] = [];
+  const plate = f.plate.trim();
+  if (rules.vinRequired && !f.vinPhoto) out.push('vinPhotoRequired');
+  if (!plate && rules.plateRequired) out.push('plateRequired');
+  else if (plate && !isValidPlate(plate)) out.push('plateInvalid');
+  const vin = vinProblem(f.vin, rules.vinRequired);
+  if (vin) out.push(vin === 'required' ? 'vinRequired' : 'vinInvalid');
+  if (!plate && !f.vin.trim() && !rules.plateRequired && !rules.vinRequired) out.push('plateOrVinRequired');
+  return out;
 }
 
 /**

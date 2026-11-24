@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useQueuedJobs, useUploadingId, useUploadProgress } from '../lib/useQueue';
 import { discardQueued, retryQueued } from '../lib/offlineQueue';
+import { SITE_REFUSALS, type SiteRefusal } from '../lib/jobs';
 import { Badge, Button, Card, ConfirmAction, SectionHeading } from './ui';
 
 /**
@@ -22,6 +23,8 @@ export default function QueuedJobs() {
       {queued.map((job) => {
         const video = job.stage === 'video';
         const failed = Boolean(job.needsAttention);
+        // A refusal the site explains (submitJob's reason code) is said in words, not as a raw error.
+        const refusal = SITE_REFUSALS.find((r): r is SiteRefusal => r === job.lastError);
         return (
           <Card key={job.queuedId} className={failed ? 'border-danger-600' : 'border-ink-900'}>
             <div className="flex items-start justify-between gap-3">
@@ -38,7 +41,9 @@ export default function QueuedJobs() {
                       ? t('myJobs.videoFailedHint')
                       : t('myJobs.videoPendingHint')
                     : failed
-                      ? t('myJobs.needsAttentionHint')
+                      ? refusal
+                        ? t(`myJobs.refused.${refusal}`)
+                        : t('myJobs.needsAttentionHint')
                       : t('myJobs.queuedHint')}
                 </p>
               </div>
@@ -58,7 +63,7 @@ export default function QueuedJobs() {
                 </Badge>
               )}
             </div>
-            {failed && job.lastError && <p className="mt-2 break-words font-mono text-xs text-ink-600">{job.lastError}</p>}
+            {failed && job.lastError && !refusal && <p className="mt-2 break-words font-mono text-xs text-ink-600">{job.lastError}</p>}
             {/* A video can be given up on; a job only once it has failed for good, with a louder warning. */}
             {failed && (
               <div className="mt-3 flex flex-wrap gap-2">

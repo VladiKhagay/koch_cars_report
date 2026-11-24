@@ -603,3 +603,18 @@ describe('exportService — Hebrew fallback and rounding (0033 QA)', () => {
     expect(rows[rows.length - 1][6]).toBe(0.3);
   });
 });
+
+/* A job may have no VIN where its site allows it (0042): the customer report prints a blank cell, never "null". */
+describe('buildCustomerReport — a job with no VIN (0042)', () => {
+  it('prints a blank VIN cell next to the plate', () => {
+    const cols = resolveCustomerColumns({
+      columns: [
+        { key: 'plate', visible: true },
+        { key: 'vin', visible: true },
+      ],
+    });
+    const rows = buildCustomerReport([job({ vin: null })], cols, 'en-GB', 'en');
+    expect(rows[1]).toEqual(['12-345-67', '']);
+    expect(flat(rows)).not.toContain('null');
+  });
+});

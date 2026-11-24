@@ -61,7 +61,7 @@ export function useSiteScope() {
 
     void supabase
       .from('sites')
-      .select('id, name, active')
+      .select('id, name, active, vin_rule, plate_rule')
       .order('name')
       .then(({ data }) => {
         if (cancelled) return;

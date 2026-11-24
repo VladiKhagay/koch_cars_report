@@ -11,7 +11,7 @@ import type { NewJobPayload } from './jobs';
 vi.mock('./supabase', () => ({ supabase: {} }));
 
 const { sendJob } = await import('./sendJob');
-const { InvalidJobError } = await import('./jobs');
+const { InvalidJobError, isPermanentError } = await import('./jobs');
 type Deps = NonNullable<Parameters<typeof sendJob>[2]>;
 
 const quota = () => new DOMException('Quota exceeded', 'QuotaExceededError');
@@ -51,15 +51,35 @@ beforeEach(() => {
   };
 });
 
-/* The one rejection allowed: a VIN-less job can never be created (0036), so it
-   is neither sent nor kept on the phone; the form keeps it. New Job's own gate
-   makes this unreachable from the UI. */
-describe('sendJob: no VIN', () => {
-  it.each([null, '', '   '])('refuses vin %j without sending or queueing', async (vin) => {
-    await expect(send({ ...payload(), vin }, video)).rejects.toBeInstanceOf(InvalidJobError);
+/* The one rejection allowed: a job with neither plate nor VIN can never be
+   created (0042), so it is neither sent nor kept on the phone; the form keeps
+   it. New Job's own gate makes this unreachable from the UI. */
+describe('sendJob: no plate and no VIN', () => {
+  it.each([null, '', '   '])('refuses vin %j with no plate without sending or queueing', async (vin) => {
+    await expect(send({ ...payload(), plate: ' ', vin }, video)).rejects.toBeInstanceOf(InvalidJobError);
     expect(deps.submitJob).not.toHaveBeenCalled();
     expect(deps.enqueueForRetry).not.toHaveBeenCalled();
     expect(deps.enqueueVideo).not.toHaveBeenCalled();
+  });
+
+  it('sends a VIN-less job with a plate (the site decides, 0042)', async () => {
+    expect(await send({ ...payload(), vin: null }, null)).toBe('success');
+    expect(deps.submitJob).toHaveBeenCalled();
+  });
+});
+
+/* A site rule the job breaks (0042, e.g. changed since the form was filled in):
+   kept on the phone for a human, never retried, with the reason code as its
+   error so the card can say it in words (QueuedJobs). */
+describe('sendJob: refused by the site', () => {
+  it('queues it as needing attention with the reason code', async () => {
+    deps.submitJob.mockRejectedValue(new InvalidJobError('site-needs-plate'));
+    deps.isPermanentError.mockImplementation(isPermanentError);
+    expect(await send({ ...payload(), plate: null }, null)).toBe('failed');
+    expect(deps.enqueueForRetry).toHaveBeenCalledWith(expect.anything(), {
+      needsAttention: true,
+      error: 'site-needs-plate',
+    });
   });
 });
 

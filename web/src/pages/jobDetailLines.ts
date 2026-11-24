@@ -73,8 +73,9 @@ const trimmedOrNull = (v: string | null | undefined) => v?.trim() || null;
  * inline errors and what Save sends cannot drift. Only what changed is sent:
  * an untouched plate/VIN must not re-run the duplicate check, and an old job
  * holding a plate from before today's rule must stay saveable untouched. So
- * plate/VIN format is checked only on a changed value, but an empty VIN always
- * blocks (required, 0036) and a cleared plate is saved as NULL; a VIN check-digit
+ * plate/VIN format is checked only on a changed value, but clearing both blocks
+ * (a job needs a plate or a VIN, 0042; the site's new-job rules do not apply to
+ * edits) and a cleared plate or VIN is saved as NULL; a VIN check-digit
  * failure only sets vin_valid_checksum false (a warning, never blocking). The
  * date must not be empty or in the future, and is checked only when changed
  * (a phone clock behind the server never blocks a job logged moments ago).
@@ -102,6 +103,6 @@ export function planJobEdit(job: JobFieldsBase, d: JobFieldDraft, now: number) {
     ...(workerNote !== (job.worker_note ?? null) ? { worker_note: workerNote } : {}),
     ...(dateChanged && !dateError ? { created_at: new Date(d.date).toISOString() } : {}),
   };
-  const blocked = vehicle.plateError || vehicle.vinError || vehicle.missingVin || dateError;
+  const blocked = vehicle.plateError || vehicle.vinError || vehicle.missingVehicle || dateError;
   return { vehicle, dateError, plateChanged, vinChanged, blocked, changes };
 }
