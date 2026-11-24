@@ -505,3 +505,62 @@ by any active staff account, bounded as above. Not rate-limited server-side.
       (impersonates users, ends in ROLLBACK).
 - [ ] Rollback: **web -> 0037 down** (commented block in the migration
       header): drops the two trigram indexes and restores the 0033 body.
+
+## 9. Managers/admins submit jobs for workers or under a typed name (migration 0040)
+
+Who may INSERT a job (`jobs_insert`, plus `create_job` which is security
+invoker and goes through it):
+
+| Caller  | As self                         | Typed name (`worker_label`) | For a worker (on behalf)                         |
+|---------|---------------------------------|-----------------------------|--------------------------------------------------|
+| worker  | any site (unchanged)            | refused                     | refused                                          |
+| manager | any site (unchanged since 0028) | own site only               | active worker of own site, job at own site only  |
+| admin   | any site                        | any site                    | any active worker, any site                      |
+| carasso | refused                         | refused                     | refused                                          |
+
+On behalf means only `role = 'worker'` targets: never a manager, admin,
+carasso or inactive user.
+
+Label rules (`jobs_worker_label_check` + `jobs_guard_worker_label`):
+
+- 1..60 characters after trimming (`''`/spaces = no label); control,
+  zero-width and bidi-override characters are refused by the CHECK, so a label
+  cannot hide or reorder text in the Jobs list, exports or Carasso.
+- Only valid when the submitter is the owner (`worker_id` = caller); a label
+  together with someone else's `worker_id` is refused at INSERT.
+- A **worker's** label at INSERT is **rejected** (RLS, 42501). A worker's
+  write to the label on UPDATE is **silently reverted** (0021 style: a client
+  resending the whole row must not fail). Manager/admin: the label can be
+  cleared but never set or changed after insert (42501); reassigning the job
+  (`worker_id` change) clears it.
+- Carasso: `jobs_carasso.crew` shows the label in place of the submitter's
+  name and `worker_id` is NULL for a labelled job, so `carasso_crew()` never
+  lists the submitter. With `hide_worker_names` on, crew and `worker_id` are
+  NULL as before.
+
+Audit: an on-behalf insert writes an `audit_log` row (`action =
+'create_on_behalf'`, `user_id` = submitter, `changes = {worker_id: {from:
+null, to: owner}}`) from an AFTER INSERT trigger; self-submits and the trusted
+context write none. `jobs_audit` now also logs label changes.
+
+`list_staff()` regression fixed: 0032 recreated it from the 0019 body and lost
+0028's checks, so a Carasso user could call it and Carasso accounts were
+listed. 0040 restores "worker/manager/admin callers only, Carasso not listed"
+with 0032's columns.
+
+Accepted (lead decision):
+
+- An admin's on-behalf insert keeps an admin-supplied `locked_at`
+  (`jobs_guard_worker_columns` does not stamp admins, L-2). Admin is trusted;
+  the web sends none, so the default 15-minute window applies.
+- No `created_by` column: who submitted an on-behalf job is in the audit row
+  only. A labelled job's submitter is its `worker_id`.
+- Recent typed names are stored per device (localStorage), not shared.
+
+- [ ] Deploy order: **0040 -> web**. The new web must not ship first:
+      `submitJob` always sends `p_worker_label`.
+- [ ] Run `supabase/verify_0040.sql` (read-only): every row `ok`.
+- [ ] Optional, local/branch database only: `supabase/scenarios_0040.sql`
+      (impersonates users, ends in ROLLBACK).
+- [ ] Rollback: **web -> 0040 down** (commented at the end of the migration).
+      Loses every label; keeps the `list_staff` fix.

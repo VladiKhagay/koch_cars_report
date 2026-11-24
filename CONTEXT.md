@@ -57,6 +57,18 @@ Excel.
   (`job_daily_totals.car_count`). Only the submitter edits; co-workers only see it.
   The submitter picks the job's site (default: their own), and payroll is per
   person across all sites.
+- **A labelled job belongs to its submitter but pays nobody personally**
+  (0040). When a manager/admin types a name instead of picking a worker,
+  `worker_id` is the submitter (so every RLS path keeps working) and
+  `jobs.worker_label` holds the name. The stats views put that job's ord-1
+  (submitter) row under `worker_id` NULL with the label, so it counts in site
+  totals, car counts and billing, but not in the submitter's pay, My Stats or
+  payroll share. Co-workers on it are paid as usual and see the label
+  (`jobs_worker_view.worker_label`). The label is set only at insert, only when
+  the submitter is the owner; it can be cleared but never set or changed later,
+  and reassigning the job (`worker_id` change) clears it. Picker site rules:
+  a manager's labelled or on-behalf job is at their own site; an admin's at
+  any site.
 - **There is no upstream vehicle list.** Cars just show up. Validation is
   format-only: VIN length/charset is hard, the ISO 3779 check digit is a *soft*
   warning (non-US VINs legitimately fail it), plate format is a configurable
@@ -157,6 +169,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0037_partial_vehicle_lookup.sql` | `pg_trgm` (schema `extensions`), trigram GIN indexes on `jobs.vin` / `jobs.plate` (live jobs), `lookup_vehicle()` matches "contains" from 4 normalised characters |
 | `0038_hide_client_prices.sql` | `app_settings` key `hide_client_prices` (default false), admin-only `set_hide_client_prices()`, both Carasso price policies and `jobs_carasso` withhold client prices while it is on |
 | `0039_extra_photos_5.sql` | `photos_kind_check` widened to `extra_1..extra_5` (plate, vin, video unchanged). Apply before the web/Worker that send `extra_4`/`extra_5`; run `supabase/verify_0039.sql` |
+| `0040_staff_submit_for_worker.sql` | Managers/admins submit jobs: `jobs.worker_label` (1..60 chars, no control/zero-width/bidi chars), `jobs_insert` widened for on-behalf submits, `jobs_guard_worker_label` trigger, 10-arg `create_job(..., p_worker_label)`, stats views put a labelled job's submitter row under `worker_id` NULL, `worker_label` on `jobs_manager` / `jobs_worker_view` / daily stats, label in `jobs_carasso.crew`, `create_on_behalf` audit row, `jobs_audit` logs the label, `list_staff` regression fix. Run `supabase/verify_0040.sql`; behaviour in `supabase/scenarios_0040.sql` |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
@@ -329,6 +342,23 @@ read as on.
 down** (commented at the end of the migration). Run `supabase/verify_0038.sql`;
 behaviour in `supabase/scenarios_0038.sql` (branch DB only).
 
+**Managers and admins submit jobs (0040).** `/new` is open to managers and
+admins (secondary nav, and a "New job" button on Jobs); their landing page and
+the phone tab bar are unchanged. The form adds a required Worker field: pick a
+real worker (manager: active workers of their own site, job at their own site;
+admin: any active worker, any site) and the job is simply that worker's —
+their pay, My Stats and 15-minute edit window; or type a name for someone
+without an account, and the job is the submitter's with `jobs.worker_label`
+set. A `create_on_behalf` audit row records who submitted for whom.
+
+**Deploy order: 0040 -> web. The web must not ship first:** `submitJob` always
+sends `p_worker_label`, which the old 9-arg `create_job` does not have (the old
+web against the new function is fine — the argument defaults to null).
+**Rollback: web -> 0040 down** (commented at the end of the migration). The
+down loses every label (those jobs then count as the submitter's own pay) and
+keeps the `list_staff` fix. Run `supabase/verify_0040.sql`; behaviour in
+`supabase/scenarios_0040.sql` (branch DB only).
+
 Deletion is always soft (`deleted_at`). Hard `DELETE` on `services` is granted
 to **nobody** — historical jobs must keep resolving their service references.
 
@@ -339,8 +369,11 @@ to **nobody** — historical jobs must keep resolving their service references.
 - **manager** — everything within their own site: view/search/edit jobs (every
   field, including plate, VIN, brand, worker note and date, at any age — 0034),
   add/replace/remove media, read the job's edit history, fill billing codes, view photos, export, analytics, manage services, activate and
-  deactivate *worker-role* users at their site.
-- **admin** — all sites, plus user/site management and invitations.
+  deactivate *worker-role* users at their site. Can submit jobs (0040): as
+  themselves at any site, under a typed name at their own site, or for an
+  active worker of their own site at their own site.
+- **admin** — all sites, plus user/site management and invitations. Can submit
+  jobs for any active worker or under a typed name, at any site (0040).
 
 All of it enforced by RLS policies and `security definer` RPCs, not by the UI.
 

@@ -220,7 +220,16 @@
     "paySplit_one": "מתחלק בין אדם אחד",
     "paySplit_two": "מתחלק בין שני אנשים",
     "paySplit_many": "מתחלק בין {{count}} אנשים",
-    "paySplit_other": "מתחלק בין {{count}} אנשים"
+    "paySplit_other": "מתחלק בין {{count}} אנשים",
+    "worker": "עובד",
+    "workerPickHint": "בחרו עובד, או הקלידו שם אם אין לו חשבון.",
+    "workerTypeName": "או הקלידו שם",
+    "workerRequired": "בחרו עובד או הקלידו שם",
+    "openJob": "פתיחת העבודה",
+    "siteRequired": "בחרו אתר",
+    "useTypedName": "להשתמש ב„{{term}}” כשם",
+    "submittedPlateFor": "{{plate}} תועד עבור {{name}}.",
+    "workerHasAccount": "ל{{name}} יש חשבון — לבחור בו"
   },
   "myJobs": {
     "title": "העבודות שלי",
@@ -339,7 +348,8 @@
     "leadReadOnly": "כל העבודות באתרים שלכם, החדשות ראשונות.",
     "serviceRows": "עבודות עם כמה שירותים",
     "grouped": "שורה אחת לכל עבודה",
-    "separate": "שורה לכל שירות"
+    "separate": "שורה לכל שירות",
+    "newJob": "עבודה חדשה"
   },
   "jobDetail": {
     "title": "עבודה",
@@ -413,6 +423,7 @@
         "soft_delete": "נמחק",
         "restore": "שוחזר",
         "media_add": "מדיה נוספה",
+        "create_on_behalf": "נוצר עבור עובד",
         "media_replace": "מדיה הוחלפה",
         "media_remove": "מדיה הוסרה",
         "client_price_update": "מחיר ללקוח שונה"
@@ -439,7 +450,8 @@
         "worker_price": "תשלום לעובד",
         "unit_price": "מחיר ללקוח ליחידה",
         "total_price": "מחיר ללקוח סה\"כ",
-        "duplicate_of_job_id": "כפילות אפשרית"
+        "duplicate_of_job_id": "כפילות אפשרית",
+        "worker_label": "שם עובד (מוקלד)"
       },
       "slots": {
         "plate": "תמונת לוחית רישוי",
@@ -455,7 +467,8 @@
     "editDetails": "עריכת פרטי העבודה",
     "billingSection": "חיוב ותמחור",
     "moreActions": "פעולות נוספות",
-    "unsaved": "יש שינויים שלא נשמרו"
+    "unsaved": "יש שינויים שלא נשמרו",
+    "loggedBy": "{{name}} · נרשם על ידי {{submitter}}"
   },
   "photo": {
     "download": "הורדת תמונה",

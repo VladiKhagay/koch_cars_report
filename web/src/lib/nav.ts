@@ -15,6 +15,8 @@ export interface NavItem {
 export interface Nav {
   primary: NavItem[];
   secondary: NavItem[];
+  /** Desktop sidebar only: for a role whose phone tab bar is already full and has no More tab (admin). */
+  sidebarOnly?: NavItem[];
 }
 
 /**
@@ -22,7 +24,8 @@ export interface Nav {
  * a new role is one edit here. Anything not listed is closed to Carasso.
  */
 export const ROUTE_ROLES = {
-  newJob: ['worker'],
+  /** Managers and admins log a car on someone's behalf (0040); it is never their landing page. */
+  newJob: ['worker', 'manager', 'admin'],
   workerScreens: ['worker'],
   dashboard: ['manager', 'admin'],
   /** All Jobs and Job Detail (Carasso reads them through jobs_carasso, read-only). */
@@ -65,6 +68,7 @@ export function navItemsFor(role: UserRole | undefined, t: (key: string) => stri
       secondary: [
         { to: '/team', label: t('nav.team'), icon: 'users' },
         { to: '/services', label: t('nav.services'), icon: 'tag' },
+        { to: '/new', label: t('nav.newJob'), icon: 'camera' },
       ],
     };
   }
@@ -80,6 +84,8 @@ export function navItemsFor(role: UserRole | undefined, t: (key: string) => stri
         { to: '/admin/users', label: t('nav.admin'), icon: 'settings' },
       ],
       secondary: [],
+      // Not a sixth tab: on a phone an admin reaches it from the Jobs list's button.
+      sidebarOnly: [{ to: '/new', label: t('nav.newJob'), icon: 'camera' }],
     };
   }
   if (role === 'carasso') {

@@ -7,18 +7,20 @@ import type { PreviousJob, Service } from '../lib/types';
 import { describePreviousJob } from '../components/previousJob';
 import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid, vinProblem } from '../lib/vin';
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
-import { findPreviousJob, InvalidJobError, MAX_EXTRA_PHOTOS, serviceTotal } from '../lib/jobs';
+import { findPreviousJob, InvalidJobError, MAX_EXTRA_PHOTOS, serviceTotal, type NewJobPayload } from '../lib/jobs';
 import { formatMoney } from '../components/money';
-import { migrateDraft, toggleId } from './workerJobs';
+import { cleanWorkerLabel, MAX_WORKER_LABEL, isStaffSubmitter, jobOwnership, jobSiteId, migrateDraft, pickableWorkers, toggleId, workerNamed } from './workerJobs';
 import { sendJob as sendJobAndVideo } from '../lib/sendJob';
 import { useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
-import { bumpService, pushBrand, recentBrands, serviceUseCounts } from '../lib/recent';
+import { bumpService, pushBrand, pushWorkerLabel, recentBrands, recentWorkerLabels, serviceUseCounts } from '../lib/recent';
 import PhotoCapture from '../components/PhotoCapture';
 import VideoRecorder from '../components/VideoRecorder';
 import ServiceChips from '../components/ServiceChips';
 import CoworkerPicker from '../components/CoworkerPicker';
+import WorkerPicker from '../components/WorkerPicker';
+import QueuedJobs from '../components/QueuedJobs';
 import Icon from '../components/Icon';
 import {
   Button,
@@ -52,17 +54,22 @@ const emptyForm = {
       helped at another yard once doesn't keep logging there by accident. */
   siteId: null as string | null,
   coworkerIds: [] as string[],
+  /** Manager/admin only (0040): the worker picked, or else `workerLabel`, a typed name. Never both. */
+  workerId: '',
+  workerLabel: '',
 };
+
+
 
 /** How long the "job submitted" confirmation stays up before it self-clears. */
 const SUCCESS_TTL_MS = 8000;
 
-type ProblemId = 'vinPhoto' | 'plate' | 'vin' | 'service';
+type ProblemId = 'worker' | 'vinPhoto' | 'plate' | 'vin' | 'service' | 'site';
 
 function formIsEmpty(f: typeof emptyForm) {
   return (
     !f.plate && !f.vin && !f.brand && !f.note && f.serviceIds.length === 0 && !f.platePhoto && !f.vinPhoto &&
-    !f.video && f.extraPhotos.length === 0 && f.coworkerIds.length === 0
+    !f.video && f.extraPhotos.length === 0 && f.coworkerIds.length === 0 && !f.workerId && !f.workerLabel
   );
 }
 
@@ -75,8 +82,10 @@ function scrollTo(el: HTMLElement | null) {
 export default function NewJob() {
   const { t, i18n } = useTranslation();
   const { appUser } = useAuth();
-  const { sites } = useSiteScope();
+  const { sites, siteId: scopeSiteId } = useSiteScope();
   const staff = useStaff();
+  const isStaff = isStaffSubmitter(appUser?.role);
+  const isManager = appUser?.role === 'manager';
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
@@ -92,6 +101,10 @@ export default function NewJob() {
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'queued' | 'failed'>('idle');
   const [lastIdentifier, setLastIdentifier] = useState('');
+  /* The last car's id when it went in, for a manager/admin's "Open job" link (they have no My Jobs). */
+  const [lastJobId, setLastJobId] = useState<string | null>(null);
+  /* Who a manager/admin's last car was logged for, named on the banner. */
+  const [lastFor, setLastFor] = useState('');
   /* The last car's video went to the background queue: one more line on the success banner. */
   const [videoQueued, setVideoQueued] = useState(false);
   /* The video could be neither kept nor sent: 'sent' = the job is in ('failed' banner, own message);
@@ -104,6 +117,8 @@ export default function NewJob() {
   const platePhotoRef = useRef<HTMLDivElement>(null);
   const vinPhotoRef = useRef<HTMLDivElement>(null);
   const servicesRef = useRef<HTMLDivElement>(null);
+  const workerRef = useRef<HTMLDivElement>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   /* Put back whatever was in the form when the page last went away (a camera
@@ -129,6 +144,18 @@ export default function NewJob() {
     return [...services].sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0));
   }, [services]);
   const brandSuggestions = recentBrands();
+  const labelSuggestions = isStaff ? recentWorkerLabels() : [];
+  const workers = appUser && isStaff ? pickableWorkers(staff, appUser) : [];
+  /* A restored draft can name someone no longer offered (deactivated, moved
+     site): dropped once the staff list is in, like a retired service below. */
+  const workerId = staff.length > 0 && !workers.some((w) => w.id === form.workerId) ? '' : form.workerId;
+  const pickedWorker = workers.find((w) => w.id === workerId);
+  /* A typed name that is really someone with an account: offer to pick them, so their pay lands. */
+  const typedMatch = !workerId ? workerNamed(workers, form.workerLabel) : undefined;
+  /* An admin picks from every site, so each name carries its site; a manager's are all one site. */
+  const pickerWorkers = appUser?.role === 'admin'
+    ? workers.map((w) => ({ id: w.id, name: [w.name, sites.find((x) => x.id === w.site_id)?.name].filter(Boolean).join(' · ') }))
+    : workers;
 
   useEffect(() => {
     supabase
@@ -228,12 +255,32 @@ export default function NewJob() {
     setForm((f) => ({ ...f, siteId: id }));
   }
 
+  /* Picking a worker drops a typed name and vice versa: the job has one or the other.
+     The picked worker can't also be their own co-worker. */
+  function pickWorker(id: string) {
+    beginNextCar();
+    setForm((f) => ({
+      ...f,
+      workerId: id,
+      workerLabel: id ? '' : f.workerLabel,
+      coworkerIds: f.coworkerIds.filter((c) => c !== id),
+    }));
+  }
+
+  /* Every way a name gets in (typing, pasting, a chip, the picker's "use" row)
+     comes through here, so the field never holds what the database refuses. */
+  function typeWorkerLabel(raw: string) {
+    beginNextCar();
+    const label = cleanWorkerLabel(raw, { typing: true });
+    setForm((f) => ({ ...f, workerLabel: label, workerId: label ? '' : f.workerId }));
+  }
+
   function toggleService(id: string) {
     beginNextCar();
     setForm((f) => ({ ...f, serviceIds: toggleId(f.serviceIds, id) }));
   }
 
-  const siteId = form.siteId ?? appUser?.site_id ?? null;
+  const siteId = appUser ? jobSiteId(appUser, form.siteId, scopeSiteId, pickedWorker?.site_id ?? null) : null;
 
   /* A restored draft can name a service retired since: no chip to untick it, so
      it is dropped here. Not before the catalog loads, nor if it came back empty
@@ -276,6 +323,16 @@ export default function NewJob() {
 
     /** Everything blocking submission, in on-screen order, so Submit never silently does nothing. */
   const problems: { id: ProblemId; label: string; focus: () => void }[] = [];
+  const workerMissing = isStaff && !workerId && !cleanWorkerLabel(form.workerLabel);
+  if (workerMissing)
+    problems.push({
+      id: 'worker',
+      label: t('newJob.workerRequired'),
+      focus: () => {
+        scrollTo(workerRef.current);
+        workerRef.current?.querySelector('input')?.focus();
+      },
+    });
   // Required (user decision): the VIN photo is the record of what was read. Plate photo stays optional.
   if (!form.vinPhoto)
     problems.push({
@@ -308,6 +365,18 @@ export default function NewJob() {
     });
   if (serviceIds.length === 0)
     problems.push({ id: 'service', label: t('newJob.needService'), focus: () => scrollTo(servicesRef.current) });
+  /* An admin with no home site and nothing picked yet: say so rather than doing nothing. */
+  if (!siteId)
+    problems.push({
+      id: 'site',
+      label: t('newJob.siteRequired'),
+      focus: () => {
+        if (detailsRef.current) detailsRef.current.open = true;
+        const select = document.getElementById('job-site');
+        scrollTo(select);
+        select?.focus();
+      },
+    });
 
   const showProblems = attempted && problems.length > 0;
 
@@ -352,9 +421,10 @@ export default function NewJob() {
     // The plate if there is one, else the VIN (always set: the form requires
     // it), identifies the car in the confirmation message below.
     const identifier = form.plate || form.vin;
-    const payload = {
+    const owner = jobOwnership(appUser, { workerId, workerLabel: form.workerLabel });
+    const payload: NewJobPayload = {
       siteId,
-      workerId: appUser.id,
+      ...owner,
       coworkerIds: form.coworkerIds,
       // An empty plate means "no plate" and is stored as NULL, never ''.
       plate: form.plate || null,
@@ -371,6 +441,8 @@ export default function NewJob() {
 
     serviceIds.forEach((id) => bumpService(id));
     pushBrand(form.brand);
+    if (owner.workerLabel) pushWorkerLabel(owner.workerLabel);
+    const loggedFor = owner.workerLabel ?? pickedWorker?.name ?? '';
 
     const resetForm = () => {
       void clearDraft();
@@ -381,6 +453,7 @@ export default function NewJob() {
       setAutoFilled({ plate: false, vin: false });
       setOcrIssue({ plate: null, vin: null });
       setLastIdentifier(identifier);
+      setLastFor(loggedFor);
       scrollTo(topRef.current);
     };
 
@@ -396,6 +469,8 @@ export default function NewJob() {
             : null,
       );
       resetForm();
+      // Set by submitJob once the row exists; a queued job has none yet.
+      setLastJobId(outcome === 'success' || outcome === 'success-video-queued' ? payload.jobId ?? null : null);
       setStatus(
         outcome === 'success' || outcome === 'success-video-queued'
           ? 'success'
@@ -422,6 +497,73 @@ export default function NewJob() {
             page title now steps down on a phone everywhere, so the exception
             has nothing left to do and the shared heading can own it. */}
         <PageHeading>{t('newJob.title')}</PageHeading>
+
+        {/* A manager/admin has no My Jobs: their unsent cars are listed here. */}
+        {isStaff && <QueuedJobs />}
+
+        {/* Manager/admin only (0040): whose car this is. A real worker owns it
+            (their pay, stats and edit window); a typed name stays with the
+            submitter and is shown where the worker's name would be. */}
+        {isStaff && (
+          <Group>
+            <div ref={workerRef}>
+              <Field
+                htmlFor="job-worker"
+                label={t('newJob.worker')}
+                required
+                hint={<span className="text-ink-500">{t('newJob.workerPickHint')}</span>}
+                error={attempted && workerMissing ? t('newJob.workerRequired') : undefined}
+              >
+                <WorkerPicker
+                  id="job-worker"
+                  workers={pickerWorkers}
+                  value={workerId}
+                  onChange={pickWorker}
+                  // Nobody by that name: one tap makes it the typed name below.
+                  useTerm={{
+                    label: (term) => t('newJob.useTypedName', { term }),
+                    onUse: (term) => typeWorkerLabel(term),
+                  }}
+                />
+              </Field>
+            </div>
+            <Field htmlFor="job-worker-label" label={t('newJob.workerTypeName')}>
+              <input
+                id="job-worker-label"
+                value={form.workerLabel}
+                maxLength={MAX_WORKER_LABEL}
+                autoComplete="off"
+                onChange={(e) => typeWorkerLabel(e.target.value)}
+                className={`${fieldClass} ${attempted && workerMissing ? fieldErrorClass : ''}`}
+              />
+              {typedMatch && (
+                <button
+                  type="button"
+                  onClick={() => pickWorker(typedMatch.id)}
+                  className="mt-1.5 inline-flex min-h-tap items-center gap-1.5 text-start text-sm font-semibold text-ink-900 underline underline-offset-2"
+                >
+                  <Icon name="user" size={16} className="shrink-0" />
+                  {t('newJob.workerHasAccount', { name: typedMatch.name })}
+                </button>
+              )}
+              {/* Names typed lately on this phone, one tap each. Gone once a worker or name is set. */}
+              {!workerId && !form.workerLabel && labelSuggestions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {labelSuggestions.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => typeWorkerLabel(name)}
+                      className="inline-flex min-h-tap items-center rounded-lg border border-line-strong bg-surface px-3 text-sm font-semibold text-ink-900 active:bg-ink-50"
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Field>
+          </Group>
+        )}
 
         {/* Group 1 — what you photograph. */}
         <Group>
@@ -630,7 +772,7 @@ export default function NewJob() {
             photo → plate/VIN → service → Submit without scrolling past
             notes, site and crew. The summary shows what is set inside, so a
             non-default site or a crew is never hidden from the worker. */}
-        <details className="group rounded-xl border border-line bg-surface">
+        <details ref={detailsRef} className="group rounded-xl border border-line bg-surface">
           <summary className="flex min-h-control cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-ink-900 [&::-webkit-details-marker]:hidden">
             <span>{t('newJob.moreDetails')}</span>
             <span className="flex min-w-0 items-center gap-2 font-medium text-ink-600">
@@ -694,7 +836,15 @@ export default function NewJob() {
           </Field>
 
           <Field htmlFor="job-site" label={t('newJob.site')}>
-            <Select id="job-site" value={siteId ?? ''} onChange={(e) => selectSite(e.target.value)}>
+            {/* A manager logs at their own site only (the database refuses any other). */}
+            <Select
+              id="job-site"
+              value={siteId ?? ''}
+              disabled={isManager}
+              invalid={attempted && !siteId}
+              onChange={(e) => selectSite(e.target.value)}
+            >
+              {!siteId && <option value="" disabled />}
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -710,7 +860,7 @@ export default function NewJob() {
                 staff={staff}
                 sites={sites}
                 value={form.coworkerIds}
-                submitterId={appUser.id}
+                submitterId={workerId || appUser.id}
                 onChange={(ids) => {
                   beginNextCar();
                   setForm((f) => ({ ...f, coworkerIds: ids }));
@@ -765,18 +915,28 @@ export default function NewJob() {
                 </p>
                 <p className="mt-0.5 text-sm font-medium">
                   {status === 'success'
-                    ? `${t('newJob.submittedPlate', { plate: lastIdentifier })} ${t('newJob.editWindow')}${
-                        videoQueued ? ` ${t('newJob.videoQueued')}` : ''
-                      }`
+                    ? // Staff can't edit from My Jobs, so no edit-window promise for them.
+                      [
+                        isStaff && lastFor
+                          ? t('newJob.submittedPlateFor', { plate: lastIdentifier, name: lastFor })
+                          : t('newJob.submittedPlate', { plate: lastIdentifier }),
+                        !isStaff && t('newJob.editWindow'),
+                        videoQueued && t('newJob.videoQueued'),
+                      ]
+                        .filter(Boolean)
+                        .join(' ')
                     : status === 'failed'
                       ? videoLost === 'sent'
                         ? t('newJob.videoNotSaved')
                         : `${t('newJob.failedBody')}${videoLost === 'queued' ? ` ${t('newJob.videoNotKept')}` : ''}`
                       : t(videoLost === 'queued' ? 'newJob.queuedVideoNotSaved' : 'newJob.queuedOffline')}
                 </p>
-                {status === 'success' && (
-                  <Link to="/mine" className="mt-1 inline-flex min-h-tap items-center text-sm font-bold underline underline-offset-2">
-                    {t('newJob.edit')}
+                {status === 'success' && (!isStaff || lastJobId) && (
+                  <Link
+                    to={isStaff ? `/jobs/${lastJobId}` : '/mine'}
+                    className="mt-1 inline-flex min-h-tap items-center text-sm font-bold underline underline-offset-2"
+                  >
+                    {t(isStaff ? 'newJob.openJob' : 'newJob.edit')}
                   </Link>
                 )}
               </div>

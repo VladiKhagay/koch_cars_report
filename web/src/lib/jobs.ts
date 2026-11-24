@@ -72,6 +72,17 @@ export interface NewJobPayload {
   videoBlob?: Blob | null;
   /** Set once the row exists, so a retry after a failed upload resumes instead of inserting a second job. */
   jobId?: string;
+  /**
+   * A name typed by a manager/admin for someone with no account (0040). Only
+   * with `workerId` = the submitter; the database refuses it otherwise.
+   */
+  workerLabel?: string | null;
+  /**
+   * Who pressed Submit on this phone: the queue's owner. Differs from
+   * `workerId` when a manager/admin logged the car for a worker. Absent on
+   * payloads queued before 0040, where the submitter was always `workerId`.
+   */
+  submittedBy?: string;
 }
 
 /**
@@ -108,6 +119,7 @@ export async function submitJob(payload: NewJobPayload): Promise<string> {
       // without its crew (or the crew twice).
       p_coworker_ids: payload.coworkerIds ?? [],
       p_service_ids: serviceIds,
+      p_worker_label: payload.workerLabel ?? null,
     });
 
     if (error || !data) throw error ?? new Error('Job creation failed');
@@ -458,6 +470,14 @@ export function shareFor(
   personId: string,
 ): number {
   return job.worker_id === personId ? job.submitter_share : job.coworker_share;
+}
+
+/**
+ * The name shown for whoever did the car: a manager/admin's typed name (0040)
+ * when there is one, since the account behind such a job is only the submitter's.
+ */
+export function submitterName(job: { worker_label?: string | null }, fallback: string): string {
+  return job.worker_label || fallback;
 }
 
 /** What this person is owed for one service line of the job (0033: Postgres allocated the line shares). */

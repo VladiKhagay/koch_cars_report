@@ -408,6 +408,19 @@ describe('submitJob — crew', () => {
   });
 });
 
+describe('submitJob — worker label (0040)', () => {
+  it('sends a typed name with the job', async () => {
+    await submitJob({ ...payload(), workerLabel: 'Moshe' });
+    expect(insertedJobs[0]).toMatchObject({ p_worker_label: 'Moshe' });
+  });
+
+  /* Payloads queued before 0040, and every worker's own job, carry no label. */
+  it('sends null when there is none', async () => {
+    await submitJob(payload());
+    expect(insertedJobs[0]).toMatchObject({ p_worker_label: null });
+  });
+});
+
 describe('lineShareFor', () => {
   const line = { submitter_share: 20.01, coworker_share: 20 };
   it('gives the submitter the submitter share of the line, a co-worker the even share', () => {

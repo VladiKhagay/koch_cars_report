@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { startQueueSync } from '../lib/offlineQueue';
 import { useQueuedJobs, useUploadingId, useUploadProgress } from '../lib/useQueue';
-import { navItemsFor, type NavItem } from '../lib/nav';
+import { navItemsFor, ROUTE_ROLES, type NavItem } from '../lib/nav';
+import type { UserRole } from '../lib/types';
 import Icon from './Icon';
 import Logo from './Logo';
 
 /** Pending-sync indicator, shown in the shell. Near-black on white so it reads as neither an error nor a success, and survives direct sun. */
-function QueueIndicator({ compact }: { compact?: boolean }) {
+/** `to`: where this person's queued cards are listed (My Jobs for a worker, New Job for a manager/admin). */
+function QueueIndicator({ compact, to }: { compact?: boolean; to: string }) {
   const { t } = useTranslation();
   const queued = useQueuedJobs();
   const uploadingId = useUploadingId();
@@ -40,7 +42,7 @@ function QueueIndicator({ compact }: { compact?: boolean }) {
 
   return (
     <NavLink
-      to="/mine"
+      to={to}
       className={`inline-flex min-h-tap items-center gap-2 rounded-lg bg-accent px-3 font-semibold text-surface ${
         compact ? 'text-xs' : 'w-full text-sm'
       }`}
@@ -56,12 +58,15 @@ export default function Layout() {
   const { t } = useTranslation();
   const { appUser } = useAuth();
   const role = appUser?.role;
-  const { primary, secondary } = navItemsFor(role, t);
+  const { primary, secondary, sidebarOnly } = navItemsFor(role, t);
   const isWorker = role === 'worker';
+  // Anyone who can submit a job can have one waiting on this phone.
+  const canQueue = (ROUTE_ROLES.newJob as readonly UserRole[]).includes(role as UserRole);
+  const queueTo = isWorker ? '/mine' : '/new';
 
   // The sidebar has room for everything; the tab bar earns its fifth slot with
   // a single entry point to the rest.
-  const sidebarItems = [...primary, ...secondary];
+  const sidebarItems = [...primary, ...secondary, ...(sidebarOnly ?? [])];
   const tabBarItems: NavItem[] =
     secondary.length > 0 ? [...primary, { to: '/more', label: t('nav.more'), icon: 'menu' }] : primary;
 
@@ -125,9 +130,9 @@ export default function Layout() {
           ))}
         </nav>
 
-        {isWorker && (
+        {canQueue && (
           <div className="mt-3">
-            <QueueIndicator />
+            <QueueIndicator to={queueTo} />
           </div>
         )}
 
@@ -154,7 +159,7 @@ export default function Layout() {
             <Logo height={20} decorative />
           </span>
           <div className="flex items-center gap-2">
-            {isWorker && <QueueIndicator compact />}
+            {canQueue && <QueueIndicator compact to={queueTo} />}
             <NavLink
               to="/profile"
               aria-label={t('nav.account')}

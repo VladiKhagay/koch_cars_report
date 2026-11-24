@@ -258,7 +258,9 @@ function StaffJobDetail() {
     // manager who moved the job off their site can no longer read it.
     if (moving && !isAdmin) {
       // The read-only view shows `job`, so it carries everything just saved.
-      setJob({ ...job, ...jobChanges, ...billing, service_ids: serviceIds });
+      // A new worker drops the typed name (0040's trigger does the same in the row).
+      const label = jobChanges.worker_id === job.worker_id ? job.worker_label : null;
+      setJob({ ...job, ...jobChanges, ...billing, service_ids: serviceIds, worker_label: label });
       setCoworkerIds(jobChanges.coworker_ids);
       // The stored form, so the fields don't read as changed against the new job.
       if (plateChanged) setPlate(stored.plate ?? '');
@@ -426,7 +428,15 @@ function StaffJobDetail() {
               <DetailRow label={t('newJob.vin')} value={job.vin ?? '—'} mono copy={!!job.vin} />
               <DetailRow label={t('newJob.brand')} value={job.brand ?? '—'} />
               <DetailRow label={t('jobDetail.date')} value={new Date(job.created_at).toLocaleString(i18n.language, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} />
-              <DetailRow label={t('jobDetail.worker')} value={nameOf(job.worker_id)} />
+              <DetailRow
+                label={t('jobDetail.worker')}
+                // A typed name (0040): the account behind it is only who logged it.
+                value={
+                  job.worker_label
+                    ? t('jobDetail.loggedBy', { name: job.worker_label, submitter: nameOf(job.worker_id) })
+                    : nameOf(job.worker_id)
+                }
+              />
               {job.coworker_ids.length > 0 && (
                 <DetailRow label={t('coworkers.label')} value={job.coworker_ids.map(nameOf).join(', ')} />
               )}

@@ -25,7 +25,7 @@ describe('navItemsFor', () => {
   it('demotes the manager screens that are visited weekly, not hourly', () => {
     const { primary, secondary } = navItemsFor('manager', t);
     const paths = (items: { to: string }[]) => items.map((i) => i.to);
-    expect(paths(secondary)).toEqual(['/team', '/services']);
+    expect(paths(secondary)).toEqual(['/team', '/services', '/new']);
     expect(paths(primary)).not.toContain('/team');
     expect(paths(primary)).not.toContain('/services');
   });
@@ -50,6 +50,32 @@ describe('navItemsFor', () => {
 
   it('returns nothing for a user whose role has not loaded yet', () => {
     expect(navItemsFor(undefined, t)).toEqual({ primary: [], secondary: [] });
+  });
+});
+
+describe('New job for managers and admins', () => {
+  const paths = (items: { to: string }[] = []) => items.map((i) => i.to);
+
+  it('is open to worker, manager and admin, never Carasso', () => {
+    expect([...ROUTE_ROLES.newJob].sort()).toEqual(['admin', 'manager', 'worker']);
+  });
+
+  it('sits in the manager More list, not the tab bar', () => {
+    const { primary, secondary } = navItemsFor('manager', t);
+    expect(paths(primary)).not.toContain('/new');
+    expect(paths(secondary)).toContain('/new');
+  });
+
+  it('is sidebar-only for an admin, whose five tabs stay as they were', () => {
+    const { primary, secondary, sidebarOnly } = navItemsFor('admin', t);
+    expect(paths(primary)).toEqual(['/dashboard', '/jobs', '/analytics', '/export', '/admin/users']);
+    expect(secondary).toEqual([]);
+    expect(paths(sidebarOnly)).toEqual(['/new']);
+  });
+
+  it('leaves the worker and Carasso navs alone', () => {
+    expect(navItemsFor('worker', t).sidebarOnly).toBeUndefined();
+    expect(paths(navItemsFor('carasso', t).sidebarOnly)).toEqual([]);
   });
 });
 

@@ -15,12 +15,15 @@ export default function WorkerPicker({
   workers,
   value,
   onChange,
+  useTerm,
 }: {
   /** The search field's id, for the Field label. */
   id: string;
   workers: PickableWorker[];
   value: string;
   onChange: (id: string) => void;
+  /** Offered when nobody matches: take the typed text as-is (New Job's typed name, 0040). */
+  useTerm?: { label: (term: string) => string; onUse: (term: string) => void };
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
@@ -96,6 +99,20 @@ export default function WorkerPicker({
       <p role="status" className="border-t border-line px-4 py-3 text-sm text-ink-600 empty:hidden">
         {noMatches ? t('export.noWorkerMatches') : ''}
       </p>
+
+      {noMatches && useTerm && (
+        <button
+          type="button"
+          onClick={() => {
+            useTerm.onUse(search.trim());
+            setSearch('');
+          }}
+          className="flex min-h-control w-full items-center gap-2 border-t border-line px-4 text-start text-base font-semibold text-ink-900 active:bg-ink-50"
+        >
+          <Icon name="plus" size={18} className="shrink-0 text-ink-500" />
+          <span className="truncate">{useTerm.label(search.trim())}</span>
+        </button>
+      )}
     </div>
   );
 }

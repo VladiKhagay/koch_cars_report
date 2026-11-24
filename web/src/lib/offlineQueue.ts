@@ -210,7 +210,8 @@ export function setQueueOwner(id: string | null): void {
 export async function listQueued(): Promise<QueuedJob[]> {
   const all = await queueStore.getAll();
   return all
-    .filter((job) => job.workerId === owner)
+    // The person who submitted it, not the worker it was logged for (0040).
+    .filter((job) => (job.submittedBy ?? job.workerId) === owner)
     .sort((a, b) => Number(a.stage === 'video') - Number(b.stage === 'video') || a.queuedAt.localeCompare(b.queuedAt));
 }
 

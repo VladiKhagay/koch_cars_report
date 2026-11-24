@@ -52,10 +52,21 @@ export function customerRows(jobs: CarassoJob[], mode: ServiceRowMode): ExportJo
 export type PaymentFetchedJob = Omit<ExportJob, 'services' | 'service'> & {
   worker_id: string;
   coworker_ids: string[];
+  /** Customer report only (0040); the payment sheet never selects it. */
+  worker_label?: string | null;
   submitter_share: number;
   coworker_share: number;
   services: JobServiceLine[] | null;
 };
+
+/**
+ * PostgREST `or` filter for the jobs one person is paid for: submitted with no
+ * typed name (a labelled job's pay is nobody's, 0040), or co-worked.
+ * `workerId` must already be a UUID (it comes from the picker's list).
+ */
+export function paymentJobsFilter(workerId: string): string {
+  return `and(worker_id.eq.${workerId},worker_label.is.null),coworker_ids.cs.{${workerId}}`;
+}
 
 /**
  * The payment sheet's jobs for one person: their own name on every row (the

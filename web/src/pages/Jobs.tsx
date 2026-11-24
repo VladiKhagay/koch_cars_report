@@ -5,14 +5,14 @@
  */
 import Icon from '../components/Icon';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { serviceName as localizedServiceName } from '../lib/serviceName';
 import { serviceLabel, useServiceRowMode, type ServiceRowMode } from '../lib/serviceRows';
-import { applyJobFilters, fetchDuplicateSummary, saveBilling } from '../lib/jobs';
+import { applyJobFilters, fetchDuplicateSummary, saveBilling, submitterName } from '../lib/jobs';
 import {
   CARASSO_JOBS_VIEW,
   CARASSO_JOB_COLUMNS,
@@ -196,6 +196,7 @@ export default function Jobs() {
   const { appUser } = useAuth();
   const { sites, siteId, canSwitch } = useSiteScope();
   const isCarasso = appUser?.role === 'carasso';
+  const navigate = useNavigate();
   /* Grouped or separate rows: an admin choice. Everyone else always reads one
      row per job, whatever an admin left stored in this browser. */
   const [storedRowMode, setRowMode] = useServiceRowMode();
@@ -392,10 +393,12 @@ export default function Jobs() {
     [i18n.language],
   );
 
-  const staff = useStaff();
+  // Carasso reads crew names from jobs_carasso and may not call list_staff.
+  const staff = useStaff(!isCarasso);
   const crewName = useCallback(
     (job: JobRow): string =>
-      job.crew ?? [job.worker?.name ?? '—', ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
+      job.crew ??
+      [submitterName(job, job.worker?.name ?? '—'), ...staffNames(staff, job.coworker_ids ?? [])].join(', '),
     [staff],
   );
 
@@ -522,7 +525,19 @@ export default function Jobs() {
 
   return (
     <Page width="full">
-      <PageHeading lead={isCarasso ? t('jobs.leadReadOnly') : t('jobs.lead')}>{t('jobs.title')}</PageHeading>
+      <PageHeading
+        lead={isCarasso ? t('jobs.leadReadOnly') : t('jobs.lead')}
+        // Managers/admins log a car for a worker from here (0040); on an admin's phone it is the only way in.
+        action={
+          isCarasso ? undefined : (
+            <Button icon="plus" onClick={() => navigate('/new')}>
+              {t('jobs.newJob')}
+            </Button>
+          )
+        }
+      >
+        {t('jobs.title')}
+      </PageHeading>
 
       {/* The table, the states it can be in, and its pager. */}
       <Group>
