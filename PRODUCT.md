@@ -148,6 +148,9 @@ the same query under three different identities.
 - Worker self-service stats: own job counts by month.
 - Service catalog: unique catalog number, English name, optional Russian name,
   active/inactive, manual sort order, soft delete (history keeps its references).
+- Site management (admin): add, rename (history follows), disable / re-enable
+  (no new jobs, hidden from new-job, user and invite pickers; history, stats
+  and exports unchanged), and delete only a site with no jobs or users.
 - User management: admin invites by email and edits role/site; manager
   activates/deactivates worker-role users at their own site only.
 - Self-service: set password from an invite link, rename self, change password.

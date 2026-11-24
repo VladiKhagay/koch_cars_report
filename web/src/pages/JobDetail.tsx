@@ -8,7 +8,7 @@ import { fetchServiceClientPrices, parsePrice } from '../lib/clientPrices';
 import { serviceLabel } from '../lib/serviceRows';
 import { stripPlate } from '../lib/vin';
 import { toLocalInput } from '../lib/formatDate';
-import { useSiteScope } from '../lib/useSiteScope';
+import { pickableSites, useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { SERVICE_COLUMNS, type ClientPrices, type Job, type PreviousJob, type Service } from '../lib/types';
 import JobMedia from '../components/JobMedia';
@@ -554,7 +554,8 @@ function StaffJobDetail() {
                 </Field>
                 <Field htmlFor="job-site" label={t('newJob.site')}>
                   <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-                    {sites.map((s) => (
+                    {/* Enabled sites, plus the job's own even if disabled since (0041). */}
+                    {pickableSites(sites, [job.site_id]).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>

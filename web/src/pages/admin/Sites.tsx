@@ -1,13 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import type { Site } from '../../lib/types';
 import AdminTabs from '../../components/AdminTabs';
 import StatusBanner from '../../components/StatusBanner';
-import { Table, TableCard, TBody, Td, Th, THead, Tr, CellTitle } from '../../components/DataTable';
 import {
+  Table,
+  TableCard,
+  TBody,
+  Td,
+  TdActions,
+  Th,
+  THead,
+  Tr,
+  TrExpanded,
+  CellTitle,
+} from '../../components/DataTable';
+import {
+  Badge,
   Button,
+  ConfirmPanel,
   EmptyState,
+  Field,
+  IconButton,
   LoadingRegion,
   Page,
   PageHeading,
@@ -16,6 +31,23 @@ import {
   fieldErrorClass,
 } from '../../components/ui';
 
+/** Name, status, actions. */
+const COLUMNS = 3;
+
+type Expanded = { id: string; mode: 'rename' | 'disable' | 'delete' } | null;
+type Status =
+  | 'idle'
+  | 'added'
+  | 'required'
+  | 'duplicate'
+  | 'error'
+  | 'renamed'
+  | 'disabled'
+  | 'enabled'
+  | 'deleted'
+  | 'inUse';
+type RenameError = '' | 'required' | 'duplicate' | 'error';
+
 export default function AdminSites() {
   const { t } = useTranslation();
   const [sites, setSites] = useState<Site[]>([]);
@@ -23,7 +55,11 @@ export default function AdminSites() {
   const [name, setName] = useState('');
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'added' | 'required' | 'duplicate' | 'error'>('idle');
+  const [adding, setAdding] = useState(false);
+  const [status, setStatus] = useState<Status>('idle');
+  const [expanded, setExpanded] = useState<Expanded>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameError, setRenameError] = useState<RenameError>('');
 
   useEffect(() => {
     void load();
@@ -31,7 +67,7 @@ export default function AdminSites() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('sites').select('*').order('name');
+    const { data } = await supabase.from('sites').select('id, name, active').order('name');
     setSites(data ?? []);
     setLoading(false);
   }
@@ -42,15 +78,64 @@ export default function AdminSites() {
       setStatus('required');
       return;
     }
-    setSaving(true);
+    setAdding(true);
     const { error } = await supabase.from('sites').insert({ name: trimmed });
-    setSaving(false);
+    setAdding(false);
     if (error) {
       setStatus(error.code === '23505' ? 'duplicate' : 'error');
       return;
     }
     setName('');
     setStatus('added');
+    void load();
+  }
+
+  function open(site: Site, mode: NonNullable<Expanded>['mode']) {
+    setExpanded({ id: site.id, mode });
+    setRenameDraft(site.name);
+    setRenameError('');
+    setStatus('idle');
+  }
+
+  async function handleRename(site: Site) {
+    const trimmed = renameDraft.trim();
+    if (!trimmed) {
+      setRenameError('required');
+      return;
+    }
+    setSaving(true);
+    // .select(): RLS turns a refused update into zero rows, not an error.
+    const { data, error } = await supabase.from('sites').update({ name: trimmed }).eq('id', site.id).select('id');
+    setSaving(false);
+    if (error || !data?.length) {
+      setRenameError(error?.code === '23505' ? 'duplicate' : 'error');
+      return;
+    }
+    setExpanded(null);
+    setStatus('renamed');
+    void load();
+  }
+
+  async function setActive(site: Site, active: boolean) {
+    // A second tap while the first is in flight would report the first as an error.
+    if (saving) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('sites').update({ active }).eq('id', site.id).select('id');
+    setSaving(false);
+    setExpanded(null);
+    setStatus(error || !data?.length ? 'error' : active ? 'enabled' : 'disabled');
+    void load();
+  }
+
+  async function handleDelete(site: Site) {
+    // A second tap would delete 0 rows and turn a done delete into 'error'.
+    if (saving) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('sites').delete().eq('id', site.id).select('id');
+    setSaving(false);
+    setExpanded(null);
+    // 23503: a job, a user or a viewer link still points at it (0041 FKs).
+    setStatus(error?.code === '23503' ? 'inUse' : error || !data?.length ? 'error' : 'deleted');
     void load();
   }
 
@@ -69,18 +154,22 @@ export default function AdminSites() {
       </div>
 
       {/*
-        A site name is written into every export and every analytics screen and
-        cannot be corrected here, so the consequence is stated before the field
-        rather than discovered in a spreadsheet a month later. It is the page
-        lead now that the form has moved into the table's toolbar — the warning
-        has to outrank the control it is about.
+        A site name is written into every export and every analytics screen, so
+        how to correct one (and why a used site is disabled, not deleted) is
+        stated before the field rather than discovered later. It is the page
+        lead now that the form has moved into the table's toolbar.
       */}
       <PageHeading lead={t('admin.sitesWarning')}>{t('admin.sites')}</PageHeading>
 
       {status === 'required' && <StatusBanner tone="error" live>{t('admin.sitesNameRequired')}</StatusBanner>}
       {status === 'duplicate' && <StatusBanner tone="error" live>{t('admin.sitesDuplicate')}</StatusBanner>}
       {status === 'error' && <StatusBanner tone="error" live>{t('common.error')}</StatusBanner>}
+      {status === 'inUse' && <StatusBanner tone="error" live>{t('admin.sitesInUse')}</StatusBanner>}
       {status === 'added' && <StatusBanner tone="success" live>{t('admin.sitesAdded')}</StatusBanner>}
+      {status === 'renamed' && <StatusBanner tone="success" live>{t('admin.sitesRenamed')}</StatusBanner>}
+      {status === 'disabled' && <StatusBanner tone="success" live>{t('admin.sitesDisabledDone')}</StatusBanner>}
+      {status === 'enabled' && <StatusBanner tone="success" live>{t('admin.sitesEnabledDone')}</StatusBanner>}
+      {status === 'deleted' && <StatusBanner tone="success" live>{t('admin.sitesDeleted')}</StatusBanner>}
 
       {loading && <LoadingRegion label={t('common.loading')} rows={3} />}
 
@@ -111,7 +200,7 @@ export default function AdminSites() {
                 }}
                 className={`${fieldClass} ${invalid ? fieldErrorClass : ''} w-auto min-w-48 flex-1`}
               />
-              <Button icon="plus" busy={saving} onClick={() => void handleAdd()}>
+              <Button icon="plus" busy={adding} onClick={() => void handleAdd()}>
                 {t('admin.add')}
               </Button>
             </div>
@@ -121,16 +210,118 @@ export default function AdminSites() {
             <THead>
               <tr>
                 <Th>{t('admin.name')}</Th>
+                <Th>{t('admin.status')}</Th>
+                <Th />
               </tr>
             </THead>
             <TBody>
-              {filtered.map((s) => (
-                <Tr key={s.id}>
-                  <Td>
-                    <CellTitle>{s.name}</CellTitle>
-                  </Td>
-                </Tr>
-              ))}
+              {filtered.map((s) => {
+                const mode = expanded?.id === s.id ? expanded.mode : null;
+                return (
+                  <Fragment key={s.id}>
+                    <Tr active={Boolean(mode)}>
+                      <Td>
+                        <CellTitle>{s.name}</CellTitle>
+                      </Td>
+                      <Td>
+                        {s.active ? (
+                          <Badge tone="ok" icon="checkCircle">
+                            {t('admin.sitesActive')}
+                          </Badge>
+                        ) : (
+                          <Badge tone="neutral" icon="lock">
+                            {t('admin.sitesDisabled')}
+                          </Badge>
+                        )}
+                      </Td>
+                      <TdActions>
+                        <IconButton icon="pencil" label={t('admin.sitesRename')} onClick={() => open(s, 'rename')} />
+                        {s.active ? (
+                          <IconButton icon="lock" label={t('admin.sitesDisable')} onClick={() => open(s, 'disable')} />
+                        ) : (
+                          <IconButton
+                            icon="check"
+                            label={t('admin.sitesEnable')}
+                            disabled={saving}
+                            onClick={() => void setActive(s, true)}
+                          />
+                        )}
+                        <IconButton icon="trash" label={t('admin.sitesDelete')} onClick={() => open(s, 'delete')} />
+                      </TdActions>
+                    </Tr>
+
+                    {mode === 'rename' && (
+                      <TrExpanded colSpan={COLUMNS}>
+                        <div className="space-y-4">
+                          <Field htmlFor={`rename-${s.id}`} label={t('admin.name')}>
+                            <input
+                              id={`rename-${s.id}`}
+                              value={renameDraft}
+                              onChange={(e) => {
+                                setRenameDraft(e.target.value);
+                                setRenameError('');
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') void handleRename(s);
+                              }}
+                              aria-invalid={renameError === 'required' || renameError === 'duplicate'}
+                              className={`${fieldClass} ${renameError === 'required' || renameError === 'duplicate' ? fieldErrorClass : ''}`}
+                            />
+                          </Field>
+                          {renameError === 'required' && (
+                            <StatusBanner tone="error" live>{t('admin.sitesNameRequired')}</StatusBanner>
+                          )}
+                          {renameError === 'duplicate' && (
+                            <StatusBanner tone="error" live>{t('admin.sitesDuplicate')}</StatusBanner>
+                          )}
+                          {renameError === 'error' && <StatusBanner tone="error" live>{t('common.error')}</StatusBanner>}
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              className="min-w-32 flex-1 sm:flex-none"
+                              icon="check"
+                              busy={saving}
+                              onClick={() => void handleRename(s)}
+                            >
+                              {t('admin.save')}
+                            </Button>
+                            <Button
+                              className="min-w-32 flex-1 sm:flex-none"
+                              variant="secondary"
+                              onClick={() => setExpanded(null)}
+                            >
+                              {t('common.cancel')}
+                            </Button>
+                          </div>
+                        </div>
+                      </TrExpanded>
+                    )}
+
+                    {mode === 'disable' && (
+                      <TrExpanded colSpan={COLUMNS}>
+                        <ConfirmPanel
+                          variant="secondary"
+                          icon="lock"
+                          question={t('admin.sitesDisableQuestion', { name: s.name })}
+                          confirmLabel={t('admin.sitesDisable')}
+                          onConfirm={() => void setActive(s, false)}
+                          onCancel={() => setExpanded(null)}
+                        />
+                      </TrExpanded>
+                    )}
+
+                    {mode === 'delete' && (
+                      <TrExpanded colSpan={COLUMNS}>
+                        <ConfirmPanel
+                          question={t('admin.sitesDeleteQuestion', { name: s.name })}
+                          confirmLabel={t('admin.sitesDelete')}
+                          onConfirm={() => void handleDelete(s)}
+                          onCancel={() => setExpanded(null)}
+                        />
+                      </TrExpanded>
+                    )}
+                  </Fragment>
+                );
+              })}
             </TBody>
           </Table>
         </TableCard>

@@ -7,6 +7,8 @@ export type UserRole = 'worker' | 'manager' | 'admin' | 'carasso';
 export interface Site {
   id: string;
   name: string;
+  /** false = disabled by an admin (0041): no new jobs, hidden from pickers, history kept. */
+  active: boolean;
 }
 
 export interface Service {

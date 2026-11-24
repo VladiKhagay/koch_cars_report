@@ -9,9 +9,9 @@ import { isValidPlate, stripPlate, isValidVinFormat, vinChecksumValid, vinProble
 import { ocrPhoto, type OcrReason } from '../lib/workerApi';
 import { findPreviousJob, InvalidJobError, MAX_EXTRA_PHOTOS, serviceTotal, type NewJobPayload } from '../lib/jobs';
 import { formatMoney } from '../components/money';
-import { cleanWorkerLabel, MAX_WORKER_LABEL, isStaffSubmitter, jobOwnership, jobSiteId, migrateDraft, pickableWorkers, toggleId, workerNamed } from './workerJobs';
+import { cleanWorkerLabel, MAX_WORKER_LABEL, isStaffSubmitter, jobOwnership, jobSiteId, migrateDraft, pickableWorkers, siteAcceptsJobs, toggleId, workerNamed } from './workerJobs';
 import { sendJob as sendJobAndVideo } from '../lib/sendJob';
-import { useSiteScope } from '../lib/useSiteScope';
+import { pickableSites, useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import { bumpService, pushBrand, pushWorkerLabel, recentBrands, recentWorkerLabels, serviceUseCounts } from '../lib/recent';
@@ -280,7 +280,7 @@ export default function NewJob() {
     setForm((f) => ({ ...f, serviceIds: toggleId(f.serviceIds, id) }));
   }
 
-  const siteId = appUser ? jobSiteId(appUser, form.siteId, scopeSiteId, pickedWorker?.site_id ?? null) : null;
+  const siteId = appUser ? jobSiteId(appUser, form.siteId, scopeSiteId, pickedWorker?.site_id ?? null, sites) : null;
 
   /* A restored draft can name a service retired since: no chip to untick it, so
      it is dropped here. Not before the catalog loads, nor if it came back empty
@@ -365,11 +365,13 @@ export default function NewJob() {
     });
   if (serviceIds.length === 0)
     problems.push({ id: 'service', label: t('newJob.needService'), focus: () => scrollTo(servicesRef.current) });
-  /* An admin with no home site and nothing picked yet: say so rather than doing nothing. */
-  if (!siteId)
+  /* An admin with no home site and nothing picked yet: say so rather than doing nothing.
+     A site an admin has disabled (0041) is refused by the database; say so here. */
+  const siteOk = siteAcceptsJobs(sites, siteId);
+  if (!siteId || !siteOk)
     problems.push({
       id: 'site',
-      label: t('newJob.siteRequired'),
+      label: t(siteId ? 'newJob.siteDisabled' : 'newJob.siteRequired'),
       focus: () => {
         if (detailsRef.current) detailsRef.current.open = true;
         const select = document.getElementById('job-site');
@@ -841,12 +843,14 @@ export default function NewJob() {
               id="job-site"
               value={siteId ?? ''}
               disabled={isManager}
-              invalid={attempted && !siteId}
+              invalid={attempted && (!siteId || !siteOk)}
               onChange={(e) => selectSite(e.target.value)}
             >
               {!siteId && <option value="" disabled />}
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
+              {/* Enabled sites, plus a disabled one already chosen (draft, home
+                  site) so the field shows it next to the problem, not another. */}
+              {pickableSites(sites, [siteId]).map((s) => (
+                <option key={s.id} value={s.id} disabled={s.active === false}>
                   {s.name}
                 </option>
               ))}

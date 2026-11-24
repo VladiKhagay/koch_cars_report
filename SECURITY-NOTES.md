@@ -564,3 +564,31 @@ Accepted (lead decision):
       (impersonates users, ends in ROLLBACK).
 - [ ] Rollback: **web -> 0040 down** (commented at the end of the migration).
       Loses every label; keeps the `list_staff` fix.
+
+## 10. Admins rename / disable / delete sites (migration 0041)
+
+- **Admin only.** `sites_write` (0001) is the only write policy on `sites` and
+  is admin-only; there is no manager carve-out (0005's report-config RPC writes
+  `app_settings` since 0027, and the column it wrote was dropped in 0030).
+  Managers and workers updating or deleting a site change 0 rows.
+- **No new jobs at a disabled site, in the database.** `jobs_insert` (0040
+  body, unchanged) is now ANDed with "the site exists and is active", so
+  `create_job` (security invoker) and a direct insert both fail with 42501.
+  Existing jobs stay readable and editable.
+- **Delete guard.** `users.site_id` (was SET NULL) and `user_sites.site_id`
+  (was CASCADE) are now NO ACTION like `jobs.site_id`, so deleting a site that
+  still has jobs (soft-deleted ones included), users or viewer links fails
+  with 23503 instead of silently un-homing users or dropping viewer access.
+
+Accepted (lead decision):
+
+- `worker/src/invite.ts` does not check `sites.active`: an admin can invite
+  someone onto a disabled site through the API (the UI offers enabled sites
+  only). Admin is trusted, and such a user can still log no job there.
+- Moving an existing job into a disabled site is blocked only in the UI.
+
+- [ ] Deploy order: **0041 -> web** (the new web selects `sites.active`).
+- [ ] Run `supabase/verify_0041.sql` (read-only): every row `ok`.
+- [ ] Optional, local/branch database only: `supabase/scenarios_0041.sql`
+      (impersonates users, ends in ROLLBACK).
+- [ ] Rollback: **web -> 0041 down** (commented at the end of the migration).

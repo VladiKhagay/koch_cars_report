@@ -22,6 +22,7 @@ describe('isPermanentError', () => {
   it('treats a check violation and a payload submitJob refuses as permanent', async () => {
     expect(isPermanentError({ code: '23514' })).toBe(true);
     expect(isPermanentError({ code: '23502' })).toBe(true); // not_null_violation, e.g. no VIN (0036)
+    expect(isPermanentError({ code: '23503' })).toBe(true); // foreign_key_violation, e.g. site deleted (0041)
     expect(isPermanentError(new InvalidJobError('x'))).toBe(true);
     expect(isPermanentError(new Error('Job creation failed'))).toBe(false);
     const noService = { plate: '1234567', vin: 'WVWZZZ1JZXW000001', serviceIds: [] } as unknown as NewJobPayload;

@@ -187,7 +187,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 ## 4. Data model
 
 ```
-sites(id, name, customer_report_config)
+sites(id, name, active)   -- active false = disabled (0041)
 users(id, auth_id, name, role[worker|manager|admin], site_id, active)
 services(id, catalog_number (not unique, 0017), name_en, name_ru, worker_price,
          active, sort_order, deleted_at)
@@ -206,6 +206,21 @@ photos(id, job_id, kind[plate|vin|extra_1..5|video], r2_key, expires_at,
        removed_at)            -- tombstone (0034): slot removed by a manager/admin
 audit_log(id, job_id, user_id, action, changes_jsonb, at)   -- trigger-written (0034)
 ```
+
+**Sites: rename, disable, delete (0041).** Everything refers to a site by id,
+so an admin's rename fixes a typo everywhere, history and exports included;
+the name stays unique. A site that was used cannot be deleted (every FK to
+`sites` is NO ACTION, so the delete fails with 23503) because that would lose
+or orphan history. Instead an admin **disables** it (`sites.active = false`):
+`jobs_insert` refuses new jobs there (42501, also through `create_job`), and the
+new-job, user and invite pickers and the default site scope skip it
+(`pickableSites` / `startSiteId` in `useSiteScope.ts`). History, the Jobs
+filter, stats and exports still list it, and users assigned to it keep their
+access. An unused site (no jobs, users or viewer links) can be deleted.
+Limitations: moving an existing job INTO a disabled site is blocked only in the
+UI (its edit pickers offer enabled sites plus the job's own), not by the
+database; and an offline job queued before the site was disabled fails with
+42501 when it syncs (it stays in the queue as needing attention).
 
 **Several services per job (0033).** 0005 collapsed jobs to one service; the
 yard then logged cars that got a wash *and* a polish, so 0033 brought
@@ -549,7 +564,9 @@ soft-deleted or older than 7 days, fails as a whole until the new web is live
 Every role opens site-aware screens on **their own site**. Admins previously
 landed on whichever site sorted first alphabetically. `web/src/lib/useSiteScope.ts`
 centralizes this: admins may switch sites, managers and workers are pinned (RLS
-would reject anything else anyway, so no picker is offered).
+would reject anything else anyway, so no picker is offered). A switching admin
+opens on their remembered pick or home site only while it is enabled; a
+disabled site (0041) is skipped for the starting site but still listed.
 
 ---
 

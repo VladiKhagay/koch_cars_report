@@ -7,6 +7,7 @@ import type { AppUser, Site, UserRole } from '../../lib/types';
 import AdminTabs from '../../components/AdminTabs';
 import StatusBanner from '../../components/StatusBanner';
 import SiteChecklist from '../../components/SiteChecklist';
+import { pickableSites } from '../../lib/useSiteScope';
 import {
   CellMuted,
   CellTitle,
@@ -257,7 +258,7 @@ export default function AdminUsers() {
                 <div className="sm:col-span-2">
                   <SiteChecklist
                     label={t('admin.carassoSites')}
-                    sites={sites}
+                    sites={pickableSites(sites)}
                     value={inviteSiteIds}
                     onChange={setInviteSiteIds}
                   />
@@ -266,7 +267,7 @@ export default function AdminUsers() {
                 <Field htmlFor="invite-site" label={t('admin.site')}>
                   <Select id="invite-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
                     <option value="">{t('admin.site')}</option>
-                    {sites.map((s) => (
+                    {pickableSites(sites).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
@@ -405,7 +406,8 @@ export default function AdminUsers() {
                                 onChange={(e) => setEditDraft((d) => ({ ...d, site_id: e.target.value }))}
                               >
                                 <option value="">{t('admin.site')}</option>
-                                {sites.map((s) => (
+                                {/* Enabled sites, plus the user's current one even if disabled (0041). */}
+                                {pickableSites(sites, [u.site_id]).map((s) => (
                                   <option key={s.id} value={s.id}>
                                     {s.name}
                                   </option>
@@ -418,7 +420,7 @@ export default function AdminUsers() {
                         {editDraft.role === 'carasso' && (
                           <SiteChecklist
                             label={t('admin.carassoSites')}
-                            sites={sites}
+                            sites={pickableSites(sites, carassoSites.get(u.id) ?? [])}
                             value={editDraft.site_ids}
                             onChange={(ids) => setEditDraft((d) => ({ ...d, site_ids: ids }))}
                           />

@@ -21,7 +21,7 @@ import { useExportLang } from '../components/useExportLang';
 import ExportLangSelect from '../components/ExportLangSelect';
 import { monthKey, monthRange, presetFor, rangeFor, type Preset } from '../lib/dateRange';
 import { useQueuedJobs } from '../lib/useQueue';
-import { useSiteScope } from '../lib/useSiteScope';
+import { pickableSites, useSiteScope } from '../lib/useSiteScope';
 import { useStaff } from '../lib/useStaff';
 import { SERVICE_COLUMNS, type Job, type PhotoKind, type Service } from '../lib/types';
 import Icon from '../components/Icon';
@@ -804,7 +804,8 @@ export default function MyJobs() {
                           value={editDraft.siteId}
                           onChange={(e) => setEditDraft((d) => (d ? { ...d, siteId: e.target.value } : d))}
                         >
-                          {sites.map((s) => (
+                          {/* Enabled sites, plus the job's own even if disabled since (0041). */}
+                          {pickableSites(sites, [row.original.site_id]).map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name}
                             </option>
