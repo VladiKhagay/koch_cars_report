@@ -1,0 +1,6 @@
+# Multi-service jobs
+Goal: a job can have several services; workers see all + summed pay; admins toggle grouped/separate rows.
+Reqs: job_services table (per-row price snapshots: worker pay + client price), backfill existing jobs, split on summed total; each service once per job, >=1 required; worker multi-select with live total, My Jobs lists all + total; edit in 15-min window then manager/admin only (existing rows keep snapshot, new rows get current price); admin Jobs grid toggle grouped(default)/separate, remembered per browser, exports follow toggle; analytics count per service but job/car counts per job; stats/payroll use sum; duplicate warning + vehicle lookup list all; Carasso sees names no pay; service filter any-match; soft-deleted services resolve.
+Out of scope: quantities, retention/video.
+AC-1 submit 2+ services, 0 rejected. AC-2 server-side price snapshot, repricing doesn't alter old. AC-3 worker sees sum (form + My Jobs). AC-4 coworker split on sum. AC-5 admin toggle correct sums + remembered. AC-6 exports follow toggle. AC-7 analytics/stats/dup/lookup/Carasso/filter handle multi. AC-8 backfill lossless, RLS mirrors jobs, workers can't set prices. AC-9 checks pass web+worker; CONTEXT.md/PRODUCT.md updated.
+Constraints: new migration written, NOT applied; no commit/push.

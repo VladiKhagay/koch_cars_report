@@ -624,3 +624,28 @@ Accepted (lead decision):
       (impersonates users, ends in ROLLBACK).
 - [ ] Rollback: **web -> 0042 down** (commented; refuses while any job has a
       NULL or blank VIN).
+
+---
+
+## 12. Past findings and standing rules (moved from CONTEXT.md §6)
+
+Two real findings were found and fixed in review; both are worth remembering
+because the same mistake is easy to re-introduce.
+
+1. **Workers could read every job at their site**, including `billing_code`.
+   Fixed in `0003` by restricting the worker role to their own rows, plus a
+   `find_recent_duplicate(uuid, text)` `security definer` function that returns
+   *only a job id* — enough to flag a duplicate, not enough to read someone
+   else's record.
+2. **Photo content-type was echoed from the client.** An attacker-chosen type
+   (`text/html`) would make `GET /photo` serve an attacker page on the Worker's
+   own origin. It is now pinned to `image/jpeg` on write, since the app only
+   ever uploads JPEG.
+
+Other standing rules:
+- The service-role key appears in exactly one file, `worker/src/invite.ts`, and
+  is never reachable without an admin JWT.
+- The R2 bucket is private; photos are only served through the Worker after an
+  RLS-backed permission check.
+- `ALLOWED_ORIGINS` should be pinned to the app origin, not `*`.
+- Manager/admin job and media changes are audit-logged by database triggers (who / what / when, 0034); worker edits are not.

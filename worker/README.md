@@ -17,7 +17,7 @@ that the browser can't do safely on its own:
    upload R2 no longer has answers 410 and the phone starts that video over.
    `/video/start` is also capped by `VIDEO_START_LIMITER` (10/min per user,
    `wrangler.toml`), since each start parks an R2 multipart upload. Error
-   semantics and the pending live R2 check: `SECURITY-NOTES.md` §4.
+   semantics and the pending live R2 check: `docs/security/SECURITY-NOTES.md` §4.
 
 All actual application data (jobs, users, services) lives in Supabase and is
 written directly from the frontend — this Worker never touches Postgres.

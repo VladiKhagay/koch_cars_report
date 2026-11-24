@@ -230,7 +230,7 @@ manually or retake the photo").
   `ru.json` — usable as-is for length and tone testing.
 - Seed service catalog with real English/Russian service names
   (`supabase/migrations/0001_init.sql`).
-- The original design prompt and its constraints: `DESIGN_PROMPT.md`.
+- The original design prompt and its constraints: `docs/design/archive/DESIGN_PROMPT.md`.
 - Existing design-sync tooling wired to a Claude Design project
   (`web/.design-sync/`, `web/ds-bundle/`), with six components registered as
   the shared set: StatTile, ServiceChips, BarChart, PhotoCapture, AdminTabs,
