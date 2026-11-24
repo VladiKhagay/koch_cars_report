@@ -5,7 +5,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { setJobServices } from '../lib/jobs';
-import type { AppUser, Job, JobServiceLine, Service, StaffMember } from '../lib/types';
+import type { AppUser, Job, JobServiceLine, Service, Site, StaffMember } from '../lib/types';
 
 /** Adds the id if absent, removes it if present. */
 export function toggleId(ids: string[], id: string): string[] {
@@ -157,17 +157,33 @@ export function jobOwnership(
  * The site a New Job is logged at. A manager only ever at their own (the
  * database refuses anything else). An admin: their pick, else the picked
  * worker's site (that is where the car was done), else their home site, else
- * the site they are looking at elsewhere in the app. A worker: pick or home.
+ * the site they are looking at elsewhere in the app; a fallback known to be
+ * disabled (0041, from `sites`) is skipped, unless all are (then the first, so
+ * the form says the site is disabled). A worker: pick or home.
  */
 export function jobSiteId(
   appUser: Pick<AppUser, 'role' | 'site_id'>,
   picked: string | null,
   scopeSiteId: string | null,
   workerSiteId: string | null = null,
+  sites: Pick<Site, 'id' | 'active'>[] = [],
 ): string | null {
   if (appUser.role === 'manager') return appUser.site_id;
-  if (appUser.role === 'admin') return picked ?? workerSiteId ?? appUser.site_id ?? scopeSiteId;
+  if (appUser.role === 'admin') {
+    if (picked) return picked;
+    const fallbacks = [workerSiteId, appUser.site_id, scopeSiteId].filter((id): id is string => id != null);
+    return fallbacks.find((id) => siteAcceptsJobs(sites, id)) ?? fallbacks[0] ?? null;
+  }
   return picked ?? appUser.site_id;
+}
+
+/**
+ * Whether New Job may submit at `siteId`: false only for a site known to be
+ * disabled (0041; the database refuses it with 42501). Unknown (sites still
+ * loading) counts as yes, so the form never blocks on a slow request.
+ */
+export function siteAcceptsJobs(sites: Pick<Site, 'id' | 'active'>[], siteId: string | null): boolean {
+  return sites.find((s) => s.id === siteId)?.active !== false;
 }
 
 /**

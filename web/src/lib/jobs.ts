@@ -23,12 +23,13 @@ export class InvalidJobError extends Error {}
  * True when retrying `submitJob` with the same payload can never succeed: a
  * 4xx from the Worker, a payload submitJob itself refuses (InvalidJobError),
  * a Postgres RLS rejection (42501), check violation (23514, e.g. create_job
- * given no service) or not-null violation (23502, e.g. a job with no VIN, 0036). Anything else is treated as transient so an outage never
+ * given no service), not-null violation (23502, e.g. a job with no VIN, 0036)
+ * or foreign-key violation (23503, e.g. its site was deleted, 0041). Anything else is treated as transient so an outage never
  * drops data. 401 (token mid-refresh), 408 and 429 (rate limit hit while
  * flushing a backlog) clear on their own.
  */
 const RETRYABLE_4XX = [401, 408, 429];
-const PERMANENT_PG_CODES = ['42501', '23514', '23502']; // insufficient_privilege, check_violation, not_null_violation
+const PERMANENT_PG_CODES = ['42501', '23514', '23502', '23503']; // insufficient_privilege, check_violation, not_null_violation, foreign_key_violation
 
 export function isPermanentError(err: unknown): boolean {
   if (err instanceof InvalidJobError) return true;

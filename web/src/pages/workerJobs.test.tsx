@@ -29,7 +29,7 @@ vi.mock('../lib/jobs', () => ({
   },
 }));
 
-const { cleanWorkerLabel, crewOthers, editableServices, isStaffSubmitter, jobOwnership, jobSiteId, mediaEditState, migrateDraft, nextBusyJob, pickableWorkers, saveWorkerEdit, toggleId, workerNamed } =
+const { cleanWorkerLabel, crewOthers, editableServices, isStaffSubmitter, jobOwnership, jobSiteId, mediaEditState, migrateDraft, nextBusyJob, pickableWorkers, saveWorkerEdit, siteAcceptsJobs, toggleId, workerNamed } =
   await import('./workerJobs');
 const { default: ServiceChips } = await import('../components/ServiceChips');
 
@@ -266,6 +266,20 @@ describe('New Job on behalf of a worker (0040)', () => {
     expect(jobSiteId(manager, null, null, 's4')).toBe('s1');
   });
 
+  it("skips an admin's disabled fallback sites, never an explicit pick (0041)", () => {
+    const sites = [
+      { id: 's3', active: true },
+      { id: 's4', active: false },
+      { id: 's9', active: false },
+    ];
+    expect(jobSiteId({ ...admin, site_id: 's9' }, null, 's3', 's4', sites)).toBe('s3');
+    expect(jobSiteId(admin, 's4', 's3', null, sites)).toBe('s4');
+    // All disabled: the first, so the form reports it as disabled.
+    expect(jobSiteId({ ...admin, site_id: 's9' }, null, null, 's4', sites)).toBe('s4');
+    // Sites not loaded yet: unchanged.
+    expect(jobSiteId({ ...admin, site_id: 's9' }, null, 's3', 's4')).toBe('s4');
+  });
+
   it('lets a worker log at another yard', () => {
     expect(jobSiteId(worker, 's2', null)).toBe('s2');
     expect(jobSiteId(worker, null, null)).toBe('s1');
@@ -355,5 +369,25 @@ describe('cleanWorkerLabel (0040 CHECK)', () => {
     const admin = { id: 'a1', role: 'admin' as const };
     expect(jobOwnership(admin, { workerId: '', workerLabel: '\u200F Moshe\u200B ' }).workerLabel).toBe('Moshe');
     expect(jobOwnership(admin, { workerId: '', workerLabel: '\u200F\u200B' }).workerLabel).toBeNull();
+  });
+});
+
+describe('siteAcceptsJobs (0041 disabled sites)', () => {
+  const sites = [
+    { id: 'on', active: true },
+    { id: 'off', active: false },
+  ];
+
+  it('refuses a disabled site', () => {
+    expect(siteAcceptsJobs(sites, 'off')).toBe(false);
+  });
+
+  it('accepts an enabled site', () => {
+    expect(siteAcceptsJobs(sites, 'on')).toBe(true);
+  });
+
+  it('does not block while sites are loading or the site is unknown', () => {
+    expect(siteAcceptsJobs([], 'off')).toBe(true);
+    expect(siteAcceptsJobs(sites, null)).toBe(true);
   });
 });
