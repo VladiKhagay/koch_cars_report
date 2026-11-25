@@ -627,7 +627,45 @@ Accepted (lead decision):
 
 ---
 
-## 12. Past findings and standing rules (moved from CONTEXT.md §6)
+## 12. Who may move a job to another site (migration 0043)
+
+- **Gap closed.** 0019 §5 dropped the site match from the manager's
+  `jobs_update` WITH CHECK on purpose (move a job to "the site it actually
+  belongs to"); the worker branch never had one, and no trigger compared
+  `new.site_id` with `old.site_id`. A manager could move any job of their site
+  to any site, a worker their own job (My Jobs edit panel) in the 15-minute window. A
+  moved job skipped the insert-only checks: disabled site (0041) and the
+  destination's VIN/plate rules (0042).
+- **Decision (owner, 2026-11-24).** Admin: any job, any site. Worker: their
+  own job, window open, not deleted (checked on `old.*`), only to an active
+  site whose VIN/plate rules the job (new values) meets, the 0042 blank
+  pattern included. Manager and anyone else: no. `jobs_guard_site` (BEFORE
+  UPDATE with no column list, security definer, `search_path = public`)
+  raises 42501 otherwise, for any signed-in caller (`auth.uid()` not null).
+  Deactivated users and carasso viewers are refused too. BEFORE triggers run
+  in name order: a future trigger that rewrites `new.site_id` must sort before
+  `jobs_guard_site` (none does today). It raises instead of reverting, so the old
+  web's manager-move save (no RETURNING) reports an error, not a false "saved".
+- **Unchanged.** An update sending the same `site_id` passes; no-JWT callers
+  (service role, SQL editor) are not restricted (as 0021); no Worker route
+  updates `jobs`. Logging a new job at any active site is unchanged. Admins are
+  unrestricted, including a disabled or stricter-rules destination (deliberate:
+  rules bind new jobs only).
+- **UI.** Job Detail shows the site picker to admins only; the manager
+  "move away" save path is gone. My Jobs keeps the worker's picker (active
+  sites only); a move to a site whose rules the job misses gets the generic
+  save error. Cosmetic: the trigger is the control.
+
+- [ ] Deploy order: **0043 -> web**. Between the two, the old web's manager
+      move fails at the last request, after billing/services/lines saved.
+- [ ] Run `supabase/verify_0043.sql` (read-only): every row `ok`.
+- [ ] Optional, local/branch database only: `supabase/scenarios_0043.sql`
+      (impersonates users, ends in ROLLBACK).
+- [ ] Rollback: **0043 down** (commented).
+
+---
+
+## 13. Past findings and standing rules (moved from CONTEXT.md §6)
 
 Two real findings were found and fixed in review; both are worth remembering
 because the same mistake is easy to re-introduce.

@@ -64,9 +64,9 @@ function StaffJobDetail() {
   const [loading, setLoading] = useState(true);
   const staff = useStaff();
   const { sites } = useSiteScope();
-  /* Submitter, crew and site are editable together: reassigning the job to one
-     of its co-workers, or moving it to the yard it was really done at, are the
-     corrections a manager actually makes. Shares recompute in Postgres (0019). */
+  /* Submitter and crew are editable together: reassigning the job to one of its
+     co-workers is a correction a manager actually makes. Shares recompute in
+     Postgres (0019). The site only an admin changes here (0043). */
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [coworkerIds, setCoworkerIds] = useState<string[]>([]);
   const [siteId, setSiteId] = useState('');
@@ -212,12 +212,9 @@ function StaffJobDetail() {
     setSaving(true);
     const servicesChanged = !sameSet(serviceIds, originalServiceIds);
     const billing = { billing_code: billingCode || null, manager_note: managerNote || null };
-    const { changes: jobChanges, plateChanged, vehicle: stored } = edit;
+    const { changes: jobChanges } = edit;
     // Every write below is logged by database triggers (audit_log), in the same transaction.
-    const moving = jobChanges.site_id !== job.site_id;
-    /* Order matters: a manager who moves the job away loses access to its
-       billing row and its services, so those go first and the jobs update (which
-       carries the site) goes last. Each step stops the rest on failure. */
+    // Each step stops the rest on failure. Only an admin can change the site (0043).
     let error: { message: string } | null = (await saveBilling(job.id, billing)).error;
     if (!error && servicesChanged) ({ error } = await setJobServices(job.id, serviceIds));
     for (const w of lineWrites) {
@@ -237,16 +234,9 @@ function StaffJobDetail() {
           ));
     }
     if (!error) {
-      if (moving && !isAdmin) {
-        /* No RETURNING here: the moved row fails the manager's select policy,
-           which would refuse the whole update. So a zero-row update can't be
-           told apart on a move; RLS errors still surface. */
-        ({ error } = await supabase.from('jobs').update(jobChanges).eq('id', job.id));
-      } else {
-        const res = await supabase.from('jobs').update(jobChanges).eq('id', job.id).select('id');
-        // Zero rows back is RLS quietly refusing the update: a failed save, not a saved one.
-        error = res.error ?? (res.data?.length ? null : { message: 'job not updated' });
-      }
+      const res = await supabase.from('jobs').update(jobChanges).eq('id', job.id).select('id');
+      // Zero rows back is RLS quietly refusing the update: a failed save, not a saved one.
+      error = res.error ?? (res.data?.length ? null : { message: 'job not updated' });
     }
     setSaving(false);
     setHistoryKey((k) => k + 1);
@@ -255,18 +245,8 @@ function StaffJobDetail() {
       return;
     }
     setSaveError(false);
-    // Re-read: the pay sum and new lines' snapshots are the database's. A
-    // manager who moved the job off their site can no longer read it.
-    if (moving && !isAdmin) {
-      // The read-only view shows `job`, so it carries everything just saved.
-      // A new worker drops the typed name (0040's trigger does the same in the row).
-      const label = jobChanges.worker_id === job.worker_id ? job.worker_label : null;
-      setJob({ ...job, ...jobChanges, ...billing, service_ids: serviceIds, worker_label: label });
-      setCoworkerIds(jobChanges.coworker_ids);
-      // The stored form, so the fields don't read as changed against the new job.
-      if (plateChanged) setPlate(stored.plate ?? '');
-      if (vinChanged) setVin(stored.vin ?? '');
-    } else await load(job.id, true);
+    // Re-read: the pay sum and new lines' snapshots are the database's.
+    await load(job.id, true);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -553,16 +533,19 @@ function StaffJobDetail() {
                     onChange={setCoworkerIds}
                   />
                 </Field>
-                <Field htmlFor="job-site" label={t('newJob.site')}>
-                  <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-                    {/* Enabled sites, plus the job's own even if disabled since (0041). */}
-                    {pickableSites(sites, [job.site_id]).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
+                {/* Only an admin moves a job to another site (0043). */}
+                {isAdmin && (
+                  <Field htmlFor="job-site" label={t('newJob.site')}>
+                    <Select id="job-site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+                      {/* Enabled sites, plus the job's own even if disabled since (0041). */}
+                      {pickableSites(sites, [job.site_id]).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
                 <div>
                   <p className="mb-2 text-sm font-medium text-ink-700">{t('jobDetail.services')}</p>
                   <ServiceChips

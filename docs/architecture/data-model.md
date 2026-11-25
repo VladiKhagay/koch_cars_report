@@ -173,6 +173,21 @@ explains the refusal, throws `InvalidJobError('site-disabled' |
 **Deploy order: 0042 -> web. Rollback: web -> 0042 down** (refuses while any
 job has a NULL or blank VIN).
 
+**Who moves a job to another site (0043, supersedes 0019's manager move).**
+`jobs_guard_site` (BEFORE UPDATE, security definer) raises 42501 on a
+`site_id` change unless the caller is an active admin (any job, any site,
+disabled or stricter-rules destination included), or the job's worker inside
+its 15-minute window moving it to an active site whose VIN/plate rules it
+meets (what logging it there would need; the wrong-site fix in My Jobs).
+Managers cannot move jobs. An unchanged `site_id` (both edit forms always
+send it) passes; no-JWT callers (service role, SQL editor) are not
+restricted. Job Detail shows the site picker to admins only; My Jobs keeps the
+worker's. Logging a new job at any active site is unchanged.
+
+**Deploy order: 0043 -> web. Rollback: 0043 down** (commented). On 0043 the
+old web still offers managers the picker; a move then fails at the final jobs
+update, after billing/services/lines in the same save were written.
+
 **Partial plate/VIN lookup (0037).** Car lookup finds any job whose VIN, or
 plate, contains the query. `lookup_vehicle` normalises server-side (upper
 case, `[A-Z0-9]` only, 4..17 characters, raw input over 64 returns nothing);
@@ -222,12 +237,14 @@ to **nobody** — historical jobs must keep resolving their service references.
   and its photos/video (plate/VIN replace only — 0035), within 15 min; sees
   only their own rows. Cannot see billing codes.
 - **manager** — everything within their own site: view/search/edit jobs (every
-  field, including plate, VIN, brand, worker note and date, at any age — 0034),
+  field, including plate, VIN, brand, worker note and date, at any age — 0034;
+  not the site: only an admin moves a job, 0043),
   add/replace/remove media, read the job's edit history, fill billing codes, view photos, export, analytics, manage services, activate and
   deactivate *worker-role* users at their site. Can submit jobs (0040): as
   themselves at any site, under a typed name at their own site, or for an
   active worker of their own site at their own site.
-- **admin** — all sites, plus user/site management and invitations. Can submit
+- **admin** — all sites, plus user/site management and invitations; moves any
+  job to any site (0043; a worker only their own, in the window, 0043). Can submit
   jobs for any active worker or under a typed name, at any site (0040).
 
 All of it enforced by RLS policies and `security definer` RPCs, not by the UI.
