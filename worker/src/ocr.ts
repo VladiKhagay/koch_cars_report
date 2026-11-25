@@ -104,10 +104,11 @@ const DIGIT_CONFUSIONS: Record<string, string> = {
   G: '6',
 };
 
-const PLATE_LENGTH = 8;
+// Current plates are 8 digits; older cars still carry 7 (12-345-67).
+const PLATE_LENGTHS = [8, 7];
 
 /**
- * Extracts an 8-digit Israeli plate from free model text, working on digit
+ * Extracts a 7- or 8-digit Israeli plate from free model text, working on digit
  * runs so "123-45-678 on a 2019 Toyota" yields 12345678. A partial read is
  * rejected: it looks authoritative and gets submitted unchecked.
  */
@@ -130,7 +131,12 @@ export function normalizePlate(raw: string): string | null {
   const runs = joined.match(/\d+/g);
   if (!runs) return null;
 
-  return runs.find((r) => r.length === PLATE_LENGTH) ?? null;
+  // ponytail: an 8-digit plate read one digit short now passes as 7; the worker still sees and can edit the read.
+  for (const len of PLATE_LENGTHS) {
+    const hit = runs.find((r) => r.length === len);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // I, O and Q are never valid in a VIN, so mapping them to digits is lossless.

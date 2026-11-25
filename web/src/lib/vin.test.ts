@@ -74,8 +74,9 @@ describe('isValidPlate (default pattern)', () => {
   });
 
   it('rejects anything that is not exactly 8 digits', () => {
-    expect(isValidPlate('1234567')).toBe(false);
-    expect(isValidPlate('12-345-67')).toBe(false);
+    expect(isValidPlate('1234567')).toBe(true); // older cars
+    expect(isValidPlate('12-345-67')).toBe(true);
+    expect(isValidPlate('123456')).toBe(false);
     expect(isValidPlate('123456789')).toBe(false);
     expect(isValidPlate('AB123CD')).toBe(false);
   });
