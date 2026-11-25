@@ -4,6 +4,12 @@ import { isPhotoKind } from './upload';
 import app from './index';
 
 describe('normalizePlate — Israeli 8-digit format', () => {
+  it('accepts old 7-digit plates (12-345-67), preferring an 8-digit run', () => {
+    expect(normalizePlate('12-345-67')).toBe('1234567');
+    expect(normalizePlate('1234567')).toBe('1234567');
+    expect(normalizePlate('1234567 / 12345678')).toBe('12345678');
+  });
+
   it('accepts every printed grouping, returning bare digits', () => {
     expect(normalizePlate('12345678')).toBe('12345678');
     expect(normalizePlate('123-45-678')).toBe('12345678');
@@ -66,7 +72,7 @@ describe('normalizePlate — Israeli 8-digit format', () => {
 
   it('rejects partial reads — only a full 8 digits counts', () => {
     expect(normalizePlate('123')).toBeNull();
-    expect(normalizePlate('1234567')).toBeNull(); // one digit short
+    expect(normalizePlate('123456')).toBeNull(); // too short
     expect(normalizePlate('123456789012')).toBeNull(); // too long
   });
 

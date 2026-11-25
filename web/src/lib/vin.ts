@@ -37,8 +37,8 @@ export function vinChecksumValid(vin: string): boolean {
   return v[8] === expected;
 }
 
-// Plates are stored bare (8 digits, no separators) but printed 123-45-678, so input is stripped to digits first.
-const PLATE_REGEX = /^\d{8}$/;
+// Plates are stored bare (7 or 8 digits, no separators) but printed 123-45-678 / 12-345-67 (older cars), so input is stripped to digits first.
+const PLATE_REGEX = /^\d{7,8}$/;
 
 export function stripPlate(plate: string): string {
   return plate.replace(/\D/g, '');
@@ -55,12 +55,12 @@ export function vinProblem(vin: string, required = true): 'required' | 'invalid'
 }
 
 export interface NormalizedVehicle {
-  /** Bare 8 digits, or null when left empty. Never '': '' would collide in the duplicate check. */
+  /** Bare 7 or 8 digits, or null when left empty. Never '': '' would collide in the duplicate check. */
   plate: string | null;
   vin: string | null;
   /** Check digit result for jobs.vin_valid_checksum; null when there is no VIN. */
   vinChecksum: boolean | null;
-  /** Blocking: a started plate that is not 8 digits. */
+  /** Blocking: a started plate that is not 7 or 8 digits. */
   plateError: boolean;
   /** Blocking: a started VIN that is not 17 valid characters. A bad check digit is only `vinChecksum: false`. */
   vinError: boolean;
