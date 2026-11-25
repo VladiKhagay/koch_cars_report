@@ -18,8 +18,10 @@ const HEIGHT = 224;
 const TOP = 24;
 const BOTTOM = 34;
 const BAR_MAX_THICKNESS = 28;
-const SLOT_PADDING = 18;
-const MAX_LABEL_CHARS = 11;
+// Each bar's slot must be wide enough for its 12px label, or neighbours overlap.
+// ~6.5px per char at 12px; 10 chars ≈ 65px, plus a gap.
+const MIN_SLOT = 76;
+const MAX_LABEL_CHARS = 10;
 
 /**
  * Hand-rolled SVG chart (a charting library isn't worth the payload for three
@@ -47,14 +49,14 @@ export default function BarChart({ title, data, valueLabel }: Props) {
   // Clean round ticks (0 / half / max, rounded up) rather than raw fractions.
   const axisMax = Math.ceil(max / 5) * 5 || max;
 
-  const width = Math.max(data.length * (BAR_MAX_THICKNESS + SLOT_PADDING), 260, available);
+  const width = Math.max(data.length * MIN_SLOT, 260, available);
   const barSlot = width / Math.max(data.length, 1);
   const barWidth = Math.min(BAR_MAX_THICKNESS, barSlot - 8);
   const plotHeight = HEIGHT - TOP - BOTTOM;
 
   // The chart scrolls sideways inside its card once there are more bars than
   // fit; say so, because a silent overflow reads as "these are all the workers".
-  const scrolls = data.length > 6;
+  const scrolls = available > 0 && width > available + 1;
 
   return (
     <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
