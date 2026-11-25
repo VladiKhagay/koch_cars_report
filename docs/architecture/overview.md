@@ -51,8 +51,10 @@ Excel.
   which split the job's summed pay (all its services, 0033).
   A shared job counts as one job for each person but one car for the site
   (`job_daily_totals.car_count`). Only the submitter edits; co-workers only see it.
-  The submitter picks the job's site (default: their own), and payroll is per
-  person across all sites.
+  The submitter picks the job's site (default: their own) and may change it
+  inside the 15-minute window to an active site whose rules the job meets;
+  after that only an admin can move it (0043). Payroll is per person across
+  all sites.
 - **A labelled job belongs to its submitter but pays nobody personally**
   (0040). When a manager/admin types a name instead of picking a worker,
   `worker_id` is the submitter (so every RLS path keeps working) and
@@ -156,7 +158,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 |---|---|
 | `0001_init.sql` | Tables, RLS policies, `current_app_user()`, `jobs_worker_view` |
 | `0002_catalog_numbers_and_stats.sql` | `services.catalog_number` (unique until 0017), monthly/service stat views |
-| `0003_tighten_worker_job_select.sql` | **Security fix** (see SECURITY-NOTES §12), `find_recent_duplicate()` |
+| `0003_tighten_worker_job_select.sql` | **Security fix** (see SECURITY-NOTES §13), `find_recent_duplicate()` |
 | `0004_user_mgmt_services_softdelete_stats.sql` | Service soft-delete, `update_my_name()`, `set_user_active()`, `job_daily_stats` |
 | `0033_multi_service_jobs.sql` | `job_services` + `job_service_client_prices` (per-line price snapshots, backfilled), `create_job()` / `set_job_services()`, `job_service_lines`, `job_daily_totals`; `job_daily_stats` per service; drops `job_service_stats` |
 | `0034_manager_full_edit.sql` | `photos.removed_at` tombstone, `photos_update` (manager/admin), `can_view_photo()`, duplicate flag re-run on plate/VIN/date edits, `audit_log` written by triggers (`audit_diff()`), `audit_log_insert` dropped |
@@ -167,6 +169,7 @@ Plain SQL, applied in order via the Supabase SQL editor.
 | `0039_extra_photos_5.sql` | `photos_kind_check` widened to `extra_1..extra_5` (plate, vin, video unchanged). Apply before the web/Worker that send `extra_4`/`extra_5`; run `supabase/verify_0039.sql` |
 | `0040_staff_submit_for_worker.sql` | Managers/admins submit jobs: `jobs.worker_label` (1..60 chars, no control/zero-width/bidi chars), `jobs_insert` widened for on-behalf submits, `jobs_guard_worker_label` trigger, 10-arg `create_job(..., p_worker_label)`, stats views put a labelled job's submitter row under `worker_id` NULL, `worker_label` on `jobs_manager` / `jobs_worker_view` / daily stats, label in `jobs_carasso.crew`, `create_on_behalf` audit row, `jobs_audit` logs the label, `list_staff` regression fix. Run `supabase/verify_0040.sql`; behaviour in `supabase/scenarios_0040.sql` |
 | `0042_site_vehicle_id_rules.sql` | Per-site rules: `sites.vin_rule` (default `required`) and `sites.plate_rule` (default `optional`), each `required`/`optional`; `jobs.vin` nullable again; `jobs_plate_or_vin_chk` restored; `jobs_insert` = 0041 AND the site's rules (blank counts as missing) AND a plate or a VIN. Run `supabase/verify_0042.sql`; behaviour in `supabase/scenarios_0042.sql` |
+| `0043_guard_site_move.sql` | Who moves a job: `jobs_guard_site` (BEFORE UPDATE) raises 42501 on a `site_id` change unless the caller is an admin, or the job's worker in the 15-minute window moving it to an active site whose VIN/plate rules it meets; managers cannot (supersedes 0019's manager move). Job Detail shows the site picker to admins only. Run `supabase/verify_0043.sql`; behaviour in `supabase/scenarios_0043.sql` |
 
 ### Infrastructure
 - **Cloudflare Workers static assets** hosts the frontend (project
